@@ -201,12 +201,101 @@ otro (ej. "Cielo Cloud Impuestos", "Cielo Cloud 606").
 ## Estado real del repo (2026-11-15)
 
 Este archivo se escribió en la sesión de Cielo Cloud Nómina, describiendo
-un scaffold que vivía solo en el sandbox de aquella sesión. Al traerlo a
-este repo, **el código del scaffold NO vino con él**: el repo contiene
-únicamente `README.md` y este `CLAUDE.md`. Todo lo que arriba se menciona
-como existente (`src/app/api/ocr/route.ts`, `src/lib/utils.ts`,
-`src/lib/firebase.ts`, `src/lib/dgii-fiscal.ts`, `src/types/index.ts`,
-`tailwind.config.ts`, `globals.css`, `page.tsx`, `.env.example`) y lo
-verificado allí (`npm audit`, `npx tsc --noEmit`, `npm run build` limpios)
-es diseño documentado, pendiente de recrear y re-verificar aquí — no
-asumir que esos archivos existen hasta que estén en el árbol.
+un scaffold que vivía solo en el sandbox de aquella sesión. El código NO
+vino con el archivo, así que **el scaffold se recreó en este repo** en la
+sesión del 2026-11-15, siguiendo este documento. No es el código original:
+es una reconstrucción, y difiere donde se indica abajo.
+
+### Qué hay en el árbol
+
+- Config: `package.json`, `next.config.mjs` (sin `output: 'export'`),
+  `tsconfig.json`, `postcss.config.mjs`, `.gitignore`, `.env.example`.
+- Copiados byte a byte de `manuel-erasmo-oss/tyui` (commit `1555027`):
+  `tailwind.config.ts`, `src/app/globals.css`, `postcss.config.mjs`,
+  `tsconfig.json`, `.gitignore`. `BTN_PRIMARY`, `formatCedula`, el patrón
+  de multicuenta de `firebase.ts`, `TRAMOS_ISR` y el SVG del isotipo
+  (`Sidebar.tsx`) se copiaron literalmente dentro de archivos propios.
+- `src/lib/utils.ts` — `parseFechaLocal`, `fechaLocalISO`, `hoyLocalISO`,
+  `formatDate`, `formatRD`, `redondear2`, `soloDigitos`, `formatCedula`.
+  Nota: en `tyui` NO existen `parseFechaLocal`/`hoyLocalISO` con esos
+  nombres; aquí se escribieron nuevos.
+- `src/lib/firebase.ts` (cliente: Auth + Firestore + Storage) y
+  `src/lib/firebase-admin.ts` (servidor, con `import 'server-only'`).
+- `src/types/index.ts` — el modelo de datos descrito arriba.
+- `src/lib/dgii-fiscal.ts` — constantes con su procedencia, fechas límite,
+  aritmética base de ITBIS, proyección de ISR.
+- `src/app/api/ocr/route.ts` — ver "Ruta OCR" abajo.
+- `src/app/layout.tsx`, `src/app/page.tsx` (placeholder con el isotipo y
+  el roadmap; sin funcionalidad).
+
+### Verificado en esa sesión (resultado real, no solo "implementado")
+
+- `npm audit`: **0 vulnerabilidades**, pero solo gracias a dos `overrides`
+  en `package.json`. Sin ellos reportaba 6 (1 moderada, 5 altas):
+  `@grpc/grpc-js` 1.9.x arrastrado por el SDK cliente de Firebase
+  (`@firebase/firestore`, incluso en su última versión) y `postcss` 8.4.31
+  fijado dentro de Next 15.5.29. Los overrides fuerzan `@grpc/grpc-js`
+  ^1.14.7 y `postcss` ^8.5.33. Si se sube Next o Firebase, revisar si
+  siguen haciendo falta.
+- `npx tsc --noEmit`: limpio. `npm run build`: limpio (`/` estática,
+  `/api/ocr` dinámica).
+- Versiones instaladas: Next 15.5.29, React 18.3.1, TypeScript 5.9.3,
+  firebase 12.19.0, firebase-admin 14.5.1, `@anthropic-ai/sdk` 1.8.0,
+  zod 4.6.7, Tailwind 3.4.19. TypeScript y Firebase se dejaron en la misma
+  major que Nómina a propósito (hay TS 7 y firebase 13 publicados).
+- Fechas, con `TZ=America/Santo_Domingo`: `parseFechaLocal('2026-03-01')`
+  da día 1 de marzo; `new Date('2026-03-01')` da día **28** (el bug de la
+  lección 1, reproducido). `2026-02-30`, `2026-3-1` y un ISO con hora
+  lanzan error.
+- Motor fiscal: IR-17 de nov-2026 → `2026-12-10`, de dic-2026 →
+  `2027-01-10`. ITBIS 18,000 − 5,400.10 − 1,000.20 → 11,599.70 a pagar;
+  1,000 − 5,400 → 4,400 de saldo a favor. ISR jurídica sobre 1,000,000 →
+  270,000. ISR física: 416,220 → 0; 624,329 → 31,216.35; 867,123 →
+  79,774.80; 1,000,000 → 112,995.25.
+- App levantada con `next start`: `/` responde 200 y renderiza en claro y
+  oscuro sin errores de consola. `POST /api/ocr` sin token → 401; con
+  token y sin Firebase Admin configurado → 503 con mensaje claro;
+  `GET /api/ocr` → 405.
+
+### NO verificado (no había credenciales en la sesión)
+
+- **La extracción OCR nunca corrió contra una factura real.** No había
+  `ANTHROPIC_API_KEY` ni proyecto Firebase: de la route solo se probaron
+  los caminos de rechazo previos a la llamada al modelo. La precisión real
+  es desconocida — es justo lo que el paso 3 del roadmap debe medir.
+- Firebase (Auth, Firestore, Storage, Admin) no se ejecutó contra un
+  proyecto real; solo compila.
+- No hay tests automatizados ni ESLint configurado.
+
+### Ruta OCR (`POST /api/ocr`)
+
+- Request: `Authorization: Bearer <ID token>` +
+  `{ archivoPath, tipo: 'compra' | 'venta' }`. Verifica el token con
+  Firebase Admin, exige que `archivoPath` empiece por
+  `contadores/<uid>/` (el Admin SDK salta las reglas de Storage, así que
+  el aislamiento se comprueba en la route), descarga el archivo y lo envía
+  al modelo. Acepta JPEG/PNG/WebP/GIF/PDF hasta 10 MB.
+- **Convención nueva que esto introduce**: los archivos de un contador
+  viven bajo `contadores/<uid>/…` en Storage. Las reglas de Storage, cuando
+  se escriban, deben usar el mismo prefijo.
+- Modelo `claude-opus-5-5`, salida estructurada con Zod, `effort: medium`,
+  con fallback de servidor (`fallbacks: 'default'`) por si el modelo
+  declina. Cambiar de modelo es una constante (`MODELO_OCR`) — decisión de
+  costo/precisión pendiente de medir con facturas reales.
+- No escribe en Firestore: devuelve `{ extraccion, confianzaOCR,
+  camposIncompletos, archivoMimeType }` para revisión manual. Lo que no
+  pasa validación (fecha inexistente, monto negativo) vuelve como `null` y
+  entra a `camposIncompletos`. `confianzaOCR` es autorreportada por el
+  modelo: sirve para ordenar la cola de revisión, no para saltársela.
+
+### Procedencia de los parámetros en `dgii-fiscal.ts`
+
+- Copiados del código de `tyui`: tramos de ISR de personas físicas, tasa
+  27% del Impuesto Sustitutivo, día 10 del IR-17.
+- Tomado de este documento, sin respaldo en el código de `tyui` ni
+  re-verificación: ISR de personas jurídicas 27%.
+- `⚠️ SIN VERIFICAR` en el código: ITBIS general 18%, día 20 para
+  606/607/IT-1, y que las fechas límite no se corren por fin de semana o
+  feriado. El recargo "10% + 4% + 1.10%" del IR-17 que menciona la lección
+  2 NO se codificó: no aparece en el código de `tyui` y este documento no
+  dice cómo se aplica cada porcentaje.

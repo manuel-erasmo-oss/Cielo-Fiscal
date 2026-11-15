@@ -1,0 +1,177 @@
+// Modelo de datos de Cielo Cloud Fiscal.
+//
+// Convenciones:
+// - Fechas solo-fecha son strings "YYYY-MM-DD" y se leen SIEMPRE con
+//   `parseFechaLocal` (src/lib/utils.ts), nunca con `new Date(iso)`.
+// - Instantes (creadoEn, declaradoEn…) son strings ISO 8601 completos con hora.
+// - Montos en RD$ como number con 2 decimales (ver `redondear2`).
+// - Todo documento lleva `contadorUid`: las reglas de seguridad de
+//   Firestore/Storage deben exigir `contadorUid === request.auth.uid` en cada
+//   lectura/escritura (multi-tenant por contador).
+//
+// Este archivo NO codifica el layout oficial de columnas del 606/607 ni las
+// casillas del IT-1: eso requiere la Norma General / el instructivo vigente
+// de la DGII consultado en la sesión que lo implemente (ver CLAUDE.md).
+
+export type FechaISO = string    // "YYYY-MM-DD"
+export type InstanteISO = string // ISO 8601 con hora
+
+// ─── Cliente ─────────────────────────────────────────────────────────────────
+
+export type TipoPersona = 'juridica' | 'fisica'
+
+// La empresa/persona cuya contabilidad impositiva gestiona el contador.
+export interface ClienteFiscal {
+  id: string
+  contadorUid: string
+  tipoPersona: TipoPersona
+  // RNC (persona jurídica) o cédula (persona física), solo dígitos.
+  rncCedula: string
+  razonSocial: string
+  nombreComercial?: string
+  // Mes (1-12) en que cierra su ejercicio fiscal. Sin default: las fechas de
+  // cierre admitidas por la DGII no se han verificado en este proyecto.
+  mesCierreFiscal?: number
+  activo: boolean
+  creadoEn: InstanteISO
+  actualizadoEn: InstanteISO
+}
+
+// ─── Documento (factura) ─────────────────────────────────────────────────────
+
+// 'compra' alimenta el 606; 'venta' alimenta el 607.
+export type TipoDocumento = 'compra' | 'venta'
+
+// Campos que el OCR intenta extraer. `camposIncompletos` usa estos nombres.
+export type CampoExtraido =
+  | 'rncCedulaContraparte'
+  | 'nombreContraparte'
+  | 'ncf'
+  | 'ncfModificado'
+  | 'fechaComprobante'
+  | 'fechaPago'
+  | 'montoFacturado'
+  | 'itbisFacturado'
+  | 'montoTotal'
+
+export type EstadoRevision =
+  // Recién extraído por OCR; nadie lo ha mirado todavía.
+  | 'pendiente_revision'
+  // Un humano confirmó/corrigió los campos. Único estado que puede entrar a
+  // un reporte que se vaya a declarar.
+  | 'revisado'
+  // Descartado (duplicado, ilegible, no es una factura fiscal…).
+  | 'descartado'
+
+export interface DocumentoFiscal {
+  id: string
+  contadorUid: string
+  clienteId: string
+  tipo: TipoDocumento
+
+  // El archivo real (imagen/PDF) vive en Firebase Storage; aquí solo su ruta.
+  // Nunca embebido en el documento de Firestore.
+  archivoPath: string
+  archivoMimeType: string
+
+  // ── Campos extraídos (null = el OCR no pudo leerlo con seguridad) ──
+  // Proveedor en una compra, cliente en una venta. Solo dígitos.
+  rncCedulaContraparte: string | null
+  nombreContraparte: string | null
+  // NCF o e-NCF tal como aparece impreso.
+  ncf: string | null
+  // NCF afectado, cuando el comprobante es una nota de crédito/débito.
+  ncfModificado: string | null
+  fechaComprobante: FechaISO | null
+  fechaPago: FechaISO | null
+  // Monto antes de ITBIS.
+  montoFacturado: number | null
+  itbisFacturado: number | null
+  montoTotal: number | null
+
+  // ── Confianza de la extracción (snapshot en el dato, no solo en la UI) ──
+  // 0..1, autorreportada por el modelo — orientativa, no una probabilidad
+  // calibrada. Sirve para ordenar la cola de revisión, no para saltársela.
+  confianzaOCR: number
+  // Campos que el OCR dejó en null o marcó como dudosos. Mientras no esté
+  // vacío (o el estado no sea 'revisado'), el documento no debe incluirse en
+  // un reporte declarado.
+  camposIncompletos: CampoExtraido[]
+  estadoRevision: EstadoRevision
+  revisadoEn?: InstanteISO
+
+  creadoEn: InstanteISO
+  actualizadoEn: InstanteISO
+}
+
+// ─── Registros declarables ───────────────────────────────────────────────────
+// Regla de inmutabilidad (lección de Cielo Cloud Nómina, ver CLAUDE.md): un
+// registro con `declarado: true` es histórico. No se recalcula en vivo ni se
+// edita aunque cambie una factura después; solo se puede alterar deshaciendo
+// primero la declaración. El guard debe vivir en los datos (reglas de
+// Firestore + capa de escritura), no solo en la UI.
+
+interface RegistroDeclarable {
+  id: string
+  contadorUid: string
+  clienteId: string
+  anio: number
+  mes: number // 1-12
+  declarado: boolean
+  declaradoEn?: InstanteISO
+  creadoEn: InstanteISO
+  actualizadoEn: InstanteISO
+}
+
+// Snapshot mensual del Formato 606 (compras) o 607 (ventas), construido desde
+// los `DocumentoFiscal` revisados de ese mes.
+export interface ReporteFormato606607 extends RegistroDeclarable {
+  formato: '606' | '607'
+  // Trazabilidad: qué documentos entraron al reporte.
+  documentoIds: string[]
+  cantidadDocumentos: number
+  totalMontoFacturado: number
+  totalItbisFacturado: number
+}
+
+// Declaración mensual de ITBIS (IT-1). Solo la aritmética base sobre 606+607;
+// las casillas reales del formulario (retenciones, proporcionalidad, etc.)
+// están pendientes de la fuente oficial.
+export interface DeclaracionITBIS extends RegistroDeclarable {
+  reporte606Id?: string
+  reporte607Id?: string
+  // ITBIS cobrado en ventas (607).
+  itbisFacturado: number
+  // ITBIS pagado en compras (606) que se adelanta.
+  itbisAdelantado: number
+  saldoAFavorAnterior: number
+  // Resultado: exactamente uno de los dos es > 0, o ambos 0.
+  itbisAPagar: number
+  saldoAFavorSiguiente: number
+  fechaLimite: FechaISO
+}
+
+// Declaración mensual de retenciones (IR-17). Mismo concepto ya implementado
+// en Cielo Cloud Nómina; el desglose por tipo de retención se define al
+// implementar el paso 6 del roadmap contra el formulario vigente.
+export interface DeclaracionIR17 extends RegistroDeclarable {
+  totalRetenciones: number
+  fechaLimite: FechaISO
+}
+
+// Proyección (no declaración) del ISR anual a pagar. Es una estimación para
+// planificación del cliente; nunca se marca como declarada.
+export interface ProyeccionISR {
+  id: string
+  contadorUid: string
+  clienteId: string
+  anioFiscal: number
+  tipoPersona: TipoPersona
+  ingresosProyectados: number
+  gastosDeduciblesProyectados: number
+  rentaNetaImponibleProyectada: number
+  isrProyectado: number
+  // Supuestos en texto libre que el contador quiere dejar registrados.
+  supuestos?: string
+  calculadoEn: InstanteISO
+}
