@@ -1,3 +1,4 @@
+import { normalizarDocumento } from '@/lib/documentos'
 import type { ClienteFiscal, DocumentoFiscal } from '@/types'
 import { AlmacenamientoError, type Repositorio } from './repositorio'
 
@@ -58,7 +59,7 @@ export const repositorioLocal: Repositorio = {
   },
 
   async listarDocumentos() {
-    return leer<DocumentoFiscal>(CLAVE_DOCUMENTOS)
+    return leer<DocumentoFiscal>(CLAVE_DOCUMENTOS).map(normalizarDocumento)
   },
   async guardarDocumento(documento) {
     escribir(CLAVE_DOCUMENTOS, upsert(leer<DocumentoFiscal>(CLAVE_DOCUMENTOS), documento))

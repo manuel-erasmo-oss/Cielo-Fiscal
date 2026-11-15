@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   calcularISRAnualPersonaFisica,
   calcularITBISDelMes,
+  fechaLimite606607,
   fechaLimiteIR17,
   fechaLimiteIT1,
   fechaLimiteMesSiguiente,
@@ -12,11 +13,13 @@ describe('fechas límite', () => {
   it('caen en el mes siguiente al período', () => {
     expect(fechaLimiteIR17(2026, 11)).toBe('2026-12-10')
     expect(fechaLimiteIT1(2026, 11)).toBe('2026-12-20')
+    expect(fechaLimite606607(2026, 11)).toBe('2026-12-15')
   })
 
   it('diciembre pasa a enero del año siguiente', () => {
     expect(fechaLimiteIR17(2026, 12)).toBe('2027-01-10')
     expect(fechaLimiteIT1(2026, 12)).toBe('2027-01-20')
+    expect(fechaLimite606607(2026, 12)).toBe('2027-01-15')
   })
 
   it('rechaza un mes fuera de 1-12', () => {

@@ -192,12 +192,13 @@ confirmado contra la Guía No.14 DGII).
 **Pendiente de verificación oficial antes de producción**:
 - Tasa ITBIS reducida (16%) y catálogo exacto de bienes — solo se asume la
   general 18% por ahora.
-- Día límite exacto de 606/607/IT-1 (`DIA_LIMITE_IT1_606_607 = 20` es un
-  placeholder sin confirmar).
-- Layout exacto de columnas de los archivos 606/607 que exige la Oficina
-  Virtual DGII (NCF vs. e-CF, transición por Ley 32-23) — no se ha
-  construido ningún generador de archivo todavía, a propósito, hasta tener
-  la fuente oficial.
+- Día límite del IT-1 (`DIA_LIMITE_IT1 = 20` es un placeholder sin
+  confirmar). El de los formatos 606 y 607 **sí está verificado: día 15**
+  (antes se asumía 20 y era incorrecto).
+
+**Ya verificado con fuente oficial (2026-11-15)**: layout de los archivos
+606 y 607 — ver la sección "Formatos 606 y 607" y
+`docs/dgii/formatos-606-607.md`.
 
 ## Requisito de captura (dicho por el usuario el 2026-11-15) — NO construido todavía
 
@@ -242,11 +243,10 @@ Variables a contemplar al diseñarla (lista de trabajo, no cerrada):
 - **Volumen en `localStorage`**: sirve para miles de facturas, no para
   decenas de miles. Vigilarlo.
 
-**El usuario va a enviar el formato de envío vigente del 606 (costos y
-gastos) y del 607 (ventas).** Hasta tenerlos NO se fijan los campos que
-extrae el OCR ni se construye ningún generador: esos formatos definen qué
-datos hay que capturar de cada factura (hoy se capturan 9 campos elegidos
-sin esa fuente).
+Los formatos del 606 y 607 ya se recibieron y los campos de la factura ya
+siguen sus columnas (ver "Formatos 606 y 607"). Lo que sigue pendiente de
+este requisito es la captura en sí: partir PDFs grandes, procesar por
+partes, y la revisión a escala.
 
 ## Costo y límites (aprobado por el usuario el 2026-11-15) — NO construido todavía
 
@@ -297,6 +297,53 @@ si Haiku lee bien fotos malas, papel térmico o manuscritas; eso es lo que
 la medición tiene que responder, campo por campo (un dígito mal en un RNC
 o NCF es un error fiscal, no un detalle).
 
+## Formatos 606 y 607 (fuentes recibidas del usuario el 2026-11-15)
+
+El usuario entregó las dos herramientas de envío de la DGII (Excel con
+macros) y sus dos instructivos. **La especificación completa extraída de
+ellos está en `docs/dgii/formatos-606-607.md`** — leerla antes de tocar
+`src/lib/dgii-formatos.ts`. Los binarios originales no están en el repo.
+
+Lo esencial:
+
+- La fuente que manda es **el código de la macro** de cada herramienta (es
+  lo que escribe el TXT); el instructivo aclara el significado. De ahí
+  salen el orden exacto de los 23 campos de cada formato, los catálogos,
+  las expresiones regulares del NCF y el algoritmo del dígito verificador.
+- Archivo: campos separados por `|`, encabezado `606|RNC|AAAAMM|cantidad`,
+  líneas separadas por CRLF y sin salto final.
+- **Vencen el día 15** del mes siguiente. Sin operaciones no hay archivo:
+  se presenta en cero por la Oficina Virtual.
+- **606**: tipo de bienes y servicios y forma de pago son obligatorios y
+  NO están impresos en la factura: los decide el contador. Lo mismo las
+  retenciones y el tratamiento del ITBIS. El OCR no los intenta.
+- **607**: las facturas de consumo (tipo 02) menores de RD$250,000 no van
+  en el archivo; van como totales en el "Resumen General de Facturas de
+  Consumo" de la Oficina Virtual. La pantalla de Reportes los calcula.
+- El dígito verificador está en las macros pero **desactivado**; aquí se
+  usa solo como aviso, nunca bloquea.
+
+**Dudas abiertas (decírselas al usuario; no resolverlas de memoria):**
+
+1. **La herramienta 607 entregada es la versión 2023.1.1 y rechaza los
+   e-NCF (serie E)**; la del 606 es la versión 2025 y sí los acepta. Hoy
+   una venta con e-NCF no se puede marcar como revisada. Falta saber si
+   existe una herramienta 607 más nueva.
+2. **Segunda remisión por retenciones** (606): el instructivo dice que un
+   NCF se vuelve a enviar cuando se paga en otro mes para reportar las
+   retenciones. No está modelado: cada factura pertenece solo al mes de su
+   fecha de comprobante.
+3. El archivo generado **no se ha pasado por la Herramienta de
+   Pre-validación de la DGII** (es una aplicación de Windows). Solo se
+   verificó contra la lógica de la macro. Lo tiene que probar el usuario.
+4. Qué significa cada tipo de e-CF (31-34, 41-47) no está en las fuentes;
+   no se codificó nada que dependa de ello (por eso una nota de crédito
+   electrónica no resta en los totales, igual que en la macro).
+5. **Snapshot al declarar (lección 3) todavía no existe**: el archivo se
+   genera al vuelo desde las facturas y no se guarda. Antes de dar por
+   terminado el 606/607 hay que agregar "marcar como declarado" con el
+   contenido exacto enviado, y bloquear la edición de esas facturas.
+
 ## Roadmap (MVP angosto primero)
 
 1. ✅ **Clientes** (`ClienteFiscal`, CRUD) — hecho el 2026-11-15, sin auth
@@ -304,12 +351,15 @@ o NCF es un error fiscal, no un detalle).
 2. ✅ **Facturas**: subida de imagen/PDF → `POST /api/ocr` → revisión manual
    de campos → `DocumentoFiscal`; también captura a mano. Hecho el
    2026-11-15, **pero el OCR no se ha probado con una factura real**.
-3. ⏭️ **Siguiente**: (a) recibir del usuario los formatos de envío del 606
-   y 607 y ajustar los campos de `DocumentoFiscal` y del OCR a lo que esos
-   formatos exigen; (b) rediseñar la captura para los tres tipos de entrada
-   (ver "Requisito de captura"); (c) medir el OCR con facturas reales
-   (requiere desplegar en Vercel); (d) Reporte 606.
-4. Reporte 607 (ventas).
+3. ✅ **Campos de la factura alineados con los formatos 606 y 607** y
+   **generación de los archivos TXT** del 606 y del 607 (pantalla
+   Reportes) — hecho el 2026-11-15 contra las fuentes oficiales. Falta que
+   el usuario pase un archivo por el pre-validador de la DGII.
+4. ⏭️ **Siguiente**: (a) medir el OCR con facturas reales, comparando
+   modelos (requiere API key y facturas de muestra); (b) rediseñar la
+   captura para fotos, PDF de una factura y PDF de cientos (ver "Requisito
+   de captura"); (c) snapshot al declarar; (d) resolver las dudas abiertas
+   de "Formatos 606 y 607".
 5. Declaración ITBIS mensual (ya es solo aritmética sobre 606+607).
 6. IR-17 (adaptar el mismo concepto ya implementado en Nómina).
 7. Proyección de ISR.
@@ -357,13 +407,15 @@ roadmap.
 - **Pantallas** (`src/app`): `/` Inicio (conteos y facturas por revisar por
   cliente), `/clientes` (alta, edición, borrado en cascada), `/facturas`
   (filtros por cliente/tipo/mes/estado, totales, alta por OCR o a mano,
-  edición, borrado), `/configuracion` (código de acceso al OCR).
+  edición, borrado), `/reportes` (genera y descarga el TXT del 606 o 607
+  de un cliente y un mes), `/configuracion` (código de acceso al OCR).
 - **Servidor**: solo `src/app/api/ocr/route.ts`.
 - **Datos** (`src/lib/datos`): `repositorio.ts` (interfaz),
   `repositorio-local.ts` (`localStorage`, claves `cielo-fiscal:clientes:v1`
   y `cielo-fiscal:documentos:v1`), `datos-context.tsx` (estado compartido).
-- **Lógica pura** (`src/lib`): `documentos.ts` (campos requeridos, qué
-  factura puede entrar a un reporte, duplicados, validación de cliente),
+- **Lógica pura** (`src/lib`): `dgii-formatos.ts` (catálogos, reglas y
+  generadores del 606 y 607), `documentos.ts` (qué factura puede marcarse
+  revisada y entrar a un reporte, duplicados, validación de cliente),
   `dgii-fiscal.ts` (motor fiscal), `utils.ts` (fechas locales, montos),
   `ocr-tipos.ts` (contrato servidor↔navegador), `ocr-cliente.ts` (prepara
   el archivo y llama a la ruta), `config-local.ts`.
@@ -381,18 +433,29 @@ roadmap.
 ### Reglas de negocio ya implementadas (y probadas)
 
 - Una factura se guarda como **pendiente** (puede estar incompleta) o como
-  **revisada** (exige RNC/cédula, nombre, NCF, fecha, monto, ITBIS y total).
-  `esIncluibleEnReporte` es el único criterio para que entre a un reporte:
-  revisada Y completa. Los reportes futuros deben usar esa función.
+  **revisada**. Revisada exige que el formato de la DGII no le objete nada
+  (`problemasDeRevision` → `validarCompra606` / `validarVenta607`).
+  `esIncluibleEnReporte` es el único criterio para entrar a un reporte.
+- Los problemas tienen nivel `error` (bloquea) o `aviso` (solo se muestra:
+  dígito verificador que no cuadra, cobros que no suman el total).
+- El OCR extrae solo lo impreso (RNC, nombre, NCF, fechas, montos,
+  impuestos, forma de pago si aparece). En compras reparte el subtotal
+  entre servicios y bienes y marca ese reparto como dudoso si no está
+  seguro o si no suma el subtotal. Todo lo que es criterio del contador
+  queda vacío para que lo llene la persona.
 - Los campos de los que el OCR dudó se marcan en ámbar hasta que una
-  persona los toca. ITBIS en cero es un dato válido, no un faltante.
+  persona los toca. ITBIS en cero es un dato válido, pero hay que
+  escribirlo: se exige un valor explícito (criterio propio, más estricto
+  que la macro, que no valida ese campo).
 - **Duplicado** = mismo cliente, mismo tipo, mismo NCF y misma contraparte.
   Se avisa y no se deja marcar como revisada dos veces.
-- Si monto + ITBIS no coincide con el total se muestra un aviso que NO
-  bloquea (una factura puede traer otros cargos).
-- RNC/cédula: solo se valida la longitud (9 u 11 dígitos). El dígito
-  verificador NO se comprueba — su algoritmo no se consultó en fuente
-  oficial. El formato del NCF tampoco se valida, por la misma razón.
+- Si lo facturado más los impuestos no da el total impreso se muestra un
+  aviso que NO bloquea.
+- **Reportes**: no deja descargar si en ese mes hay facturas pendientes o
+  revisadas con errores — un archivo incompleto es peor que ninguno.
+- Los registros guardados con el modelo anterior (9 campos) se completan
+  con `null` al leerlos (`normalizarDocumento`) y aparecen en Reportes como
+  facturas con errores hasta que alguien las complete.
 - Datos dañados en `localStorage` producen un aviso y **no se
   sobrescriben**.
 - Fotos de más de 4 MB se reducen en el navegador (lado mayor 2200 px,
@@ -407,17 +470,24 @@ roadmap.
   avisos altos). Al quitar Firebase desapareció el otro override.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
   `/api/ocr` dinámica).
-- `npm test` (vitest, en zona horaria de RD): **40 de 40** pasan — fechas
+- `npm test` (vitest, en zona horaria de RD): **75 de 75** pasan — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
-  1), motor fiscal, reglas de facturas, duplicados, validación de cliente.
-- Recorrido en navegador real (Chromium) contra `next start`: **41 de 41**
-  comprobaciones — alta/edición/borrado de clientes, captura manual,
-  flujo OCR con respuesta simulada, duplicados, reducción de imagen
-  (37.9 MB → 2.81 MB), totales (RD$3,500.50 / RD$180.00 / RD$1,180.00),
-  filtros, persistencia tras recargar, borrado en cascada, datos dañados,
-  vista móvil sin desborde, sin errores de consola. El script vivía en el
-  scratchpad de la sesión y NO está en el repo: no hay pruebas de
-  navegador automatizadas todavía.
+  1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
+  comparados carácter por carácter, dígito verificador, duplicados.
+- Recorrido en navegador real (Chromium) contra `next start`, **25 de 25**
+  comprobaciones del flujo nuevo: compra por OCR (respuesta simulada) y a
+  mano, nota de crédito, retención que exige fecha de pago, venta con
+  formas de cobro, factura de consumo menor, e-NCF rechazado en ventas,
+  y descarga real de los dos archivos. El 606 descargado fue exactamente:
+  `606|401007551|202603|3` + tres líneas de 23 campos, sin salto final,
+  con totales RD$1,400.00 / RD$252.00 (la nota de crédito resta). El 607:
+  `607|401007551|202603|1` + una línea, y el resumen de consumo (1
+  factura, RD$1,000.00 / RD$180.00). Una primera tanda de 41
+  comprobaciones cubrió clientes, filtros, persistencia, borrado en
+  cascada, datos dañados y móvil antes del cambio de modelo. Los scripts
+  vivían en el scratchpad y NO están en el repo.
+- Dato de control del dígito verificador: el algoritmo de la macro da
+  correcto el RNC `401007551`.
 - Ruta OCR contra el servidor real: sin código o código incorrecto → 401;
   tipo inválido → 400; tipo de archivo no soportado → 415; JSON en vez de
   formulario → 400; más de 4 MB → 413; código correcto con API key falsa →
@@ -429,9 +499,11 @@ roadmap.
 ### NO verificado
 
 - **El OCR nunca ha leído una factura real.** No había API key válida: se
-  probó todo lo que rodea a la llamada al modelo y la pantalla de revisión
-  con una respuesta simulada, pero no la extracción. Su precisión es
-  desconocida.
+  probó todo lo que rodea a la llamada al modelo (que llega a Anthropic y
+  es rechazada por la key falsa) y la pantalla de revisión con una
+  respuesta simulada, pero no la extracción. Su precisión es desconocida.
+- **Los archivos 606 y 607 no se han pasado por el pre-validador de la
+  DGII ni se han enviado.** Solo se verificaron contra la macro.
 - No se ha desplegado en Vercel.
 - No hay ESLint configurado.
 
@@ -445,10 +517,11 @@ roadmap.
   con fallback de servidor (`fallbacks: 'default'`). Cambiar de modelo es
   una constante (`MODELO_OCR`) — decisión de costo/precisión pendiente de
   medir con facturas reales.
-- No guarda nada. Devuelve `{ extraccion, confianzaOCR, camposIncompletos }`.
+- No guarda nada. Devuelve `{ extraccion, confianzaOCR, camposDudosos }`.
   Lo que no pasa validación (fecha inexistente, monto negativo) vuelve como
-  `null` y entra a `camposIncompletos`. `confianzaOCR` es autorreportada por
-  el modelo: orientativa.
+  `null` y entra a `camposDudosos`. Lo que le FALTA a la factura lo calcula
+  el navegador con las reglas del formato (necesita el RNC del cliente).
+  `confianzaOCR` es autorreportada por el modelo: orientativa.
 
 ### Procedencia de los parámetros en `dgii-fiscal.ts`
 
@@ -456,10 +529,9 @@ roadmap.
   27% del Impuesto Sustitutivo, día 10 del IR-17.
 - Tomado de este documento, sin respaldo en el código de `tyui` ni
   re-verificación: ISR de personas jurídicas 27%.
-- `⚠️ SIN VERIFICAR` en el código: ITBIS general 18%, día 20 para
-  606/607/IT-1, y que las fechas límite no se corren por fin de semana o
-  feriado. El recargo "10% + 4% + 1.10%" del IR-17 que menciona la lección
+- `⚠️ SIN VERIFICAR` en el código: ITBIS general 18%, día 20 para el
+  IT-1, y que las fechas límite no se corren por fin de semana o feriado. El recargo "10% + 4% + 1.10%" del IR-17 que menciona la lección
   2 NO se codificó: no aparece en el código de `tyui` y este documento no
   dice cómo se aplica cada porcentaje.
-- Nada del motor fiscal se usa todavía en pantalla: los pasos 1 y 2 no
-  calculan impuestos.
+- Del motor fiscal solo se usa en pantalla la fecha límite del 606/607.
+  Nada calcula impuestos todavía.

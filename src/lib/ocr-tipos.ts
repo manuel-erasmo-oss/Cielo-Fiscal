@@ -20,11 +20,14 @@ export const TAMANO_MAXIMO_BYTES = 4 * 1024 * 1024
 export const ENCABEZADO_CODIGO = 'x-codigo-acceso'
 
 export interface ResultadoOCR {
+  // Todos los campos de la factura; los que el OCR no lee vienen en null.
   extraccion: Pick<DocumentoFiscal, CampoExtraido>
   // 0..1, autorreportada por el modelo. Orientativa.
   confianzaOCR: number
-  // Campos vacíos requeridos + campos que el modelo marcó como dudosos.
-  camposIncompletos: CampoExtraido[]
+  // Campos que el modelo marcó como dudosos o cuyo valor no pasó validación.
+  // Lo que FALTA lo calcula quien recibe la respuesta, con las reglas del
+  // formato (necesita saber de qué cliente es la factura).
+  camposDudosos: CampoExtraido[]
 }
 
 export interface ErrorOCR {

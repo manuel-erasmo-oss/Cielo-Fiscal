@@ -1,3 +1,4 @@
+import { DIA_LIMITE_606_607 } from '@/lib/dgii-formatos'
 import { fechaLocalISO, redondear2 } from '@/lib/utils'
 
 // Motor fiscal de Cielo Cloud Fiscal.
@@ -54,10 +55,10 @@ export const DIA_LIMITE_IR17 = 10
 // (ninguno de los dos está modelado todavía).
 export const TASA_ITBIS_GENERAL = 0.18
 
-// ⚠️ SIN VERIFICAR — placeholder. Día del mes siguiente en que vencen el
-// 606, el 607 y el IT-1. No usar para avisar vencimientos a un cliente real
-// hasta confirmarlo contra la DGII.
-export const DIA_LIMITE_IT1_606_607 = 20
+// ⚠️ SIN VERIFICAR — placeholder. Día del mes siguiente en que vence la
+// declaración de ITBIS (IT-1). El día de los formatos 606 y 607 SÍ está
+// verificado (día 15) y vive en dgii-formatos.ts: `DIA_LIMITE_606_607`.
+export const DIA_LIMITE_IT1 = 20
 
 // ─── Fechas límite ───────────────────────────────────────────────────────────
 
@@ -78,8 +79,13 @@ export function fechaLimiteIR17(anio: number, mes: number): string {
   return fechaLimiteMesSiguiente(anio, mes, DIA_LIMITE_IR17)
 }
 
+// Fuente: instructivos oficiales del 606 (julio 2025) y 607 (sept. 2020).
+export function fechaLimite606607(anio: number, mes: number): string {
+  return fechaLimiteMesSiguiente(anio, mes, DIA_LIMITE_606_607)
+}
+
 export function fechaLimiteIT1(anio: number, mes: number): string {
-  return fechaLimiteMesSiguiente(anio, mes, DIA_LIMITE_IT1_606_607)
+  return fechaLimiteMesSiguiente(anio, mes, DIA_LIMITE_IT1)
 }
 
 // ─── ITBIS mensual ───────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Toast } from '@/components/ui/Toast'
 import { CARD_CLASS, INPUT_CLASS, LABEL_CLASS, TH_CLASS } from '@/components/ui/clases'
 import { useDatos } from '@/lib/datos/datos-context'
-import { periodoDe } from '@/lib/documentos'
+import { montoFacturadoDe, periodoDe } from '@/lib/documentos'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD, redondear2 } from '@/lib/utils'
 import type { DocumentoFiscal, EstadoRevision, TipoDocumento } from '@/types'
 
@@ -57,7 +57,7 @@ function FacturasContenido() {
   }, [documentos, clienteFiltro, tipo, estado, periodo])
 
   const totales = useMemo(() => ({
-    monto: redondear2(filtrados.reduce((s, d) => s + (d.montoFacturado ?? 0), 0)),
+    monto: redondear2(filtrados.reduce((s, d) => s + (montoFacturadoDe(d) ?? 0), 0)),
     itbis: redondear2(filtrados.reduce((s, d) => s + (d.itbisFacturado ?? 0), 0)),
     total: redondear2(filtrados.reduce((s, d) => s + (d.montoTotal ?? 0), 0)),
   }), [filtrados])
@@ -192,7 +192,7 @@ function FacturasContenido() {
                           {d.ncf ?? <span className="text-zinc-300 dark:text-zinc-600">—</span>}
                         </td>
                         <td className="px-3 py-3.5 text-zinc-600 dark:text-zinc-400">{d.tipo === 'compra' ? 'Compra' : 'Venta'}</td>
-                        <td className="px-3 py-3.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300 whitespace-nowrap">{monto(d.montoFacturado)}</td>
+                        <td className="px-3 py-3.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300 whitespace-nowrap">{monto(montoFacturadoDe(d))}</td>
                         <td className="px-3 py-3.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300 whitespace-nowrap">{monto(d.itbisFacturado)}</td>
                         <td className="px-3 py-3.5 text-right tabular-nums font-semibold text-[#1B2980] dark:text-indigo-300 whitespace-nowrap">{monto(d.montoTotal)}</td>
                         <td className="px-3 py-3.5 whitespace-nowrap">

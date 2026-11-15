@@ -1,34 +1,80 @@
+import {
+  validarCompra606,
+  validarVenta607,
+  type CamposDocumento,
+  type Problema,
+} from '@/lib/dgii-formatos'
 import { soloDigitos } from '@/lib/utils'
-import type { CampoExtraido, ClienteFiscal, DocumentoFiscal } from '@/types'
+import type { CampoExtraido, ClienteFiscal, DocumentoFiscal, TipoDocumento } from '@/types'
+
+export type { CamposDocumento } from '@/lib/dgii-formatos'
 
 // Lógica pura sobre clientes y facturas: sin React, sin almacenamiento. Todo
 // lo que decide si un dato puede entrar a un reporte vive aquí, para que la
 // regla sea la misma la aplique la pantalla, el OCR o (más adelante) el
-// servidor.
+// servidor. Las reglas de los formatos 606/607 están en dgii-formatos.ts.
 
-export const CAMPOS_EXTRAIDOS = [
+const COMUNES = [
   'rncCedulaContraparte',
   'nombreContraparte',
   'ncf',
   'ncfModificado',
   'fechaComprobante',
-  'fechaPago',
-  'montoFacturado',
   'itbisFacturado',
+  'impuestoSelectivoConsumo',
+  'otrosImpuestos',
+  'propinaLegal',
   'montoTotal',
 ] as const satisfies readonly CampoExtraido[]
 
-// Campos sin los cuales una factura no puede darse por revisada. Los otros
-// dos (ncfModificado, fechaPago) son legítimamente vacíos en muchas facturas.
-export const CAMPOS_REQUERIDOS: readonly CampoExtraido[] = [
-  'rncCedulaContraparte',
-  'nombreContraparte',
-  'ncf',
-  'fechaComprobante',
+const SOLO_COMPRA = [
+  'tipoBienesServicios',
+  'fechaPago',
+  'montoServicios',
+  'montoBienes',
+  'itbisRetenido',
+  'itbisProporcionalidad',
+  'itbisLlevadoAlCosto',
+  'tipoRetencionISR',
+  'montoRetencionRenta',
+  'formaPago',
+] as const satisfies readonly CampoExtraido[]
+
+const SOLO_VENTA = [
+  'tipoIdentificacion',
+  'tipoIngreso',
+  'fechaRetencion',
   'montoFacturado',
-  'itbisFacturado',
-  'montoTotal',
+  'itbisRetenidoTerceros',
+  'retencionRentaTerceros',
+  'cobroEfectivo',
+  'cobroCheque',
+  'cobroTarjeta',
+  'cobroCredito',
+  'cobroBonos',
+  'cobroPermuta',
+  'cobroOtras',
+] as const satisfies readonly CampoExtraido[]
+
+export const CAMPOS_EXTRAIDOS = [...COMUNES, ...SOLO_COMPRA, ...SOLO_VENTA] as const
+
+// Campos que aplican a cada tipo de factura; el resto queda en null.
+export const CAMPOS_POR_TIPO: Record<TipoDocumento, readonly CampoExtraido[]> = {
+  compra: [...COMUNES, ...SOLO_COMPRA],
+  venta: [...COMUNES, ...SOLO_VENTA],
+}
+
+export const CAMPOS_FECHA: readonly CampoExtraido[] = ['fechaComprobante', 'fechaPago', 'fechaRetencion']
+
+// Códigos de catálogo y demás campos de texto que no son montos ni fechas.
+export const CAMPOS_TEXTO: readonly CampoExtraido[] = [
+  'rncCedulaContraparte', 'nombreContraparte', 'ncf', 'ncfModificado',
+  'tipoBienesServicios', 'tipoRetencionISR', 'formaPago', 'tipoIdentificacion', 'tipoIngreso',
 ]
+
+export const CAMPOS_MONTO: readonly CampoExtraido[] = CAMPOS_EXTRAIDOS.filter(
+  c => !CAMPOS_FECHA.includes(c) && !CAMPOS_TEXTO.includes(c),
+)
 
 export const ETIQUETA_CAMPO: Record<CampoExtraido, string> = {
   rncCedulaContraparte: 'RNC / Cédula',
@@ -36,28 +82,72 @@ export const ETIQUETA_CAMPO: Record<CampoExtraido, string> = {
   ncf: 'NCF',
   ncfModificado: 'NCF modificado',
   fechaComprobante: 'Fecha del comprobante',
-  fechaPago: 'Fecha de pago',
-  montoFacturado: 'Monto facturado',
   itbisFacturado: 'ITBIS facturado',
-  montoTotal: 'Monto total',
+  impuestoSelectivoConsumo: 'Impuesto selectivo al consumo',
+  otrosImpuestos: 'Otros impuestos / tasas',
+  propinaLegal: 'Propina legal',
+  montoTotal: 'Total de la factura',
+  tipoBienesServicios: 'Tipo de bienes y servicios',
+  fechaPago: 'Fecha de pago',
+  montoServicios: 'Monto en servicios',
+  montoBienes: 'Monto en bienes',
+  itbisRetenido: 'ITBIS retenido',
+  itbisProporcionalidad: 'ITBIS sujeto a proporcionalidad',
+  itbisLlevadoAlCosto: 'ITBIS llevado al costo',
+  tipoRetencionISR: 'Tipo de retención de ISR',
+  montoRetencionRenta: 'Monto retención renta',
+  formaPago: 'Forma de pago',
+  tipoIdentificacion: 'Tipo de identificación',
+  tipoIngreso: 'Tipo de ingreso',
+  fechaRetencion: 'Fecha de retención',
+  montoFacturado: 'Monto facturado',
+  itbisRetenidoTerceros: 'ITBIS retenido por terceros',
+  retencionRentaTerceros: 'Retención de renta por terceros',
+  cobroEfectivo: 'Efectivo',
+  cobroCheque: 'Cheque / transferencia / depósito',
+  cobroTarjeta: 'Tarjeta débito / crédito',
+  cobroCredito: 'Venta a crédito',
+  cobroBonos: 'Bonos o certificados de regalo',
+  cobroPermuta: 'Permuta',
+  cobroOtras: 'Otras formas',
 }
 
-export type CamposDocumento = Pick<DocumentoFiscal, CampoExtraido>
+// Todos los campos en null: punto de partida de una factura nueva.
+export const CAMPOS_VACIOS: CamposDocumento = Object.fromEntries(
+  CAMPOS_EXTRAIDOS.map(c => [c, null]),
+) as CamposDocumento
 
-// Campos requeridos que siguen vacíos.
-export function camposRequeridosFaltantes(campos: CamposDocumento): CampoExtraido[] {
-  return CAMPOS_REQUERIDOS.filter(c => campos[c] === null || campos[c] === '')
+// Completa con null los campos que le falten a un registro guardado por una
+// versión anterior del modelo (antes de alinear con los formatos 606/607).
+export function normalizarDocumento(crudo: DocumentoFiscal): DocumentoFiscal {
+  return { ...CAMPOS_VACIOS, ...crudo }
 }
 
-// Una factura solo puede marcarse 'revisado' con todos los requeridos llenos.
-export function puedeMarcarseRevisada(campos: CamposDocumento): boolean {
-  return camposRequeridosFaltantes(campos).length === 0
+// Monto sin impuestos: en compras es servicios + bienes (así lo calcula el
+// 606); en ventas es el campo propio.
+export function montoFacturadoDe(
+  doc: Pick<DocumentoFiscal, 'tipo' | 'montoServicios' | 'montoBienes' | 'montoFacturado'>,
+): number | null {
+  if (doc.tipo === 'venta') return doc.montoFacturado
+  if (doc.montoServicios === null && doc.montoBienes === null) return null
+  return (doc.montoServicios ?? 0) + (doc.montoBienes ?? 0)
+}
+
+// Todo lo que el formato de la DGII objetaría de esta factura, más avisos.
+// `rncCliente` es el RNC/cédula del cliente del contador.
+export function problemasDeRevision(tipo: TipoDocumento, campos: CamposDocumento, rncCliente: string): Problema[] {
+  return tipo === 'compra' ? validarCompra606(campos, rncCliente) : validarVenta607(campos, rncCliente)
+}
+
+// Una factura solo puede marcarse 'revisado' si el formato no le objeta nada.
+export function puedeMarcarseRevisada(tipo: TipoDocumento, campos: CamposDocumento, rncCliente: string): boolean {
+  return problemasDeRevision(tipo, campos, rncCliente).every(p => p.nivel !== 'error')
 }
 
 // Único criterio para que una factura entre a un reporte que se va a
-// declarar: una persona la revisó y no le falta ningún campo requerido.
-export function esIncluibleEnReporte(doc: DocumentoFiscal): boolean {
-  return doc.estadoRevision === 'revisado' && puedeMarcarseRevisada(doc)
+// declarar: una persona la revisó y el formato no le objeta nada.
+export function esIncluibleEnReporte(doc: DocumentoFiscal, rncCliente: string): boolean {
+  return doc.estadoRevision === 'revisado' && puedeMarcarseRevisada(doc.tipo, doc, rncCliente)
 }
 
 // Mismo comprobante registrado dos veces para el mismo cliente: mismo tipo,

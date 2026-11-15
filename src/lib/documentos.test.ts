@@ -1,30 +1,35 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CAMPOS_VACIOS,
   buscarDuplicado,
-  camposRequeridosFaltantes,
   esIncluibleEnReporte,
+  montoFacturadoDe,
+  normalizarDocumento,
   periodoDe,
   puedeMarcarseRevisada,
   validarCliente,
 } from './documentos'
 import type { ClienteFiscal, DocumentoFiscal } from '@/types'
 
+const RNC_CLIENTE = '401007551'
+
 function doc(cambios: Partial<DocumentoFiscal> = {}): DocumentoFiscal {
   return {
+    ...CAMPOS_VACIOS,
     id: 'd1',
     contadorUid: 'local',
     clienteId: 'c1',
     tipo: 'compra',
     origen: 'manual',
-    rncCedulaContraparte: '101123456',
+    rncCedulaContraparte: '101123451',
     nombreContraparte: 'Proveedor SRL',
+    tipoBienesServicios: '09',
     ncf: 'B0100000001',
-    ncfModificado: null,
     fechaComprobante: '2026-03-01',
-    fechaPago: null,
-    montoFacturado: 1000,
+    montoBienes: 1000,
     itbisFacturado: 180,
     montoTotal: 1180,
+    formaPago: '01',
     confianzaOCR: 0,
     camposIncompletos: [],
     estadoRevision: 'revisado',
@@ -49,28 +54,43 @@ function cliente(cambios: Partial<ClienteFiscal> = {}): ClienteFiscal {
 }
 
 describe('revisión de facturas', () => {
-  it('completa: no falta nada y puede marcarse revisada', () => {
-    expect(camposRequeridosFaltantes(doc())).toEqual([])
-    expect(puedeMarcarseRevisada(doc())).toBe(true)
-  })
-
-  it('los campos opcionales vacíos no bloquean', () => {
-    expect(puedeMarcarseRevisada(doc({ ncfModificado: null, fechaPago: null }))).toBe(true)
+  it('completa: puede marcarse revisada', () => {
+    expect(puedeMarcarseRevisada('compra', doc(), RNC_CLIENTE)).toBe(true)
   })
 
   it('ITBIS en cero es un dato, no un faltante', () => {
-    expect(puedeMarcarseRevisada(doc({ itbisFacturado: 0 }))).toBe(true)
+    expect(puedeMarcarseRevisada('compra', doc({ itbisFacturado: 0 }), RNC_CLIENTE)).toBe(true)
   })
 
-  it('lista los requeridos vacíos', () => {
-    expect(camposRequeridosFaltantes(doc({ ncf: null, montoTotal: null }))).toEqual(['ncf', 'montoTotal'])
+  it('no puede marcarse revisada si el formato de la DGII le objeta algo', () => {
+    expect(puedeMarcarseRevisada('compra', doc({ ncf: null }), RNC_CLIENTE)).toBe(false)
+    expect(puedeMarcarseRevisada('compra', doc({ formaPago: null }), RNC_CLIENTE)).toBe(false)
+    expect(puedeMarcarseRevisada('compra', doc({ tipoBienesServicios: null }), RNC_CLIENTE)).toBe(false)
   })
 
-  it('solo entra a un reporte si está revisada Y completa', () => {
-    expect(esIncluibleEnReporte(doc())).toBe(true)
-    expect(esIncluibleEnReporte(doc({ estadoRevision: 'pendiente_revision' }))).toBe(false)
-    expect(esIncluibleEnReporte(doc({ estadoRevision: 'descartado' }))).toBe(false)
-    expect(esIncluibleEnReporte(doc({ ncf: null }))).toBe(false)
+  it('el nombre de la contraparte no es obligatorio (no va en el formato)', () => {
+    expect(puedeMarcarseRevisada('compra', doc({ nombreContraparte: null }), RNC_CLIENTE)).toBe(true)
+  })
+
+  it('solo entra a un reporte si está revisada Y sin errores', () => {
+    expect(esIncluibleEnReporte(doc(), RNC_CLIENTE)).toBe(true)
+    expect(esIncluibleEnReporte(doc({ estadoRevision: 'pendiente_revision' }), RNC_CLIENTE)).toBe(false)
+    expect(esIncluibleEnReporte(doc({ estadoRevision: 'descartado' }), RNC_CLIENTE)).toBe(false)
+    expect(esIncluibleEnReporte(doc({ ncf: null }), RNC_CLIENTE)).toBe(false)
+  })
+
+  it('montoFacturadoDe: compras suman servicios y bienes; ventas usan su campo', () => {
+    expect(montoFacturadoDe(doc({ montoServicios: 250 }))).toBe(1250)
+    expect(montoFacturadoDe(doc({ montoServicios: null, montoBienes: null }))).toBeNull()
+    expect(montoFacturadoDe(doc({ tipo: 'venta', montoFacturado: 700 }))).toBe(700)
+  })
+
+  it('normalizarDocumento completa con null lo que le falte a un registro viejo', () => {
+    const { formaPago: _f, cobroEfectivo: _c, ...viejo } = doc()
+    const normal = normalizarDocumento(viejo as DocumentoFiscal)
+    expect(normal.formaPago).toBeNull()
+    expect(normal.cobroEfectivo).toBeNull()
+    expect(normal.ncf).toBe('B0100000001')
   })
 
   it('periodoDe', () => {

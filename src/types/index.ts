@@ -42,21 +42,52 @@ export interface ClienteFiscal {
 }
 
 // ─── Documento (factura) ─────────────────────────────────────────────────────
+// Los campos siguen las columnas de los formatos de envío 606 (compras) y
+// 607 (ventas) de la DGII. Especificación y fuentes: docs/dgii/formatos-606-607.md
 
 // 'compra' alimenta el 606; 'venta' alimenta el 607.
 export type TipoDocumento = 'compra' | 'venta'
 
-// Campos que el OCR intenta extraer. `camposIncompletos` usa estos nombres.
+// Campos que una persona (o el OCR) llena. `camposIncompletos` usa estos
+// nombres. Un mismo registro guarda todos; los que no aplican a su tipo
+// quedan en null.
 export type CampoExtraido =
+  // ── Comunes ──
   | 'rncCedulaContraparte'
   | 'nombreContraparte'
   | 'ncf'
   | 'ncfModificado'
   | 'fechaComprobante'
-  | 'fechaPago'
-  | 'montoFacturado'
   | 'itbisFacturado'
+  | 'impuestoSelectivoConsumo'
+  | 'otrosImpuestos'
+  | 'propinaLegal'
   | 'montoTotal'
+  // ── Solo compra (606) ──
+  | 'tipoBienesServicios'
+  | 'fechaPago'
+  | 'montoServicios'
+  | 'montoBienes'
+  | 'itbisRetenido'
+  | 'itbisProporcionalidad'
+  | 'itbisLlevadoAlCosto'
+  | 'tipoRetencionISR'
+  | 'montoRetencionRenta'
+  | 'formaPago'
+  // ── Solo venta (607) ──
+  | 'tipoIdentificacion'
+  | 'tipoIngreso'
+  | 'fechaRetencion'
+  | 'montoFacturado'
+  | 'itbisRetenidoTerceros'
+  | 'retencionRentaTerceros'
+  | 'cobroEfectivo'
+  | 'cobroCheque'
+  | 'cobroTarjeta'
+  | 'cobroCredito'
+  | 'cobroBonos'
+  | 'cobroPermuta'
+  | 'cobroOtras'
 
 export type EstadoRevision =
   // Recién extraído por OCR; nadie lo ha mirado todavía.
@@ -84,28 +115,63 @@ export interface DocumentoFiscal {
   archivoMimeType?: string
   archivoPath?: string
 
-  // ── Campos extraídos (null = el OCR no pudo leerlo con seguridad) ──
-  // Proveedor en una compra, cliente en una venta. Solo dígitos.
+  // ── Comunes a 606 y 607 (null = sin dato) ──
+  // Proveedor en una compra, cliente en una venta. RNC/cédula: solo dígitos.
   rncCedulaContraparte: string | null
+  // No va en ningún formato; es para que la persona reconozca la factura.
   nombreContraparte: string | null
-  // NCF o e-NCF tal como aparece impreso.
   ncf: string | null
   // NCF afectado, cuando el comprobante es una nota de crédito/débito.
   ncfModificado: string | null
   fechaComprobante: FechaISO | null
-  fechaPago: FechaISO | null
-  // Monto antes de ITBIS.
-  montoFacturado: number | null
   itbisFacturado: number | null
+  impuestoSelectivoConsumo: number | null
+  otrosImpuestos: number | null
+  propinaLegal: number | null
+  // Total impreso en la factura. No va en ningún formato: sirve para cuadrar.
   montoTotal: number | null
+
+  // ── Solo compra (606) ──
+  // Código de 2 dígitos del catálogo "Tipo de bienes y servicios comprados".
+  tipoBienesServicios: string | null
+  fechaPago: FechaISO | null
+  // Sin impuestos. El "total monto facturado" del 606 es la suma de ambos.
+  montoServicios: number | null
+  montoBienes: number | null
+  itbisRetenido: number | null
+  itbisProporcionalidad: number | null
+  itbisLlevadoAlCosto: number | null
+  // Código de 2 dígitos del catálogo "Tipo de retención en ISR".
+  tipoRetencionISR: string | null
+  montoRetencionRenta: number | null
+  // Código de 2 dígitos del catálogo "Forma de pago".
+  formaPago: string | null
+
+  // ── Solo venta (607) ──
+  // '1' RNC, '2' cédula, '3' pasaporte o ID tributaria.
+  tipoIdentificacion: string | null
+  // Código de 1 dígito del catálogo "Tipo de ingreso".
+  tipoIngreso: string | null
+  fechaRetencion: FechaISO | null
+  // Sin impuestos.
+  montoFacturado: number | null
+  itbisRetenidoTerceros: number | null
+  retencionRentaTerceros: number | null
+  // Cómo se cobró la venta, con impuestos incluidos.
+  cobroEfectivo: number | null
+  cobroCheque: number | null
+  cobroTarjeta: number | null
+  cobroCredito: number | null
+  cobroBonos: number | null
+  cobroPermuta: number | null
+  cobroOtras: number | null
 
   // ── Confianza de la extracción (snapshot en el dato, no solo en la UI) ──
   // 0..1, autorreportada por el modelo — orientativa, no una probabilidad
   // calibrada. Sirve para ordenar la cola de revisión, no para saltársela.
   confianzaOCR: number
-  // Campos que el OCR dejó en null o marcó como dudosos. Mientras no esté
-  // vacío (o el estado no sea 'revisado'), el documento no debe incluirse en
-  // un reporte declarado.
+  // Campos de los que el OCR dudó y que nadie ha tocado, más los que
+  // impedían marcarla como revisada al guardarla como pendiente.
   camposIncompletos: CampoExtraido[]
   estadoRevision: EstadoRevision
   revisadoEn?: InstanteISO
@@ -134,7 +200,10 @@ interface RegistroDeclarable {
 }
 
 // Snapshot mensual del Formato 606 (compras) o 607 (ventas), construido desde
-// los `DocumentoFiscal` revisados de ese mes.
+// los `DocumentoFiscal` revisados de ese mes. TODAVÍA NO SE USA: hoy el
+// archivo se genera al vuelo desde las facturas y no se guarda. Cuando
+// exista "marcar como declarado", el snapshot debe guardar el contenido
+// exacto del archivo enviado.
 export interface ReporteFormato606607 extends RegistroDeclarable {
   formato: '606' | '607'
   // Trazabilidad: qué documentos entraron al reporte.
