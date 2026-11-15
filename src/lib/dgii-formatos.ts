@@ -274,9 +274,11 @@ export function validarCompra606(doc: CamposDocumento, rncCliente: string): Prob
     p.push(err('tipoRetencionISR', 'Tipo de retención no válido.'))
   }
 
-  // 23. Forma de pago
-  if (!doc.formaPago) p.push(err('formaPago', 'Elige la forma de pago.'))
-  else if (!enCatalogo(FORMA_PAGO_606, doc.formaPago)) p.push(err('formaPago', 'Forma de pago no válida.'))
+  // 23. Forma de pago. La herramienta de la DGII la exige, pero el usuario
+  // decidió que NO sea obligatoria al registrar la factura: si falta, se
+  // completa al generar el reporte con una forma de pago por defecto (ver
+  // `generar606`). Aquí solo se comprueba que, si viene, sea del catálogo.
+  if (doc.formaPago && !enCatalogo(FORMA_PAGO_606, doc.formaPago)) p.push(err('formaPago', 'Forma de pago no válida.'))
 
   return p
 }
@@ -404,7 +406,8 @@ const fecha = (iso: string | null) => (iso ? iso.replaceAll('-', '') : '')
 const texto = (s: string | null) => s ?? ''
 const signo = (doc: Pick<DocumentoFiscal, 'ncf'>) => (esNotaDeCredito(doc) ? -1 : 1)
 
-export function linea606(doc: CamposDocumento): string {
+// `formaPagoPorDefecto` se usa solo si la factura no trae forma de pago.
+export function linea606(doc: CamposDocumento, formaPagoPorDefecto?: string): string {
   const total = (doc.montoServicios ?? 0) + (doc.montoBienes ?? 0)
   const itbisPorAdelantar = (doc.itbisFacturado ?? 0) - (doc.itbisLlevadoAlCosto ?? 0)
   return [
@@ -430,7 +433,7 @@ export function linea606(doc: CamposDocumento): string {
     monto(doc.impuestoSelectivoConsumo),          // 20 Impuesto selectivo al consumo
     monto(doc.otrosImpuestos),                    // 21 Otros impuestos/tasas
     monto(doc.propinaLegal),                      // 22 Propina legal
-    texto(doc.formaPago),                         // 23 Forma de pago
+    texto(doc.formaPago ?? formaPagoPorDefecto ?? null), // 23 Forma de pago
   ].join('|')
 }
 
@@ -456,11 +459,33 @@ export function linea607(doc: CamposDocumento): string {
   ].join('|')
 }
 
+export interface Opciones606 {
+  // Código del catálogo de forma de pago para las compras que no la indican.
+  formaPagoPorDefecto?: string
+}
+
+export function comprasSinFormaPago(compras: readonly CamposDocumento[]): number {
+  return compras.filter(c => !c.formaPago).length
+}
+
 // `periodo` en formato AAAAMM. `compras` deben venir ya filtradas (del
 // período, revisadas y sin errores): aquí no se valida fila por fila.
-export function generar606(rncCliente: string, periodo: string, compras: readonly CamposDocumento[]): ArchivoDGII {
+export function generar606(
+  rncCliente: string,
+  periodo: string,
+  compras: readonly CamposDocumento[],
+  opciones: Opciones606 = {},
+): ArchivoDGII {
   exigirEncabezado(rncCliente, periodo, compras.length, MAXIMO_REGISTROS_606)
-  const lineas = [`606|${rncCliente}|${periodo}|${compras.length}`, ...compras.map(linea606)]
+  const { formaPagoPorDefecto } = opciones
+  if (formaPagoPorDefecto !== undefined && !enCatalogo(FORMA_PAGO_606, formaPagoPorDefecto)) {
+    throw new Error('La forma de pago por defecto no es válida.')
+  }
+  const sinForma = comprasSinFormaPago(compras)
+  if (sinForma > 0 && !formaPagoPorDefecto) {
+    throw new Error(`Hay ${sinForma} compra(s) sin forma de pago y el formato de la DGII la exige. Elige una forma de pago por defecto.`)
+  }
+  const lineas = [`606|${rncCliente}|${periodo}|${compras.length}`, ...compras.map(c => linea606(c, formaPagoPorDefecto))]
   return {
     nombreArchivo: `DGII_F_606_${rncCliente}_${periodo}.TXT`,
     contenido: lineas.join('\r\n'),

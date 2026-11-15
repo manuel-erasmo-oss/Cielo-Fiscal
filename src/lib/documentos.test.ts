@@ -64,12 +64,13 @@ describe('revisión de facturas', () => {
 
   it('no puede marcarse revisada si el formato de la DGII le objeta algo', () => {
     expect(puedeMarcarseRevisada('compra', doc({ ncf: null }), RNC_CLIENTE)).toBe(false)
-    expect(puedeMarcarseRevisada('compra', doc({ formaPago: null }), RNC_CLIENTE)).toBe(false)
+    expect(puedeMarcarseRevisada('compra', doc({ fechaComprobante: null }), RNC_CLIENTE)).toBe(false)
     expect(puedeMarcarseRevisada('compra', doc({ tipoBienesServicios: null }), RNC_CLIENTE)).toBe(false)
   })
 
-  it('el nombre de la contraparte no es obligatorio (no va en el formato)', () => {
+  it('nombre, forma de pago, fecha de pago y retenciones no son obligatorios', () => {
     expect(puedeMarcarseRevisada('compra', doc({ nombreContraparte: null }), RNC_CLIENTE)).toBe(true)
+    expect(puedeMarcarseRevisada('compra', doc({ formaPago: null, fechaPago: null, itbisRetenido: null, tipoRetencionISR: null }), RNC_CLIENTE)).toBe(true)
   })
 
   it('solo entra a un reporte si está revisada Y sin errores', () => {

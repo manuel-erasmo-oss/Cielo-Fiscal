@@ -47,6 +47,8 @@ export interface EntradaExcel {
   // Facturas del período que quedaron fuera.
   pendientes: number
   conErrores: number
+  // Solo 606: forma de pago para las compras que no la indican.
+  formaPagoPorDefecto?: string
 }
 
 export const TITULOS_606 = [
@@ -124,7 +126,7 @@ function hojaResumen(
   }
 }
 
-function fila606(d: DocumentoFiscal): SheetData[number] {
+function fila606(d: DocumentoFiscal, formaPagoPorDefecto?: string): SheetData[number] {
   const total = (d.montoServicios ?? 0) + (d.montoBienes ?? 0)
   return [
     texto(d.rncCedulaContraparte),
@@ -149,7 +151,7 @@ function fila606(d: DocumentoFiscal): SheetData[number] {
     monto(d.impuestoSelectivoConsumo),
     monto(d.otrosImpuestos),
     monto(d.propinaLegal),
-    codigo(FORMA_PAGO_606, d.formaPago),
+    codigo(FORMA_PAGO_606, d.formaPago ?? formaPagoPorDefecto ?? null),
     // ── Referencia (no es parte del formato) ──
     texto(d.nombreContraparte),
     monto(d.montoTotal),
@@ -199,13 +201,17 @@ const porFecha = (a: DocumentoFiscal, b: DocumentoFiscal) =>
 export function construirExcel606(e: EntradaExcel): LibroExcel {
   const filas = [...e.validas].sort(porFecha)
   // Mismos totales que el TXT (las notas de crédito restan).
-  const archivo = filas.length > 0 ? generar606(e.cliente.rncCedula, e.periodo, filas) : null
+  // Sin forma de pago por defecto el TXT no se puede generar, pero el Excel
+  // sí: los totales se calculan igual y la columna 23 queda vacía.
+  const archivo = filas.length > 0
+    ? generar606(e.cliente.rncCedula, e.periodo, filas, { formaPagoPorDefecto: e.formaPagoPorDefecto ?? '01' })
+    : null
   return {
     nombreArchivo: nombreArchivo('606', e),
     hojas: [
       {
         sheet: 'Formato 606',
-        data: [filaTitulos(TITULOS_606, 'proveedor'), ...filas.map(fila606)],
+        data: [filaTitulos(TITULOS_606, 'proveedor'), ...filas.map(f => fila606(f, e.formaPagoPorDefecto))],
         columns: anchos(TITULOS_606.length + 2, { 2: 52, 16: 44, 22: 34, 23: 36 }),
         stickyRowsCount: 1,
       },

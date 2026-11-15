@@ -8,7 +8,14 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS, TH_CLASS } from '@/components/ui/clases'
 import { useDatos } from '@/lib/datos/datos-context'
 import { fechaLimite606607 } from '@/lib/dgii-fiscal'
-import { generar606, generar607, separarVentas607, type ArchivoDGII } from '@/lib/dgii-formatos'
+import {
+  FORMA_PAGO_606,
+  comprasSinFormaPago,
+  generar606,
+  generar607,
+  separarVentas607,
+  type ArchivoDGII,
+} from '@/lib/dgii-formatos'
 import { construirExcel606, construirExcel607 } from '@/lib/excel-reporte'
 import { periodoDe, problemasDeRevision } from '@/lib/documentos'
 import { BTN_PRIMARY, cn, formatDate, formatPeriodo, formatRD } from '@/lib/utils'
@@ -31,6 +38,8 @@ export default function ReportesPage() {
   const [formato, setFormato] = useState<Formato>('606')
   const [periodo, setPeriodo] = useState('') // "YYYY-MM"
   const [errorExcel, setErrorExcel] = useState<string | null>(null)
+  // Forma de pago para las compras que no la indican (el 606 la exige).
+  const [formaPagoDefecto, setFormaPagoDefecto] = useState('')
 
   const cliente = clientes.find(c => c.id === clienteId) ?? clientes[0]
 
@@ -59,18 +68,25 @@ export default function ReportesPage() {
       detalladas = separadas.detalladas
       resumenConsumo = separadas.resumenConsumo
     }
-    if (detalladas.length > 0) {
+    const sinFormaPago = formato === '606' ? comprasSinFormaPago(detalladas) : 0
+    // Falta elegir la forma de pago por defecto: no es un error, es un paso pendiente.
+    const faltaFormaPago = sinFormaPago > 0 && !formaPagoDefecto
+    if (detalladas.length > 0 && !faltaFormaPago) {
       try {
         archivo = formato === '606'
-          ? generar606(cliente.rncCedula, periodoDgii, detalladas)
+          ? generar606(cliente.rncCedula, periodoDgii, detalladas, { formaPagoPorDefecto: formaPagoDefecto || undefined })
           : generar607(cliente.rncCedula, periodoDgii, detalladas)
       } catch (e) {
         errorArchivo = e instanceof Error ? e.message : 'No se pudo generar el archivo.'
       }
     }
+    // Totales para mostrar aunque todavía no se pueda generar el archivo.
+    const totales = formato === '606' && detalladas.length > 0
+      ? generar606(cliente.rncCedula, periodoDgii, detalladas, { formaPagoPorDefecto: '01' })
+      : archivo
     const [anio, mes] = periodo.split('-').map(Number)
-    return { pendientes, conErrores, validas, detalladas, resumenConsumo, archivo, errorArchivo, anio, mes }
-  }, [cliente, periodo, formato, documentos])
+    return { pendientes, conErrores, validas, detalladas, resumenConsumo, archivo, errorArchivo, anio, mes, sinFormaPago, totales }
+  }, [cliente, periodo, formato, documentos, formaPagoDefecto])
 
   // El Excel es un papel de trabajo: se puede exportar aunque el reporte esté
   // incompleto, pero el propio archivo lo dice en su encabezado.
@@ -84,6 +100,7 @@ export default function ReportesPage() {
         validas: analisis.validas,
         pendientes: analisis.pendientes.length,
         conErrores: analisis.conErrores.length,
+        formaPagoPorDefecto: formaPagoDefecto || undefined,
       }
       const libro = formato === '606' ? construirExcel606(entrada) : construirExcel607(entrada)
       // Se carga solo al exportar, para no pesar en la carga de la página.
@@ -168,8 +185,8 @@ export default function ReportesPage() {
 
                 <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                   <div><dt className={LABEL_CLASS}>En el archivo</dt><dd className="mt-1 text-lg font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{analisis.detalladas.length}</dd></div>
-                  <div><dt className={LABEL_CLASS}>Monto facturado</dt><dd className="mt-1 text-lg font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{formatRD(analisis.archivo?.totalMontoFacturado ?? 0)}</dd></div>
-                  <div><dt className={LABEL_CLASS}>ITBIS facturado</dt><dd className="mt-1 text-lg font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{formatRD(analisis.archivo?.totalItbisFacturado ?? 0)}</dd></div>
+                  <div><dt className={LABEL_CLASS}>Monto facturado</dt><dd className="mt-1 text-lg font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{formatRD(analisis.totales?.totalMontoFacturado ?? 0)}</dd></div>
+                  <div><dt className={LABEL_CLASS}>ITBIS facturado</dt><dd className="mt-1 text-lg font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{formatRD(analisis.totales?.totalItbisFacturado ?? 0)}</dd></div>
                   <div><dt className={LABEL_CLASS}>Por revisar</dt><dd className={cn('mt-1 text-lg font-bold tabular-nums', analisis.pendientes.length > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-900 dark:text-zinc-100')}>{analisis.pendientes.length}</dd></div>
                 </dl>
 
@@ -177,6 +194,27 @@ export default function ReportesPage() {
                 {errorExcel && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{errorExcel}</p>}
                 {analisis.errorArchivo && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{analisis.errorArchivo}</p>}
               </div>
+
+              {analisis.sinFormaPago > 0 && (
+                <div className={cn(CARD_CLASS, 'flex flex-wrap items-end gap-4 px-5 py-4')}>
+                  <div className="min-w-[240px] flex-1">
+                    <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                      {analisis.sinFormaPago} compra(s) no indican forma de pago
+                    </h2>
+                    <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                      El formato de la DGII exige una forma de pago en cada línea. Elige cuál se usará para estas
+                      facturas; las que ya tienen la suya no cambian.
+                    </p>
+                  </div>
+                  <div className="flex min-w-[240px] flex-col gap-1.5">
+                    <label htmlFor="reporte-forma-pago" className={LABEL_CLASS}>Forma de pago por defecto</label>
+                    <select id="reporte-forma-pago" value={formaPagoDefecto} onChange={e => setFormaPagoDefecto(e.target.value)} className={INPUT_CLASS}>
+                      <option value="">— Seleccionar —</option>
+                      {FORMA_PAGO_606.map(o => <option key={o.codigo} value={o.codigo}>{o.codigo} · {o.nombre}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
 
               {analisis.pendientes.length > 0 && (
                 <div role="alert" className="flex items-start gap-3 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-5 py-4 text-sm text-amber-800 dark:text-amber-300">

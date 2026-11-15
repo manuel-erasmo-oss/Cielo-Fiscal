@@ -109,10 +109,10 @@ describe('validarCompra606', () => {
     expect(validarCompra606(compra(), RNC_CLIENTE)).toEqual([])
   })
 
-  it('exige RNC, tipo de bienes, NCF, fecha, monto, ITBIS y forma de pago', () => {
+  it('exige RNC, tipo de bienes, NCF, fecha, monto e ITBIS; la forma de pago NO', () => {
     const vacia = validarCompra606({ ...CAMPOS_VACIOS }, RNC_CLIENTE)
     expect(errores(vacia).sort()).toEqual(
-      ['fechaComprobante', 'formaPago', 'itbisFacturado', 'montoServicios', 'ncf', 'rncCedulaContraparte', 'tipoBienesServicios'].sort(),
+      ['fechaComprobante', 'itbisFacturado', 'montoServicios', 'ncf', 'rncCedulaContraparte', 'tipoBienesServicios'].sort(),
     )
   })
 
@@ -239,6 +239,17 @@ describe('archivo 606', () => {
     // La nota de crédito resta.
     expect(archivo.totalMontoFacturado).toBe(900)
     expect(archivo.totalItbisFacturado).toBe(162)
+  })
+
+  it('compra sin forma de pago: válida al registrar, pero el archivo exige una por defecto', () => {
+    const sinForma = compra({ formaPago: null })
+    expect(validarCompra606(sinForma, RNC_CLIENTE)).toEqual([])
+    expect(() => generar606(RNC_CLIENTE, '202603', [sinForma])).toThrow(/forma de pago/)
+    expect(() => generar606(RNC_CLIENTE, '202603', [sinForma], { formaPagoPorDefecto: '99' })).toThrow()
+    const archivo = generar606(RNC_CLIENTE, '202603', [sinForma, compra({ ncf: 'B0100000124' })], { formaPagoPorDefecto: '02' })
+    const [, primera, segunda] = archivo.contenido.split('\r\n')
+    expect(primera.endsWith('|02')).toBe(true)  // usa la forma de pago por defecto
+    expect(segunda.endsWith('|04')).toBe(true)  // conserva la suya
   })
 
   it('rechaza encabezados inválidos', () => {

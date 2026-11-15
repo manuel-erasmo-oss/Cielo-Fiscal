@@ -144,6 +144,19 @@ versión no admite e-NCF (serie E)**: longitud solo 11 o 19.
 - Con NCF tipo 12 (registro único de ingresos) la identificación debe ser
   la misma del encabezado.
 
+## Dónde el sistema se aparta de la macro, y por qué
+
+- **Forma de pago (606, campo 23)**: la macro la exige en cada fila. El
+  usuario decidió que no sea obligatoria al registrar la factura; el
+  sistema la completa al generar el archivo con una forma de pago por
+  defecto que se elige en Reportes. El archivo resultante cumple la macro.
+- **ITBIS facturado**: la macro no lo valida; el sistema exige un valor
+  explícito (0 si no tiene).
+- **e-NCF y código QR**: en facturas reales, el QR de un e-CF lleva una URL
+  de `ecf.dgii.gov.do/.../ConsultaTimbre` con `RncEmisor`, `RncComprador`,
+  `ENCF`, `FechaEmision` (DD-MM-AAAA), `MontoTotal`, `FechaFirma` y
+  `CodigoSeguridad`. No se usa todavía.
+
 ## Pendiente / dudas abiertas
 
 1. **607 y e-NCF**: la herramienta 607 entregada (2023.1.1) rechaza la

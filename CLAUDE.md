@@ -344,6 +344,73 @@ Lo esencial:
    terminado el 606/607 hay que agregar "marcar como declarado" con el
    contenido exacto enviado, y bloquear la edición de esas facturas.
 
+## Decisiones del usuario sobre el 606/607 (2026-11-15)
+
+Dichas por el usuario después de ver el formato funcionando. Mandan sobre
+lo que diga la macro de la DGII en cuanto a qué se le exige a la persona:
+
+1. **El sistema elige el "tipo de bienes y servicios" del 606** según lo
+   que describe la factura. Implementado: el OCR devuelve la categoría
+   (01-11) y la marca como dudosa si no está seguro; la persona puede
+   cambiarla. Limitación conocida: la categoría correcta a veces depende
+   del negocio del cliente (mercancía para revender = 09, la misma compra
+   para uso propio = otra), y la factura no lo dice. Idea no decidida:
+   recordar la categoría por proveedor a partir de lo que corrija el
+   contador.
+2. **Las retenciones se digitan a mano y solo si el usuario quiere**, en el
+   606 y en el 607. El OCR no las intenta.
+3. **No son obligatorios: fecha de pago, retenciones, tipo de retención ni
+   forma de pago.** Una factura se puede marcar como revisada sin ellos.
+   - La herramienta de la DGII SÍ exige forma de pago en cada línea del
+     606. Para conciliar ambas cosas, la pantalla de Reportes pide una
+     **forma de pago por defecto** para las compras que no la traen (las
+     que sí la traen conservan la suya). Sin elegirla no se descarga el TXT.
+   - Se mantiene la regla de la DGII de que, **si** se digita una retención,
+     hay que poner la fecha de pago (o de retención, en el 607).
+   - Pendiente de confirmar con el usuario: en el 607 la macro exige al
+     menos una forma de cobro con monto. Hoy sigue siendo obligatoria por
+     factura; no se sabe si el usuario quiere el mismo trato que en el 606.
+
+## Primera muestra real (PDF de un cliente, recibido el 2026-11-15)
+
+El usuario envió el PDF escaneado de las compras de un mes de un cliente
+real. **El archivo NO está en el repo ni debe estarlo: son datos de
+terceros y este repositorio es público.** Tampoco se escriben aquí nombres
+ni RNC. Lo que se aprendió de su estructura (medido, no supuesto):
+
+- 58 páginas, 12.3 MB, escáner de oficina a 200 ppp, **una factura por
+  página**, con capa de texto de OCR del propio escáner (de mala calidad:
+  no sirve como fuente).
+- **Las primeras 5 páginas no son facturas**: es la declaración IT-1 del
+  período. El sistema tiene que reconocer y saltar páginas así.
+- **43 de las 58 páginas son tiras largas y angostas** (recibos de caja):
+  unos 620 px de ancho por hasta 4,400 px de alto. Si se reducen por su
+  lado mayor quedan ilegibles; hay que partirlas en tramos o enviarlas a
+  resolución completa. `reducirImagen` (lado mayor 2200 px) NO sirve para
+  este caso.
+- Todas las facturas vistas son **comprobantes electrónicos (e-NCF, serie
+  E31)**. Esto hace real la duda del 607: si las ventas del cliente también
+  son e-CF, la herramienta 607 versión 2023.1.1 no las admite.
+- Se ven facturas con **ITBIS al 18% y al 16%** en la misma muestra.
+- Muchas páginas tienen marcas a mano y sellos encima del texto.
+- **Los e-CF traen un código QR que se puede leer.** Contiene una URL de
+  `ecf.dgii.gov.do/.../ConsultaTimbre` con `RncEmisor`, `RncComprador`,
+  `ENCF`, `FechaEmision` (DD-MM-AAAA), `MontoTotal`, `FechaFirma` y
+  `CodigoSeguridad`. Verificado decodificando páginas reales. Ojo: el
+  nombre del parámetro del emisor varía (`RncEmisor`, `RNCEmisor`,
+  `rncemisor`) y `MontoTotal` a veces trae coma de miles.
+  - Un lector básico (OpenCV) leyó el QR en **23 de las 58 páginas**; el
+    resto no tiene QR, lo tiene tapado por un sello o el lector no pudo.
+    Sirve como verificación y para llenar datos exactos, no como reemplazo
+    del OCR (no trae subtotal, ITBIS ni descripción).
+  - `RncComprador` permite comprobar que la factura es de ese cliente, y
+    comparar emisor/comprador con el RNC del cliente dice si es compra o
+    venta sin preguntarle a nadie.
+
+Esto alimenta el rediseño de la captura (ver "Requisito de captura"): leer
+el QR en el navegador antes de llamar al OCR, partir las tiras largas,
+descartar páginas que no son facturas.
+
 ## Roadmap (MVP angosto primero)
 
 1. ✅ **Clientes** (`ClienteFiscal`, CRUD) — hecho el 2026-11-15, sin auth
@@ -366,13 +433,6 @@ Lo esencial:
 8. Migración a Firebase (cuentas, datos en la nube, archivos en Storage)
    cuando el MVP esté validado.
 9. Hub/landing compartido de la suite, si hay ya 2+ productos en venta.
-
-**Pregunta abierta al usuario (2026-11-15):** si el OCR debe también
-SUGERIR el "tipo de bienes y servicios" (las 11 categorías del 606) a
-partir de la descripción de la factura. Hoy el OCR ya reparte el monto
-entre bienes y servicios, pero la categoría la elige la persona. Se le
-recomendó que sí, como sugerencia marcada para confirmar; no implementar
-hasta que responda.
 
 Candidatos sin decidir (confirmar con el usuario antes de hacerlos):
 respaldo/exportación de los datos del navegador; subida de varias facturas
@@ -447,11 +507,11 @@ roadmap.
   `esIncluibleEnReporte` es el único criterio para entrar a un reporte.
 - Los problemas tienen nivel `error` (bloquea) o `aviso` (solo se muestra:
   dígito verificador que no cuadra, cobros que no suman el total).
-- El OCR extrae solo lo impreso (RNC, nombre, NCF, fechas, montos,
-  impuestos, forma de pago si aparece). En compras reparte el subtotal
-  entre servicios y bienes y marca ese reparto como dudoso si no está
-  seguro o si no suma el subtotal. Todo lo que es criterio del contador
-  queda vacío para que lo llene la persona.
+- El OCR extrae lo impreso (RNC, nombre, NCF, fechas, montos, impuestos,
+  forma de pago si aparece). En compras además reparte el subtotal entre
+  servicios y bienes (dudoso si no está seguro o si no suma el subtotal) y
+  elige el tipo de bienes y servicios. Retenciones, tipo de ingreso y
+  formas de cobro los llena la persona.
 - Los campos de los que el OCR dudó se marcan en ámbar hasta que una
   persona los toca. ITBIS en cero es un dato válido, pero hay que
   escribirlo: se exige un valor explícito (criterio propio, más estricto
@@ -488,7 +548,7 @@ roadmap.
   avisos altos). Al quitar Firebase desapareció el otro override.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
   `/api/ocr` dinámica).
-- `npm test` (vitest, en zona horaria de RD): **85 de 85** pasan — fechas
+- `npm test` (vitest, en zona horaria de RD): **86 de 86** pasan — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
   comparados carácter por carácter, dígito verificador, duplicados.

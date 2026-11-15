@@ -486,7 +486,7 @@ export function FacturaModal({
 
                 <p className={TITULO_SECCION}>Pago</p>
                 <div className={GRID2}>
-                  {selector('formaPago', FORMA_PAGO_606)}
+                  {selector('formaPago', FORMA_PAGO_606, 'Forma de pago (opcional)')}
                   {campo('fechaPago', 'Fecha de pago (si ya se pagó)')}
                 </div>
 
