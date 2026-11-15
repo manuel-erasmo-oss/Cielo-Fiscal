@@ -76,7 +76,9 @@ export async function prepararArchivo(archivo: File): Promise<File> {
   return reducido
 }
 
-export async function extraerFactura(archivo: File, tipo: TipoDocumento): Promise<ResultadoOCR> {
+// `actividadCliente`: a qué se dedica el cliente; orienta la clasificación
+// de la compra (costo, gasto o activo).
+export async function extraerFactura(archivo: File, tipo: TipoDocumento, actividadCliente?: string): Promise<ResultadoOCR> {
   const codigo = leerCodigoOCR()
   if (!codigo) {
     throw new OCRError('Falta el código de acceso al OCR. Escríbelo en Configuración.', true)
@@ -86,6 +88,7 @@ export async function extraerFactura(archivo: File, tipo: TipoDocumento): Promis
   const form = new FormData()
   form.set('archivo', listo)
   form.set('tipo', tipo)
+  if (actividadCliente?.trim()) form.set('actividad', actividadCliente.trim())
 
   let respuesta: Response
   try {

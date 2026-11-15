@@ -80,6 +80,12 @@ describe('revisión de facturas', () => {
     expect(esIncluibleEnReporte(doc({ ncf: null }), RNC_CLIENTE)).toBe(false)
   })
 
+  it('una venta se mide con las reglas del reporte de ingresos, no con las del 607', () => {
+    const venta = doc({ tipo: 'venta', ncf: 'E310000000001', montoFacturado: 1000, rncCedulaContraparte: null, tipoBienesServicios: null, formaPago: null })
+    expect(puedeMarcarseRevisada('venta', venta, RNC_CLIENTE)).toBe(true)
+    expect(puedeMarcarseRevisada('venta', { ...venta, montoFacturado: null }, RNC_CLIENTE)).toBe(false)
+  })
+
   it('montoFacturadoDe: compras suman servicios y bienes; ventas usan su campo', () => {
     expect(montoFacturadoDe(doc({ montoServicios: 250 }))).toBe(1250)
     expect(montoFacturadoDe(doc({ montoServicios: null, montoBienes: null }))).toBeNull()

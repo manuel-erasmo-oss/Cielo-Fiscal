@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  clasificacionContable,
   digitoVerificadorCorrecto,
   esConsumoBajoUmbral,
   esNcfValido606,
@@ -12,6 +13,7 @@ import {
   tipoNcf,
   validarCompra606,
   validarVenta607,
+  validarVentaIngresos,
   type CamposDocumento,
 } from './dgii-formatos'
 import { CAMPOS_VACIOS } from './documentos'
@@ -152,7 +154,56 @@ describe('validarCompra606', () => {
   })
 })
 
-describe('validarVenta607', () => {
+describe('clasificacionContable', () => {
+  it('09 es costo, 10 es activo y el resto gasto', () => {
+    expect(clasificacionContable('09')).toBe('Costo')
+    expect(clasificacionContable('10')).toBe('Activo')
+    for (const c of ['01', '02', '03', '04', '05', '06', '07', '08', '11']) expect(clasificacionContable(c)).toBe('Gasto')
+    expect(clasificacionContable(null)).toBeNull()
+  })
+})
+
+describe('validarVentaIngresos (reporte interno; el 607 ya no se envía)', () => {
+  it('una venta completa no tiene problemas', () => {
+    expect(validarVentaIngresos(venta())).toEqual([])
+  })
+
+  it('solo exige NCF, fecha, monto e ITBIS', () => {
+    expect(errores(validarVentaIngresos({ ...CAMPOS_VACIOS })).sort()).toEqual(['fechaComprobante', 'itbisFacturado', 'montoFacturado', 'ncf'])
+    const minima = venta({ rncCedulaContraparte: null, tipoIdentificacion: null, tipoIngreso: null, cobroEfectivo: null, montoTotal: null })
+    expect(validarVentaIngresos(minima)).toEqual([])
+  })
+
+  it('admite e-NCF y series B hasta el tipo 17', () => {
+    for (const ncf of ['E310000000001', 'E320000000001', 'B0200000001', 'B1600000001']) {
+      expect(validarVentaIngresos(venta({ ncf })), ncf).toEqual([])
+    }
+    expect(errores(validarVentaIngresos(venta({ ncf: 'B01123' })))).toEqual(['ncf'])
+  })
+
+  it('retenciones sin fecha de retención: no bloquea', () => {
+    expect(validarVentaIngresos(venta({ itbisRetenidoTerceros: 108, retencionRentaTerceros: 200 }))).toEqual([])
+  })
+
+  it('si se da la identificación, debe tener sentido', () => {
+    expect(errores(validarVentaIngresos(venta({ rncCedulaContraparte: '12345', tipoIdentificacion: null })))).toEqual(['rncCedulaContraparte'])
+    expect(errores(validarVentaIngresos(venta({ tipoIdentificacion: '2' })))).toEqual(['rncCedulaContraparte'])
+    expect(validarVentaIngresos(venta({ tipoIdentificacion: '3', rncCedulaContraparte: 'AB123456' }))).toEqual([])
+    expect(validarVentaIngresos(venta({ tipoIdentificacion: null, rncCedulaContraparte: '00112345673' }))).toEqual([])
+  })
+
+  it('sigue rechazando montos incoherentes y códigos fuera de catálogo', () => {
+    expect(errores(validarVentaIngresos(venta({ montoFacturado: 100, itbisFacturado: 360 })))).toEqual(['montoFacturado'])
+    expect(errores(validarVentaIngresos(venta({ tipoIngreso: '9' })))).toEqual(['tipoIngreso'])
+    expect(errores(validarVentaIngresos(venta({ cobroEfectivo: -5 })))).toEqual(['cobroEfectivo'])
+  })
+
+  it('avisa (sin bloquear) si lo cobrado no da el total', () => {
+    expect(validarVentaIngresos(venta({ cobroEfectivo: 2000 })).map(x => x.nivel)).toEqual(['aviso'])
+  })
+})
+
+describe('validarVenta607 (formato en desuso; la aplicación ya no lo usa)', () => {
   it('una venta completa no tiene problemas', () => {
     expect(validarVenta607(venta(), RNC_CLIENTE)).toEqual([])
   })

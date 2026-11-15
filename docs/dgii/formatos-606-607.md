@@ -97,6 +97,12 @@ las retenciones, con la fecha original del NCF.
 
 ## 607 — Ventas de bienes y servicios (máximo 65,000 registros)
 
+> **EN DESUSO en esta aplicación.** El usuario indicó el 2026-11-15 que el
+> Formato 607 fue descontinuado (no se verificó contra la DGII). Las ventas
+> se llevan como reporte de ingresos interno, con reglas más laxas
+> (`validarVentaIngresos`). Lo que sigue documenta la herramienta 607
+> versión 2023.1.1 tal como se recibió, y su generador se conserva probado.
+
 NCF válido (regex de la macro, versión 2023.1.1): `[AQP]` + 8 dígitos + tipo
 (01-04, 11-15) + 8 dígitos · `B` + tipo (01-04, 11-16) + 8 dígitos. **Esta
 versión no admite e-NCF (serie E)**: longitud solo 11 o 19.

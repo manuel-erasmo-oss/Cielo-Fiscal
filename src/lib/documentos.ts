@@ -1,6 +1,6 @@
 import {
   validarCompra606,
-  validarVenta607,
+  validarVentaIngresos,
   type CamposDocumento,
   type Problema,
 } from '@/lib/dgii-formatos'
@@ -133,10 +133,11 @@ export function montoFacturadoDe(
   return (doc.montoServicios ?? 0) + (doc.montoBienes ?? 0)
 }
 
-// Todo lo que el formato de la DGII objetaría de esta factura, más avisos.
-// `rncCliente` es el RNC/cédula del cliente del contador.
+// Todo lo que impide dar la factura por buena, más avisos. Una compra se
+// mide contra el Formato 606; una venta, contra las reglas mínimas del
+// reporte de ingresos. `rncCliente` es el RNC/cédula del cliente del contador.
 export function problemasDeRevision(tipo: TipoDocumento, campos: CamposDocumento, rncCliente: string): Problema[] {
-  return tipo === 'compra' ? validarCompra606(campos, rncCliente) : validarVenta607(campos, rncCliente)
+  return tipo === 'compra' ? validarCompra606(campos, rncCliente) : validarVentaIngresos(campos)
 }
 
 // Una factura solo puede marcarse 'revisado' si el formato no le objeta nada.
@@ -180,7 +181,7 @@ export function periodoDe(doc: Pick<DocumentoFiscal, 'fechaComprobante'>): strin
 
 // ─── Clientes ────────────────────────────────────────────────────────────────
 
-export type DatosCliente = Pick<ClienteFiscal, 'tipoPersona' | 'rncCedula' | 'razonSocial' | 'nombreComercial'>
+export type DatosCliente = Pick<ClienteFiscal, 'tipoPersona' | 'rncCedula' | 'razonSocial' | 'nombreComercial' | 'actividad'>
 
 // Devuelve los errores por campo; objeto vacío = válido.
 // Solo se valida la LONGITUD del identificador (RNC de 9 dígitos, cédula de

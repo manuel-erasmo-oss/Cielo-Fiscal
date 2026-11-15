@@ -283,6 +283,81 @@ export function validarCompra606(doc: CamposDocumento, rncCliente: string): Prob
   return p
 }
 
+// ─── Clasificación contable de una compra ────────────────────────────────────
+
+export type ClasificacionContable = 'Gasto' | 'Costo' | 'Activo'
+
+// Cómo se registra la compra según su tipo de bienes y servicios del 606:
+// 09 (compras y gastos que formarán parte del costo de venta) es costo, 10
+// (adquisiciones de activos) es activo y el resto son gastos. Es una lectura
+// directa de los nombres del catálogo de la DGII, no una regla aparte.
+export function clasificacionContable(tipoBienesServicios: string | null): ClasificacionContable | null {
+  if (!tipoBienesServicios) return null
+  if (tipoBienesServicios === '09') return 'Costo'
+  if (tipoBienesServicios === '10') return 'Activo'
+  return 'Gasto'
+}
+
+// ─── Ventas: reporte de ingresos (uso interno) ───────────────────────────────
+
+// El usuario indicó (2026-11-15) que el Formato 607 fue descontinuado y que
+// las ventas se llevan como un REPORTE DE INGRESOS para control interno y
+// como base de otros reportes. Por eso una venta se valida con estas reglas
+// y no con las del 607: solo se exige lo mínimo para que el ingreso sea
+// identificable y sume bien. Identificación del cliente, tipo de ingreso,
+// retenciones y formas de cobro son opcionales, y se admiten e-NCF.
+// (No se verificó contra la DGII que el 607 esté descontinuado.)
+export function validarVentaIngresos(doc: CamposDocumento): Problema[] {
+  const p: Problema[] = []
+
+  if (!doc.ncf) p.push(err('ncf', 'Falta el NCF.'))
+  else if (!esNcfValido606(doc.ncf) && !esNcfValido607(doc.ncf)) p.push(err('ncf', 'El NCF no tiene una estructura válida.'))
+  if (doc.ncfModificado && !esNcfValido606(doc.ncfModificado) && !esNcfValido607(doc.ncfModificado)) {
+    p.push(err('ncfModificado', 'El NCF modificado no tiene una estructura válida.'))
+  }
+
+  validarFechas(doc, 'fechaComprobante', 'fechaRetencion', p)
+
+  validarMontosNoNegativos(doc, [
+    'montoFacturado', 'itbisFacturado', 'itbisRetenidoTerceros', 'retencionRentaTerceros',
+    'impuestoSelectivoConsumo', 'otrosImpuestos', 'propinaLegal', ...COBROS_607,
+  ], p)
+  if (doc.montoFacturado === null) p.push(err('montoFacturado', 'Falta el monto facturado.'))
+  else if (doc.montoFacturado < (doc.itbisFacturado ?? 0)) {
+    p.push(err('montoFacturado', 'El monto facturado no puede ser menor que el ITBIS.'))
+  }
+  if (doc.itbisFacturado === null) p.push(err('itbisFacturado', 'Indica el ITBIS facturado (0 si no tiene).'))
+
+  // Opcionales: solo se comprueba que, si vienen, sean coherentes.
+  const id = doc.rncCedulaContraparte
+  if (doc.tipoIdentificacion && !enCatalogo(TIPO_IDENTIFICACION_607, doc.tipoIdentificacion)) {
+    p.push(err('tipoIdentificacion', 'Tipo de identificación no válido.'))
+  } else if (id && doc.tipoIdentificacion !== '3') {
+    // Sin tipo indicado se deduce por la longitud, como hace la DGII.
+    const largos = doc.tipoIdentificacion === '1' ? [9] : doc.tipoIdentificacion === '2' ? [11] : [9, 11]
+    if (!/^\d+$/.test(id) || !largos.includes(id.length)) {
+      p.push(err('rncCedulaContraparte', `Debe tener ${largos.join(' u ')} dígitos.`))
+    } else {
+      avisarDigitoVerificador(id, p)
+    }
+  }
+  if (doc.tipoIngreso && !enCatalogo(TIPO_INGRESO_607, doc.tipoIngreso)) {
+    p.push(err('tipoIngreso', 'Tipo de ingreso no válido.'))
+  }
+  const cobrado = redondear2(COBROS_607.reduce((s, c) => s + (doc[c] ?? 0), 0))
+  if (cobrado > 0 && doc.montoTotal !== null && Math.abs(cobrado - doc.montoTotal) > 0.01) {
+    p.push(aviso('cobroEfectivo', 'La suma de las formas de cobro no coincide con el total de la factura.'))
+  }
+  return p
+}
+
+// ─── Formato 607 (EN DESUSO) ─────────────────────────────────────────────────
+// Todo lo que sigue sobre el 607 (umbral de consumo, `validarVenta607`,
+// `linea607`, `separarVentas607`, `generar607`) reproduce la herramienta de
+// envío 607 versión 2023.1.1 y está probado, pero la aplicación ya no lo
+// usa: el usuario indicó que el 607 fue descontinuado. Se conserva por si
+// algún contribuyente todavía tiene que presentarlo.
+
 // Factura de consumo que no se detalla en el 607 (va en el resumen de la
 // Oficina Virtual). El umbral se compara contra el monto sin impuestos, que
 // es lo que compara la macro.

@@ -5,16 +5,17 @@ import {
   TIPO_BIENES_SERVICIOS_606,
   TIPO_INGRESO_607,
   TIPO_RETENCION_ISR_606,
+  clasificacionContable,
+  esNotaDeCredito,
   generar606,
-  generar607,
-  separarVentas607,
   type OpcionCatalogo,
 } from '@/lib/dgii-formatos'
 import type { ClienteFiscal, DocumentoFiscal } from '@/types'
 
-// Exportación del reporte 606/607 a Excel. Es un papel de trabajo para el
-// contador (revisar, filtrar, archivar): lo que se envía a la DGII sigue
-// siendo el TXT. La primera hoja es una tabla limpia (títulos en la fila 1)
+// Exportación a Excel del Formato 606 (compras) y del reporte de ingresos
+// (ventas). El del 606 es un papel de trabajo: lo que se envía a la DGII
+// sigue siendo el TXT. El de ingresos es el reporte en sí: es de uso
+// interno, no se envía a la DGII. La primera hoja es una tabla limpia (títulos en la fila 1)
 // para poder filtrar y ordenar: sus 23 primeras columnas son las del
 // formato, en el mismo orden y con los mismos valores que el TXT; después
 // van columnas de referencia que no existen en el formato (nombre y total
@@ -60,13 +61,12 @@ export const TITULOS_606 = [
   'Monto Propina Legal', 'Forma de Pago',
 ] as const
 
-export const TITULOS_607 = [
-  'RNC/Cédula o Pasaporte', 'Tipo Identificación', 'Número Comprobante Fiscal',
-  'Número Comprobante Fiscal Modificado', 'Tipo de Ingreso', 'Fecha Comprobante', 'Fecha de Retención',
-  'Monto Facturado', 'ITBIS Facturado', 'ITBIS Retenido por Terceros', 'ITBIS Percibido',
-  'Retención Renta por Terceros', 'ISR Percibido', 'Impuesto Selectivo al Consumo', 'Otros Impuestos/Tasas',
-  'Monto Propina Legal', 'Efectivo', 'Cheque/ Transferencia/ Depósito', 'Tarjeta Débito/Crédito',
-  'Venta a Crédito', 'Bonos o Certificados de Regalo', 'Permuta', 'Otras Formas de Ventas',
+export const TITULOS_INGRESOS = [
+  'Fecha', 'NCF', 'NCF modificado', 'RNC / Cédula del cliente', 'Nombre del cliente', 'Tipo de ingreso',
+  'Monto facturado', 'ITBIS facturado', 'Impuesto selectivo al consumo', 'Otros impuestos / tasas',
+  'Propina legal', 'Total de la factura', 'ITBIS retenido por terceros', 'Retención de renta por terceros',
+  'Fecha de retención', 'Efectivo', 'Cheque / transferencia / depósito', 'Tarjeta débito / crédito',
+  'Venta a crédito', 'Bonos o certificados de regalo', 'Permuta', 'Otras formas',
 ] as const
 
 const FORMATO_MONTO = '#,##0.00'
@@ -91,8 +91,8 @@ function codigo(catalogo: readonly OpcionCatalogo[], valor: string | null) {
 
 const incompleto = (e: EntradaExcel) => e.pendientes > 0 || e.conErrores > 0
 
-function nombreArchivo(formato: string, e: EntradaExcel): string {
-  return `Formato_${formato}_${e.cliente.rncCedula}_${e.periodo}${incompleto(e) ? '_INCOMPLETO' : ''}.xlsx`
+function nombreArchivo(prefijo: string, e: EntradaExcel): string {
+  return `${prefijo}_${e.cliente.rncCedula}_${e.periodo}${incompleto(e) ? '_INCOMPLETO' : ''}.xlsx`
 }
 
 function hojaResumen(
@@ -119,7 +119,7 @@ function hojaResumen(
           : { value: 'Completo: incluye todas las facturas del período.' },
       ],
       [],
-      [{ value: 'Las notas de crédito restan en los totales. El archivo que se envía a la DGII es el TXT, no este Excel.' }],
+      [{ value: 'Las notas de crédito (NCF tipo 04) restan en los totales.' }],
     ],
     columns: [{ width: 26 }, { width: 60 }],
     stickyRowsCount: 0,
@@ -155,40 +155,43 @@ function fila606(d: DocumentoFiscal, formaPagoPorDefecto?: string): SheetData[nu
     // ── Referencia (no es parte del formato) ──
     texto(d.nombreContraparte),
     monto(d.montoTotal),
+    texto(clasificacionContable(d.tipoBienesServicios)),
   ]
 }
 
-function fila607(d: DocumentoFiscal): SheetData[number] {
+// Total de una venta: el impreso si se digitó; si no, lo facturado más sus
+// impuestos y la propina (para que una venta sin total no sume cero).
+function totalVenta(d: DocumentoFiscal): number {
+  return d.montoTotal ?? Math.round(((d.montoFacturado ?? 0) + (d.itbisFacturado ?? 0) + (d.impuestoSelectivoConsumo ?? 0) + (d.otrosImpuestos ?? 0) + (d.propinaLegal ?? 0)) * 100) / 100
+}
+
+function filaIngreso(d: DocumentoFiscal): SheetData[number] {
   return [
-    texto(d.rncCedulaContraparte),
-    texto(d.tipoIdentificacion),
+    // Fecha como texto AAAA-MM-DD: se ordena bien y no depende de zona horaria.
+    texto(d.fechaComprobante),
     texto(d.ncf),
     texto(d.ncfModificado),
+    texto(d.rncCedulaContraparte),
+    texto(d.nombreContraparte),
     codigo(TIPO_INGRESO_607, d.tipoIngreso),
-    fecha(d.fechaComprobante),
-    fecha(d.fechaRetencion),
     monto(d.montoFacturado),
     monto(d.itbisFacturado),
-    monto(d.itbisRetenidoTerceros),
-    null, // ITBIS percibido: no habilitado
-    monto(d.retencionRentaTerceros),
-    null, // ISR percibido: no habilitado
     monto(d.impuestoSelectivoConsumo),
     monto(d.otrosImpuestos),
     monto(d.propinaLegal),
+    monto(totalVenta(d)),
+    monto(d.itbisRetenidoTerceros),
+    monto(d.retencionRentaTerceros),
+    texto(d.fechaRetencion),
     ...COBROS_607.map(c => monto(d[c])),
-    // ── Referencia (no es parte del formato) ──
-    texto(d.nombreContraparte),
-    monto(d.montoTotal),
   ]
 }
 
-function filaTitulos(titulos: readonly string[], contraparte: string): SheetData[number] {
-  return [
-    ...titulos.map((t, i) => titulo(`${i + 1}. ${t}`)),
-    titulo(`Nombre del ${contraparte} (referencia)`),
-    titulo('Total de la factura (referencia)'),
-  ]
+// Columnas que el Excel del 606 agrega después de las 23 del formato.
+const REFERENCIAS_606 = ['Nombre del proveedor (referencia)', 'Total de la factura (referencia)', 'Clasificación contable (referencia)']
+
+function filaTitulos606(): SheetData[number] {
+  return [...TITULOS_606.map((t, i) => titulo(`${i + 1}. ${t}`)), ...REFERENCIAS_606.map(titulo)]
 }
 
 // Ancho por columna (en caracteres); `anchas` son las de texto largo
@@ -207,12 +210,12 @@ export function construirExcel606(e: EntradaExcel): LibroExcel {
     ? generar606(e.cliente.rncCedula, e.periodo, filas, { formaPagoPorDefecto: e.formaPagoPorDefecto ?? '01' })
     : null
   return {
-    nombreArchivo: nombreArchivo('606', e),
+    nombreArchivo: nombreArchivo('Formato_606', e),
     hojas: [
       {
         sheet: 'Formato 606',
-        data: [filaTitulos(TITULOS_606, 'proveedor'), ...filas.map(f => fila606(f, e.formaPagoPorDefecto))],
-        columns: anchos(TITULOS_606.length + 2, { 2: 52, 16: 44, 22: 34, 23: 36 }),
+        data: [filaTitulos606(), ...filas.map(f => fila606(f, e.formaPagoPorDefecto))],
+        columns: anchos(TITULOS_606.length + REFERENCIAS_606.length, { 2: 52, 16: 44, 22: 34, 23: 36 }),
         stickyRowsCount: 1,
       },
       hojaResumen('Formato de Envío de Compras de Bienes y Servicios (606)', e, filas.length, [
@@ -223,35 +226,26 @@ export function construirExcel606(e: EntradaExcel): LibroExcel {
   }
 }
 
-export function construirExcel607(e: EntradaExcel): LibroExcel {
-  const { detalladas, resumenConsumo } = separarVentas607([...e.validas].sort(porFecha))
-  const consumo = [...e.validas].filter(v => !detalladas.includes(v)).sort(porFecha)
-  const archivo = detalladas.length > 0 ? generar607(e.cliente.rncCedula, e.periodo, detalladas) : null
+// Reporte de ingresos: TODAS las ventas válidas del período, sin separar
+// las facturas de consumo (eso era una regla del 607, que ya no se envía).
+export function construirExcelIngresos(e: EntradaExcel): LibroExcel {
+  const filas = [...e.validas].sort(porFecha)
+  const suma = (valor: (d: DocumentoFiscal) => number | null) =>
+    Math.round(filas.reduce((s, d) => s + (esNotaDeCredito(d) ? -1 : 1) * (valor(d) ?? 0), 0) * 100) / 100
   return {
-    nombreArchivo: nombreArchivo('607', e),
+    nombreArchivo: nombreArchivo('Ingresos', e),
     hojas: [
       {
-        sheet: 'Formato 607',
-        data: [filaTitulos(TITULOS_607, 'cliente'), ...detalladas.map(fila607)],
-        columns: anchos(TITULOS_607.length + 2, { 0: 22, 4: 44, 23: 36 }),
+        sheet: 'Ingresos',
+        data: [TITULOS_INGRESOS.map(titulo), ...filas.map(filaIngreso)],
+        columns: anchos(TITULOS_INGRESOS.length, { 3: 24, 4: 36, 5: 44 }),
         stickyRowsCount: 1,
       },
-      hojaResumen('Formato de Envío de Ventas de Bienes y Servicios (607)', e, detalladas.length, [
-        ['Total monto facturado', archivo?.totalMontoFacturado ?? 0],
-        ['Total ITBIS facturado', archivo?.totalItbisFacturado ?? 0],
-        // Lo que se digita en el "Resumen General de Facturas de Consumo" de la Oficina Virtual.
-        ['Facturas de consumo: monto facturado', resumenConsumo.montoFacturado],
-        ['Facturas de consumo: ITBIS facturado', resumenConsumo.itbisFacturado],
-      ], [['Facturas de consumo: cantidad', resumenConsumo.cantidad]]),
-      {
-        sheet: 'Facturas de consumo',
-        data: [
-          ['NCF', 'Fecha Comprobante', 'Monto Facturado', 'ITBIS Facturado', 'Total de la factura'].map(titulo),
-          ...consumo.map(d => [texto(d.ncf), fecha(d.fechaComprobante), monto(d.montoFacturado), monto(d.itbisFacturado), monto(d.montoTotal)]),
-        ],
-        columns: Array.from({ length: 5 }, () => ({ width: 24 })),
-        stickyRowsCount: 1,
-      },
+      hojaResumen('Reporte de ingresos (uso interno, no se envía a la DGII)', e, filas.length, [
+        ['Total monto facturado', suma(d => d.montoFacturado)],
+        ['Total ITBIS facturado', suma(d => d.itbisFacturado)],
+        ['Total de las facturas', suma(totalVenta)],
+      ]),
     ],
   }
 }

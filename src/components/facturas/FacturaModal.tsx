@@ -10,8 +10,9 @@ import {
   TIPO_BIENES_SERVICIOS_606,
   TIPO_IDENTIFICACION_607,
   TIPO_INGRESO_607,
+  COBROS_607,
   TIPO_RETENCION_ISR_606,
-  esConsumoBajoUmbral,
+  clasificacionContable,
   type OpcionCatalogo,
   type Problema,
 } from '@/lib/dgii-formatos'
@@ -106,6 +107,8 @@ function aCampos(v: Valores, tipo: TipoDocumento): { campos: CamposDocumento; er
   return { campos: campos as CamposDocumento, errores }
 }
 
+const COBROS = COBROS_607
+
 type Paso = 'origen' | 'extrayendo' | 'formulario'
 
 export function FacturaModal({
@@ -174,7 +177,7 @@ export function FacturaModal({
     setArchivo(seleccionado)
     setPaso('extrayendo')
     try {
-      const resultado = await extraerFactura(seleccionado, tipo)
+      const resultado = await extraerFactura(seleccionado, tipo, clientes.find(c => c.id === clienteId)?.actividad)
       if (!vivo.current) return
       setValores(aValores(resultado.extraccion))
       setDudosos(new Set(resultado.camposDudosos))
@@ -472,6 +475,12 @@ export function FacturaModal({
                   {campo('fechaComprobante')}
                   {selector('tipoBienesServicios', TIPO_BIENES_SERVICIOS_606)}
                 </div>
+                {clasificacionContable(campos.tipoBienesServicios) && (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Clasificación contable: <strong className="text-zinc-800 dark:text-zinc-200">{clasificacionContable(campos.tipoBienesServicios)}</strong>
+                    {origen === 'ocr' && !documento && ' — elegida por el sistema; cámbiala si no corresponde.'}
+                  </p>
+                )}
 
                 <p className={TITULO_SECCION}>Montos</p>
                 <div className={GRID3}>
@@ -509,13 +518,13 @@ export function FacturaModal({
               <>
                 <p className={TITULO_SECCION}>Comprobante</p>
                 <div className={GRID2}>
-                  {selector('tipoIdentificacion', TIPO_IDENTIFICACION_607)}
-                  {campo('rncCedulaContraparte', 'RNC, cédula o pasaporte del cliente')}
-                  {campo('nombreContraparte', 'Nombre del cliente')}
                   {campo('ncf')}
                   {campo('ncfModificado', 'NCF modificado (opcional)')}
                   {campo('fechaComprobante')}
-                  {selector('tipoIngreso', TIPO_INGRESO_607)}
+                  {selector('tipoIngreso', TIPO_INGRESO_607, 'Tipo de ingreso (opcional)')}
+                  {selector('tipoIdentificacion', TIPO_IDENTIFICACION_607, 'Tipo de identificación (opcional)')}
+                  {campo('rncCedulaContraparte', 'RNC, cédula o pasaporte del cliente (opcional)')}
+                  {campo('nombreContraparte', 'Nombre del cliente (opcional)')}
                 </div>
 
                 <p className={TITULO_SECCION}>Montos</p>
@@ -528,42 +537,29 @@ export function FacturaModal({
                   {campo('montoTotal')}
                 </div>
 
-                {esConsumoBajoUmbral(campos) ? (
-                  <p className="flex items-start gap-2 rounded-lg border border-indigo-100 dark:border-indigo-900/40 bg-[#eef0fb] dark:bg-indigo-950/30 px-3.5 py-2.5 text-xs text-[#151f66] dark:text-indigo-200">
-                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    <span>
-                      Factura de consumo menor de RD$250,000: no se detalla en el 607. Cuenta para el resumen de
-                      facturas de consumo que se digita en la Oficina Virtual, así que no necesita identificación,
-                      tipo de ingreso ni forma de cobro.
-                    </span>
-                  </p>
-                ) : (
-                  <>
-                    <p className={TITULO_SECCION}>Cómo se cobró (montos con impuestos)</p>
-                    <div className={GRID3}>
-                      {campo('cobroEfectivo')}
-                      {campo('cobroCheque')}
-                      {campo('cobroTarjeta')}
-                      {campo('cobroCredito')}
-                      {campo('cobroBonos')}
-                      {campo('cobroPermuta')}
-                      {campo('cobroOtras')}
-                    </div>
+                <details className="rounded-lg border border-zinc-200 dark:border-[#252840] px-4 py-3" open={
+                  COBROS.some(c => !!valores[c])
+                }>
+                  <summary className="cursor-pointer text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Cómo se cobró (opcional, montos con impuestos)
+                  </summary>
+                  <div className={cn(GRID3, 'mt-4')}>
+                    {COBROS.map(c => campo(c))}
+                  </div>
+                </details>
 
-                    <details className="rounded-lg border border-zinc-200 dark:border-[#252840] px-4 py-3" open={
-                      !!(valores.itbisRetenidoTerceros || valores.retencionRentaTerceros || valores.fechaRetencion)
-                    }>
-                      <summary className="cursor-pointer text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                        Retenciones que le hicieron al cliente (si aplica)
-                      </summary>
-                      <div className={cn(GRID3, 'mt-4')}>
-                        {campo('itbisRetenidoTerceros')}
-                        {campo('retencionRentaTerceros')}
-                        {campo('fechaRetencion')}
-                      </div>
-                    </details>
-                  </>
-                )}
+                <details className="rounded-lg border border-zinc-200 dark:border-[#252840] px-4 py-3" open={
+                  !!(valores.itbisRetenidoTerceros || valores.retencionRentaTerceros || valores.fechaRetencion)
+                }>
+                  <summary className="cursor-pointer text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Retenciones que le hicieron (opcional)
+                  </summary>
+                  <div className={cn(GRID3, 'mt-4')}>
+                    {campo('itbisRetenidoTerceros')}
+                    {campo('retencionRentaTerceros')}
+                    {campo('fechaRetencion')}
+                  </div>
+                </details>
               </>
             )}
 

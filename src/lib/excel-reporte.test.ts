@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { linea606, linea607 } from './dgii-formatos'
+import { linea606 } from './dgii-formatos'
 import { CAMPOS_VACIOS } from './documentos'
-import { TITULOS_606, TITULOS_607, construirExcel606, construirExcel607 } from './excel-reporte'
+import { TITULOS_606, TITULOS_INGRESOS, construirExcel606, construirExcelIngresos } from './excel-reporte'
 import type { DocumentoFiscal } from '@/types'
 
 const cliente = { rncCedula: '401007551', razonSocial: 'Comercial Quisqueya SRL' }
@@ -69,12 +69,13 @@ describe('Excel del 606', () => {
     expect(hoja.stickyRowsCount).toBe(1)
   })
 
-  it('23 títulos numerados del formato + 2 de referencia', () => {
+  it('23 títulos numerados del formato + 3 de referencia', () => {
     const titulos = (hoja.data[filaTitulos] as Celda[]).map(valor)
-    expect(titulos).toHaveLength(25)
+    expect(titulos).toHaveLength(26)
     expect(titulos[0]).toBe('1. RNC o Cédula')
     expect(titulos[22]).toBe(`23. ${TITULOS_606[22]}`)
     expect(titulos[23]).toBe('Nombre del proveedor (referencia)')
+    expect(titulos[25]).toBe('Clasificación contable (referencia)')
   })
 
   it('las filas van ordenadas por fecha', () => {
@@ -94,6 +95,7 @@ describe('Excel del 606', () => {
     expect(filas[0][0]).toMatchObject({ value: '101123451', format: '@' })
     expect(filas[0][5]).toMatchObject({ value: '20260301', format: '@' })
     expect(filas[0][9]).toMatchObject({ value: 1000, format: '#,##0.00' })
+    expect(valor(filas[0][25])).toBe('Costo') // tipo 09
   })
 
   it('la hoja Resumen trae los totales del TXT (la nota de crédito resta) y el estado', () => {
@@ -113,32 +115,48 @@ describe('Excel del 606', () => {
   })
 })
 
-describe('Excel del 607', () => {
-  const consumo = venta({ ncf: 'B0200000001', fechaComprobante: '2026-03-16', montoFacturado: 1000, itbisFacturado: 180, montoTotal: 1180, rncCedulaContraparte: null, tipoIdentificacion: null, tipoIngreso: null, cobroEfectivo: null })
-  const libro = construirExcel607(entrada([consumo, venta({ cobroEfectivo: 1000, cobroTarjeta: 1360 })]))
-  const [detalle, resumen, hojaConsumo] = libro.hojas
+describe('Excel del reporte de ingresos', () => {
+  const consumo = venta({ ncf: 'B0200000001', fechaComprobante: '2026-03-16', montoFacturado: 1000, itbisFacturado: 180, montoTotal: 1180, rncCedulaContraparte: null, nombreContraparte: null, tipoIdentificacion: null, tipoIngreso: null, cobroEfectivo: null })
+  const electronica = venta({ ncf: 'E310000000009', fechaComprobante: '2026-03-02', montoFacturado: 500, itbisFacturado: 90, montoTotal: 590, cobroEfectivo: null })
+  const nota = venta({ ncf: 'B0400000003', ncfModificado: 'B0100000500', fechaComprobante: '2026-03-20', montoFacturado: 100, itbisFacturado: 18, montoTotal: 118, cobroEfectivo: null })
+  const libro = construirExcelIngresos(entrada([consumo, venta({ cobroEfectivo: 1000, cobroTarjeta: 1360 }), nota, electronica]))
+  const [hoja, resumen] = libro.hojas
+  const filas = hoja.data.slice(1) as Celda[][]
 
-  it('tres hojas: el formato, el resumen y las facturas de consumo', () => {
-    expect(libro.nombreArchivo).toBe('Formato_607_401007551_202603.xlsx')
-    expect(libro.hojas.map(h => h.sheet)).toEqual(['Formato 607', 'Resumen', 'Facturas de consumo'])
+  it('nombre de archivo y hojas', () => {
+    expect(libro.nombreArchivo).toBe('Ingresos_401007551_202603.xlsx')
+    expect(libro.hojas.map(h => h.sheet)).toEqual(['Ingresos', 'Resumen'])
+    expect((hoja.data[0] as Celda[]).map(valor)).toEqual([...TITULOS_INGRESOS])
   })
 
-  it('la factura de consumo menor no va en el detalle', () => {
-    const filas = detalle.data.slice(detalle.stickyRowsCount) as Celda[][]
-    expect(filas).toHaveLength(1)
-    expect(comoLineaTxt(filas[0], [4])).toBe(linea607(venta({ cobroEfectivo: 1000, cobroTarjeta: 1360 })))
-    expect(valor(filas[0][4])).toBe('1 - Ingresos por operaciones (no financieros)')
-    expect((detalle.data[detalle.stickyRowsCount - 1] as Celda[]).map(valor)[22]).toBe(`23. ${TITULOS_607[22]}`)
+  it('incluye TODAS las ventas (consumo y e-NCF también), ordenadas por fecha', () => {
+    expect(filas.map(f => valor(f[1]))).toEqual(['E310000000009', 'B0100000500', 'B0200000001', 'B0400000003'])
   })
 
-  it('el resumen trae los totales de consumo y la hoja de consumo el listado', () => {
+  it('una fila: fecha legible, tipo de ingreso con nombre, montos y cobros', () => {
+    const fila = filas[1].map(valor)
+    expect(fila.slice(0, 6)).toEqual(['2026-03-15', 'B0100000500', undefined, '101123451', 'Cliente SRL', '1 - Ingresos por operaciones (no financieros)'].map(v => v ?? null))
+    expect(fila.slice(6, 12)).toEqual([2000, 360, null, null, null, 2360])
+    expect(fila[15]).toBe(1000) // efectivo
+    expect(fila[17]).toBe(1360) // tarjeta
+    expect(fila).toHaveLength(TITULOS_INGRESOS.length)
+  })
+
+  it('el resumen suma todo y la nota de crédito resta', () => {
     const plano = resumen.data.map(f => (f as Celda[]).map(valor))
-    expect(plano).toContainEqual(['Cantidad de registros', 1])
-    expect(plano).toContainEqual(['Facturas de consumo: cantidad', 1])
-    expect(plano).toContainEqual(['Facturas de consumo: monto facturado', 1000])
-    expect(plano).toContainEqual(['Facturas de consumo: ITBIS facturado', 180])
-    const consumoPlano = hojaConsumo.data.map(f => (f as Celda[]).map(valor))
-    expect(consumoPlano).toHaveLength(2)
-    expect(consumoPlano[1]).toEqual(['B0200000001', '20260316', 1000, 180, 1180])
+    expect(plano).toContainEqual(['Cantidad de registros', 4])
+    expect(plano).toContainEqual(['Total monto facturado', 3400]) // 500 + 2000 + 1000 − 100
+    expect(plano).toContainEqual(['Total ITBIS facturado', 612])  // 90 + 360 + 180 − 18
+    expect(plano).toContainEqual(['Total de las facturas', 4012]) // 590 + 2360 + 1180 − 118
+  })
+
+  it('una venta sin total impreso usa lo facturado más impuestos', () => {
+    const sinTotal = construirExcelIngresos(entrada([venta({ montoTotal: null, propinaLegal: 200, cobroEfectivo: null })]))
+    expect(valor((sinTotal.hojas[0].data[1] as Celda[])[11])).toBe(2560)
+    expect(sinTotal.hojas[1].data.map(f => (f as Celda[]).map(valor))).toContainEqual(['Total de las facturas', 2560])
+  })
+
+  it('incompleto: lo dice el nombre del archivo', () => {
+    expect(construirExcelIngresos(entrada([venta()], 1, 0)).nombreArchivo).toBe('Ingresos_401007551_202603_INCOMPLETO.xlsx')
   })
 })

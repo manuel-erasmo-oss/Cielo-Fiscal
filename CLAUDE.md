@@ -317,18 +317,17 @@ Lo esencial:
 - **606**: tipo de bienes y servicios y forma de pago son obligatorios y
   NO están impresos en la factura: los decide el contador. Lo mismo las
   retenciones y el tratamiento del ITBIS. El OCR no los intenta.
-- **607**: las facturas de consumo (tipo 02) menores de RD$250,000 no van
-  en el archivo; van como totales en el "Resumen General de Facturas de
-  Consumo" de la Oficina Virtual. La pantalla de Reportes los calcula.
+- **607**: EN DESUSO según el usuario (ver "Decisiones del usuario"). La
+  especificación y el generador se conservan, pero la aplicación ya no
+  genera ese archivo.
 - El dígito verificador está en las macros pero **desactivado**; aquí se
   usa solo como aviso, nunca bloquea.
 
 **Dudas abiertas (decírselas al usuario; no resolverlas de memoria):**
 
-1. **La herramienta 607 entregada es la versión 2023.1.1 y rechaza los
-   e-NCF (serie E)**; la del 606 es la versión 2025 y sí los acepta. Hoy
-   una venta con e-NCF no se puede marcar como revisada. Falta saber si
-   existe una herramienta 607 más nueva.
+1. ~~La herramienta 607 entregada rechaza los e-NCF~~ — ya no aplica: el
+   usuario indicó que el 607 fue descontinuado y las ventas se llevan como
+   reporte de ingresos interno (ver "Decisiones del usuario").
 2. **Segunda remisión por retenciones** (606): el instructivo dice que un
    NCF se vuelve a enviar cuando se paga en otro mes para reportar las
    retenciones. No está modelado: cada factura pertenece solo al mes de su
@@ -367,9 +366,47 @@ lo que diga la macro de la DGII en cuanto a qué se le exige a la persona:
      que sí la traen conservan la suya). Sin elegirla no se descarga el TXT.
    - Se mantiene la regla de la DGII de que, **si** se digita una retención,
      hay que poner la fecha de pago (o de retención, en el 607).
-   - Pendiente de confirmar con el usuario: en el 607 la macro exige al
-     menos una forma de cobro con monto. Hoy sigue siendo obligatoria por
-     factura; no se sabe si el usuario quiere el mismo trato que en el 606.
+4. **El Formato 607 fue descontinuado** (dicho por el usuario; NO verificado
+   contra la DGII). Las ventas se llevan como un **reporte de ingresos**
+   para control interno y como base de otros reportes. Consecuencias ya
+   implementadas:
+   - Una venta se valida con `validarVentaIngresos`: solo exige NCF, fecha,
+     monto facturado e ITBIS. Identificación del cliente, tipo de ingreso,
+     retenciones y **formas de cobro son opcionales** ("se pone manual, no
+     será obligatorio para nosotros"). Se admiten e-NCF.
+   - Reportes ofrece "Ingresos" solo en Excel (sin TXT), con TODAS las
+     ventas del mes en una hoja; ya no separa las facturas de consumo.
+   - `validarVenta607`, `linea607`, `separarVentas607` y `generar607`
+     siguen en `dgii-formatos.ts`, probados pero sin uso, por si algún
+     contribuyente aún tiene que presentar el 607.
+5. **En el 606 el sistema clasifica cada compra como gasto, costo o activo
+   "acorde a las NIIF para PYMES".** Implementado así:
+   - La clasificación ES el tipo de bienes y servicios del 606: 09 = costo,
+     10 = activo, los demás = gasto (`clasificacionContable`). No hay un
+     campo aparte: se muestra en el formulario y como columna de referencia
+     en el Excel del 606.
+   - El prompt del OCR le explica al modelo cómo distinguir inventario
+     (costo), bienes de uso duradero (activo) y gastos. **⚠️ Esos criterios
+     se escribieron de memoria (Secciones 13, 17 y 18 de la norma); no se
+     consultó el texto en la sesión.** El usuario es contador: pedirle que
+     revise `clasificacion606` en `src/app/api/ocr/route.ts`.
+   - Para decidir bien hace falta saber a qué se dedica el cliente (lo que
+     uno revende es costo; lo mismo para uso propio es gasto). Por eso
+     `ClienteFiscal` tiene ahora `actividad` (texto libre, opcional), que se
+     envía al OCR. Sin ese dato el modelo decide solo con la factura.
+   - Sin decidir: a partir de qué monto una compra duradera se trata como
+     activo. La norma no fija un monto; es política de cada empresa. Hoy el
+     modelo usa su criterio. Preguntarle al usuario si quiere un umbral por
+     cliente.
+   - Sin probar con facturas reales (no hay API key).
+
+**Dudas que quedan abiertas tras estas decisiones:**
+- Las notas de crédito restan en los totales solo cuando el NCF es de tipo
+  04 (serie B). Las fuentes no dicen qué tipo de e-CF es la nota de crédito
+  electrónica, así que hoy una nota de crédito con e-NCF SUMA en vez de
+  restar, tanto en el 606 como en el reporte de ingresos. Con clientes que
+  facturan todo en electrónico esto importa: preguntarle al usuario qué
+  tipos de e-CF son notas de crédito y de débito.
 
 ## Primera muestra real (PDF de un cliente, recibido el 2026-11-15)
 
@@ -418,10 +455,10 @@ descartar páginas que no son facturas.
 2. ✅ **Facturas**: subida de imagen/PDF → `POST /api/ocr` → revisión manual
    de campos → `DocumentoFiscal`; también captura a mano. Hecho el
    2026-11-15, **pero el OCR no se ha probado con una factura real**.
-3. ✅ **Campos de la factura alineados con los formatos 606 y 607** y
-   **generación de los archivos TXT** del 606 y del 607 (pantalla
-   Reportes) — hecho el 2026-11-15 contra las fuentes oficiales. Falta que
-   el usuario pase un archivo por el pre-validador de la DGII.
+3. ✅ **Campos de la factura alineados con los formatos de la DGII**,
+   **TXT del 606**, **reporte de ingresos** (ventas, interno) y
+   **exportación a Excel** de ambos — hecho el 2026-11-15. Falta que el
+   usuario pase un 606 por el pre-validador de la DGII.
 4. ⏭️ **Siguiente**: (a) medir el OCR con facturas reales, comparando
    modelos (requiere API key y facturas de muestra); (b) rediseñar la
    captura para fotos, PDF de una factura y PDF de cientos (ver "Requisito
@@ -475,8 +512,8 @@ roadmap.
   cliente), `/clientes` (alta, edición, borrado en cascada), `/facturas`
   (filtros por cliente/tipo/mes/estado, totales, alta por OCR o a mano,
   edición, borrado), `/reportes` (genera y descarga el TXT del 606 o 607
-  de un cliente y un mes, y lo exporta a Excel), `/configuracion` (código
-  de acceso al OCR).
+  de un cliente y un mes y lo exporta a Excel; y el reporte de ingresos en
+  Excel), `/configuracion` (código de acceso al OCR).
 - **Servidor**: solo `src/app/api/ocr/route.ts`.
 - **Datos** (`src/lib/datos`): `repositorio.ts` (interfaz),
   `repositorio-local.ts` (`localStorage`, claves `cielo-fiscal:clientes:v1`
@@ -522,11 +559,13 @@ roadmap.
   aviso que NO bloquea.
 - **Reportes**: no deja descargar si en ese mes hay facturas pendientes o
   revisadas con errores — un archivo incompleto es peor que ninguno.
-- **Exportar a Excel** (requisito del usuario: "es vital"): papel de
-  trabajo, no lo que se envía a la DGII. Hoja 1 = tabla limpia con las 23
-  columnas del formato (mismos valores que el TXT; una prueba compara cada
-  fila contra la línea del TXT) + nombre y total como referencia; hoja
-  "Resumen" con totales y estado; en el 607, hoja "Facturas de consumo".
+- **Exportar a Excel** (requisito del usuario: "es vital"). Del 606: papel
+  de trabajo, no lo que se envía a la DGII; hoja 1 = tabla limpia con las
+  23 columnas del formato (mismos valores que el TXT; una prueba compara
+  cada fila contra la línea del TXT) + nombre, total y clasificación
+  contable como referencia; hoja "Resumen" con totales y estado. De
+  ingresos: es el reporte en sí; hoja "Ingresos" con todas las ventas y
+  hoja "Resumen".
   A diferencia del TXT, **sí se puede exportar con el reporte incompleto**
   (decisión propia, no confirmada con el usuario): en ese caso el nombre
   del archivo termina en `_INCOMPLETO` y el Resumen lo dice en rojo.
@@ -548,7 +587,7 @@ roadmap.
   avisos altos). Al quitar Firebase desapareció el otro override.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
   `/api/ocr` dinámica).
-- `npm test` (vitest, en zona horaria de RD): **86 de 86** pasan — fechas
+- `npm test` (vitest, en zona horaria de RD): **98 de 98** pasan — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
   comparados carácter por carácter, dígito verificador, duplicados.
@@ -570,6 +609,14 @@ roadmap.
   fija. 607: hojas `Formato 607`, `Resumen` y `Facturas de consumo`. Con
   una factura pendiente el archivo se llamó
   `Formato_606_401007551_202603_INCOMPLETO.xlsx`.
+- Tras las decisiones del usuario (ventas como reporte de ingresos,
+  clasificación gasto/costo/activo, actividad del cliente): 9 de 9
+  comprobaciones nuevas en navegador y 16 de 16 del flujo de compras. Se
+  comprobó que la actividad del cliente viaja al servidor, que una compra
+  se guarda como revisada sin forma de pago ni retenciones, que una venta
+  con e-NCF y solo NCF/fecha/monto/ITBIS se guarda como revisada, y los dos
+  Excel leídos de vuelta (606 con columna "Activo"; Ingresos con su hoja y
+  resumen).
 - Dato de control del dígito verificador: el algoritmo de la macro da
   correcto el RNC `401007551`.
 - Ruta OCR contra el servidor real: sin código o código incorrecto → 401;

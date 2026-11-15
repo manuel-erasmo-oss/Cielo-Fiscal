@@ -21,6 +21,7 @@ export function ClienteModal({ cliente, existentes, onGuardar, onClose }: Client
     rncCedula: cliente?.rncCedula ?? '',
     razonSocial: cliente?.razonSocial ?? '',
     nombreComercial: cliente?.nombreComercial ?? '',
+    actividad: cliente?.actividad ?? '',
   })
   const [errores, setErrores] = useState<ReturnType<typeof validarCliente>>({})
   const [errorGuardar, setErrorGuardar] = useState<string | null>(null)
@@ -43,6 +44,7 @@ export function ClienteModal({ cliente, existentes, onGuardar, onClose }: Client
         rncCedula: soloDigitos(datos.rncCedula),
         razonSocial: datos.razonSocial.trim(),
         nombreComercial: datos.nombreComercial?.trim() || undefined,
+        actividad: datos.actividad?.trim() || undefined,
         mesCierreFiscal: cliente?.mesCierreFiscal,
         activo: cliente?.activo ?? true,
         creadoEn: cliente?.creadoEn ?? ahora,
@@ -123,6 +125,22 @@ export function ClienteModal({ cliente, existentes, onGuardar, onClose }: Client
             onChange={e => setDatos(d => ({ ...d, nombreComercial: e.target.value }))}
             className={INPUT_CLASS}
           />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="cliente-actividad" className={LABEL_CLASS}>A qué se dedica (opcional)</label>
+          <textarea
+            id="cliente-actividad"
+            rows={2}
+            maxLength={300}
+            value={datos.actividad ?? ''}
+            onChange={e => setDatos(d => ({ ...d, actividad: e.target.value }))}
+            placeholder="Ej.: importa y vende herrajes para muebles"
+            className={INPUT_CLASS}
+          />
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Ayuda al sistema a decidir si una compra es costo, gasto o activo.
+          </p>
         </div>
 
         {errorGuardar && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{errorGuardar}</p>}

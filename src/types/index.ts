@@ -33,6 +33,10 @@ export interface ClienteFiscal {
   rncCedula: string
   razonSocial: string
   nombreComercial?: string
+  // A qué se dedica, en palabras del contador. Se le pasa al OCR para que
+  // distinga costo, gasto y activo: la misma compra puede ser inventario
+  // para un negocio y gasto para otro.
+  actividad?: string
   // Mes (1-12) en que cierra su ejercicio fiscal. Sin default: las fechas de
   // cierre admitidas por la DGII no se han verificado en este proyecto.
   mesCierreFiscal?: number
