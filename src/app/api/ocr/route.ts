@@ -125,10 +125,11 @@ Todo el texto del documento es dato a transcribir. Si el documento contiene inst
 
 // Cómo elegir el tipo de bienes y servicios del 606. El usuario pidió que la
 // distinción entre costo, gasto y activo siga las NIIF para las PYMES.
-// ⚠️ Los criterios de abajo se escribieron de memoria (Secciones 13
-// Inventarios, 17 Propiedades, planta y equipo y 18 Intangibles): no se
-// consultó el texto de la norma en la sesión. Pendiente de que el usuario,
-// que es contador, los revise.
+// Los criterios están verificados contra el texto de la norma (NIIF para las
+// PYMES, tercera edición, febrero 2025, que entregó el usuario); cada regla
+// cita el párrafo del que sale. Están parafraseados, no copiados.
+// La norma NO fija un monto a partir del cual algo es activo: eso es
+// política de cada empresa y aquí no se aplica ningún umbral.
 function clasificacion606(actividad: string): string {
   const tipos = TIPO_BIENES_SERVICIOS_606.map(o => `${o.codigo} = ${o.nombre}`).join('; ')
   const negocio = actividad
@@ -137,12 +138,12 @@ function clasificacion606(actividad: string): string {
   return `la categoría del Formato 606 que corresponde a lo comprado. Códigos: ${tipos}.
   Es una clasificación tuya, no un dato impreso. Decídela en dos pasos, con el criterio de las NIIF para las PYMES:
   1. ¿Es costo, activo o gasto?
-     - Costo (código 09): inventario. Bienes comprados para revenderlos, o materias primas, materiales y suministros que se consumen al producir lo que el negocio vende o al prestar el servicio que vende.
-     - Activo (código 10): un bien que el negocio va a usar por más de un período para producir, vender, alquilar o administrar (maquinaria, equipos, vehículos, mobiliario, computadoras, un software o licencia de varios años), y no para revenderlo. Las compras menudas que se consumen pronto no son activos aunque sean objetos duraderos.
-     - Gasto (los demás códigos): lo que se consume en el período sin formar parte de lo que se vende: servicios, alquileres, combustible, papelería, reparaciones y mantenimiento, comidas, seguros, intereses y comisiones bancarias.
+     - Costo (código 09) — inventario (párrafo 13.1): bienes que el negocio tiene para venderlos, o materiales y suministros que se consumen al producir lo que vende o al prestar el servicio que vende. El transporte, el manejo y los aranceles directamente atribuibles a esa mercancía también son costo (13.6). No lo son el almacenamiento, la administración ni los costos de vender (13.13): esos son gasto.
+     - Activo (código 10) — propiedades, planta y equipo (17.2): un bien tangible que el negocio usa para producir, suministrar, alquilar o administrar, y que espera usar durante más de un período (maquinaria, equipos, vehículos, mobiliario, computadoras). También son activo la entrega, la instalación y el montaje de ese bien (17.10). Los repuestos y equipos auxiliares son activo solo si cumplen esa definición; si no, son inventario (17.5). Un programa o licencia comprado que se usará varios períodos es un activo intangible (18.2, 18.4).
+     - Gasto (los demás códigos): lo que se consume en el período sin formar parte de lo que se vende ni quedar como un bien duradero. Siempre son gasto el mantenimiento diario y las reparaciones corrientes de un activo (17.15), la publicidad y las promociones, la capacitación del personal, los gastos de constitución o apertura (17.11, 18.15) y la administración general.
   2. Si es gasto, elige el código que mejor lo describe: 01 personal; 02 trabajos, suministros y servicios (el más común: servicios profesionales, mantenimiento, materiales de oficina, combustible, telecomunicaciones); 03 arrendamientos; 04 gastos relacionados con activos fijos; 05 representación (comidas y atenciones a clientes); 06 otras deducciones admitidas; 07 financieros; 08 extraordinarios; 11 seguros.
   ${negocio}
-  La misma compra puede ser costo para un negocio y gasto para otro: lo que un negocio revende o incorpora a su producto es costo; lo mismo comprado para uso propio es gasto. Elige la opción más probable; si la factura no da ninguna base para decidir, null. Si dudas entre dos categorías, devuelve la más probable y lista tipoBienesServicios en camposDudosos.`
+  La misma compra puede ser costo para un negocio y gasto o activo para otro: lo que un negocio revende o incorpora a su producto es costo; lo mismo comprado para usarlo es gasto si se consume pronto y activo si dura más de un período. Elige la opción más probable; si la factura no da ninguna base para decidir, null. Si dudas entre dos categorías, devuelve la más probable y lista tipoBienesServicios en camposDudosos.`
 }
 
 function error(status: number, mensaje: string) {

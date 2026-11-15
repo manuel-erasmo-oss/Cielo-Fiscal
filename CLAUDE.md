@@ -386,18 +386,28 @@ lo que diga la macro de la DGII en cuanto a qué se le exige a la persona:
      campo aparte: se muestra en el formulario y como columna de referencia
      en el Excel del 606.
    - El prompt del OCR le explica al modelo cómo distinguir inventario
-     (costo), bienes de uso duradero (activo) y gastos. **⚠️ Esos criterios
-     se escribieron de memoria (Secciones 13, 17 y 18 de la norma); no se
-     consultó el texto en la sesión.** El usuario es contador: pedirle que
-     revise `clasificacion606` en `src/app/api/ocr/route.ts`.
+     (costo), bienes de uso duradero (activo) y gastos. **Verificado contra
+     el texto de la norma** (NIIF para las PYMES, tercera edición, febrero
+     2025; el usuario dio el enlace el 2026-11-15 y se leyeron las Secciones
+     13, 17 y 18). Párrafos en que se apoya `clasificacion606`
+     (`src/app/api/ocr/route.ts`): 13.1 definición de inventario; 13.6
+     transporte y aranceles de la mercancía son costo; 13.13 almacenamiento,
+     administración y costos de venta son gasto; 17.2 definición de
+     propiedades, planta y equipo; 17.5 repuestos; 17.10 entrega e
+     instalación forman parte del activo; 17.11 y 18.15 publicidad,
+     capacitación y gastos de apertura son gasto; 17.15 mantenimiento
+     diario es gasto; 18.2 y 18.4 activos intangibles. El texto del prompt
+     está parafraseado: la norma tiene derechos de autor y no está en el
+     repo.
    - Para decidir bien hace falta saber a qué se dedica el cliente (lo que
      uno revende es costo; lo mismo para uso propio es gasto). Por eso
      `ClienteFiscal` tiene ahora `actividad` (texto libre, opcional), que se
      envía al OCR. Sin ese dato el modelo decide solo con la factura.
-   - Sin decidir: a partir de qué monto una compra duradera se trata como
-     activo. La norma no fija un monto; es política de cada empresa. Hoy el
-     modelo usa su criterio. Preguntarle al usuario si quiere un umbral por
-     cliente.
+   - **La norma no fija un monto** a partir del cual una compra duradera es
+     activo (se buscó en el texto: los criterios de 17.4 son beneficios
+     futuros probables y costo medible, sin importe). Es política de cada
+     empresa. Hoy no se aplica ningún umbral; sigue pendiente preguntarle
+     al usuario si quiere uno por cliente.
    - Sin probar con facturas reales (no hay API key).
 
 **Dudas que quedan abiertas tras estas decisiones:**
