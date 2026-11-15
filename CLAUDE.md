@@ -199,6 +199,55 @@ confirmado contra la Guía No.14 DGII).
   construido ningún generador de archivo todavía, a propósito, hasta tener
   la fuente oficial.
 
+## Requisito de captura (dicho por el usuario el 2026-11-15) — NO construido todavía
+
+El cliente va a subir **tres tipos de entrada**, y el sistema tiene que
+soportar las tres:
+
+1. **Fotos tomadas con el celular.**
+2. **Un PDF con una sola factura.**
+3. **PDFs con cientos de facturas.**
+
+Lo construido hasta hoy solo cubre "un archivo de hasta 4 MB = una
+factura". El caso 3 no cabe en ese diseño y obliga a rehacer la captura.
+Variables a contemplar al diseñarla (lista de trabajo, no cerrada):
+
+- **Foto de celular**: rotada o de lado, torcida, con sombra o reflejo,
+  borrosa, cortada; papel térmico desteñido; factura manuscrita; más de
+  una factura en la misma foto; formato HEIC de iPhone (la API solo acepta
+  JPEG/PNG/GIF/WebP y no todos los navegadores lo decodifican).
+- **PDF**: digital (con texto) o escaneado (solo imagen); una factura que
+  ocupa varias páginas; varias facturas en una página; páginas que no son
+  facturas (portadas, estados de cuenta, páginas en blanco); páginas en
+  distinta orientación; compras y ventas mezcladas; varios meses
+  mezclados; facturas repetidas dentro del mismo PDF o ya registradas.
+- **Tamaño y tiempo**: un PDF de cientos de páginas no se puede enviar
+  entero (límite de cuerpo de Vercel y de 600 páginas por solicitud de la
+  API) ni procesar en una sola llamada. Hay que partirlo en el navegador y
+  procesarlo por partes, con progreso visible, reintento de las partes que
+  fallen y posibilidad de retomar sin volver a pagar por lo ya leído.
+- **Costo**: con cientos de páginas por cliente y por mes, la elección de
+  modelo (`MODELO_OCR`) deja de ser un detalle. Hay que medir costo y
+  precisión por página con facturas reales antes de fijarla.
+- **Revisión a escala**: revisar a mano campo por campo cientos de
+  facturas no es viable. Hace falta priorizar (validaciones automáticas +
+  confianza) para que la persona mire primero las dudosas. Cuánto se puede
+  aprobar en bloque es una **decisión de producto pendiente de confirmar
+  con el usuario** (lección 4: nada entra a un reporte sin revisión).
+- **Imagen durante la revisión**: hoy el archivo no se guarda (decisión 4
+  del MVP). Con cientos de facturas la revisión no se termina en una
+  sentada, así que al volver ya no habría imagen contra la cual comparar.
+  Hay que guardar las páginas en el navegador (IndexedDB) o pedir que se
+  vuelva a subir el PDF. Pendiente de decidir.
+- **Volumen en `localStorage`**: sirve para miles de facturas, no para
+  decenas de miles. Vigilarlo.
+
+**El usuario va a enviar el formato de envío vigente del 606 (costos y
+gastos) y del 607 (ventas).** Hasta tenerlos NO se fijan los campos que
+extrae el OCR ni se construye ningún generador: esos formatos definen qué
+datos hay que capturar de cada factura (hoy se capturan 9 campos elegidos
+sin esa fuente).
+
 ## Roadmap (MVP angosto primero)
 
 1. ✅ **Clientes** (`ClienteFiscal`, CRUD) — hecho el 2026-11-15, sin auth
@@ -206,10 +255,11 @@ confirmado contra la Guía No.14 DGII).
 2. ✅ **Facturas**: subida de imagen/PDF → `POST /api/ocr` → revisión manual
    de campos → `DocumentoFiscal`; también captura a mano. Hecho el
    2026-11-15, **pero el OCR no se ha probado con una factura real**.
-3. ⏭️ **Siguiente: medir el OCR con facturas reales** (requiere desplegar
-   en Vercel con las dos variables de entorno) y **Reporte 606** (compras).
-   El 606 NO se empieza sin traer antes la norma/instructivo vigente de la
-   DGII con el layout de columnas (lección 2).
+3. ⏭️ **Siguiente**: (a) recibir del usuario los formatos de envío del 606
+   y 607 y ajustar los campos de `DocumentoFiscal` y del OCR a lo que esos
+   formatos exigen; (b) rediseñar la captura para los tres tipos de entrada
+   (ver "Requisito de captura"); (c) medir el OCR con facturas reales
+   (requiere desplegar en Vercel); (d) Reporte 606.
 4. Reporte 607 (ventas).
 5. Declaración ITBIS mensual (ya es solo aritmética sobre 606+607).
 6. IR-17 (adaptar el mismo concepto ya implementado en Nómina).
