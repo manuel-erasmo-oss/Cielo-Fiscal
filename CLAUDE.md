@@ -248,6 +248,55 @@ extrae el OCR ni se construye ningún generador: esos formatos definen qué
 datos hay que capturar de cada factura (hoy se capturan 9 campos elegidos
 sin esa fuente).
 
+## Costo y límites (aprobado por el usuario el 2026-11-15) — NO construido todavía
+
+Contexto: es un producto de venta; el costo de IA no puede crecer sin
+control y tiene que dejar margen.
+
+**Decidido:**
+
+1. **Tope de 100 páginas por PDF en el MVP.** Es un tope por tiempo y
+   confiabilidad (el navegador procesa con la pestaña abierta), NO un
+   control de costo: 500 facturas cuestan lo mismo en un PDF que en cinco.
+   El número es un estimado a ajustar cuando se mida.
+2. **El control real del costo es un cupo mensual de facturas por plan**
+   (se cobra por volumen, y el sistema avisa antes de procesar cuántas
+   páginas trae el PDF y cuántas quedan en el mes). Requiere cuentas: hoy
+   todos comparten un código de acceso y no se distingue quién gasta.
+   **Consecuencia: para vender con planes, las cuentas (migración a
+   Firebase, paso 8) tienen que adelantarse en el roadmap.** Para la prueba
+   inicial con el usuario y uno o dos contadores de confianza alcanza con
+   el código de acceso.
+3. **Tope de gasto mensual en la consola de Anthropic** como red de
+   seguridad (lo configura el usuario).
+4. **No pagar dos veces por lo mismo**: detectar páginas repetidas antes de
+   enviarlas, no volver a procesar páginas ya leídas al reintentar, saltar
+   páginas en blanco.
+5. **Medir los modelos con facturas reales antes de fijar el modelo y los
+   precios de los planes.**
+
+**Estimados de costo por página — SIN MEDIR, solo orden de magnitud**
+(calculados a mano con los precios de lista de noviembre 2026 y un supuesto
+de ~4,500 tokens de entrada y ~1,500 de salida por página):
+
+| Modelo | Por página | 300 facturas |
+|---|---|---|
+| `claude-opus-5-5` (el actual) | US$0.03–0.05 | US$9–15 |
+| `claude-sonnet-5-5` | US$0.02–0.03 | US$5–8 |
+| `claude-haiku-5-5` | US$0.001–0.002 | US$0.30–0.50 |
+
+No usar estos números para fijar precios: reemplazarlos por los medidos.
+
+**Propuesta pendiente de medir (no decidida):** lectura escalonada — leer
+cada página con el modelo barato y volver a leer con uno más fuerte solo
+las que fallen validaciones automáticas (monto + ITBIS ≠ total, RNC de
+longitud incorrecta, fecha fuera del período, campo requerido vacío). No
+apoyarse en la confianza que reporta el propio modelo: no es confiable
+para decidir esto. Se le dijo al usuario explícitamente que **no se sabe**
+si Haiku lee bien fotos malas, papel térmico o manuscritas; eso es lo que
+la medición tiene que responder, campo por campo (un dígito mal en un RNC
+o NCF es un error fiscal, no un detalle).
+
 ## Roadmap (MVP angosto primero)
 
 1. ✅ **Clientes** (`ClienteFiscal`, CRUD) — hecho el 2026-11-15, sin auth
