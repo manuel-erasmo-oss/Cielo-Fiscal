@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, Download, FileText, Info, Users } from 'lucide-react'
+import { AlertTriangle, Download, FileSpreadsheet, FileText, Info, Users } from 'lucide-react'
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { CARD_CLASS, INPUT_CLASS, LABEL_CLASS, TH_CLASS } from '@/components/ui/clases'
+import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS, TH_CLASS } from '@/components/ui/clases'
 import { useDatos } from '@/lib/datos/datos-context'
 import { fechaLimite606607 } from '@/lib/dgii-fiscal'
 import { generar606, generar607, separarVentas607, type ArchivoDGII } from '@/lib/dgii-formatos'
+import { construirExcel606, construirExcel607 } from '@/lib/excel-reporte'
 import { periodoDe, problemasDeRevision } from '@/lib/documentos'
 import { BTN_PRIMARY, cn, formatDate, formatPeriodo, formatRD } from '@/lib/utils'
 import type { DocumentoFiscal } from '@/types'
@@ -29,6 +30,7 @@ export default function ReportesPage() {
   const [clienteId, setClienteId] = useState('')
   const [formato, setFormato] = useState<Formato>('606')
   const [periodo, setPeriodo] = useState('') // "YYYY-MM"
+  const [errorExcel, setErrorExcel] = useState<string | null>(null)
 
   const cliente = clientes.find(c => c.id === clienteId) ?? clientes[0]
 
@@ -70,7 +72,29 @@ export default function ReportesPage() {
     return { pendientes, conErrores, validas, detalladas, resumenConsumo, archivo, errorArchivo, anio, mes }
   }, [cliente, periodo, formato, documentos])
 
-  // Solo se descarga si NADA del período quedó fuera: ni pendientes ni con errores.
+  // El Excel es un papel de trabajo: se puede exportar aunque el reporte esté
+  // incompleto, pero el propio archivo lo dice en su encabezado.
+  async function exportarExcel() {
+    if (!analisis || !cliente) return
+    setErrorExcel(null)
+    try {
+      const entrada = {
+        cliente,
+        periodo: periodo.replace('-', ''),
+        validas: analisis.validas,
+        pendientes: analisis.pendientes.length,
+        conErrores: analisis.conErrores.length,
+      }
+      const libro = formato === '606' ? construirExcel606(entrada) : construirExcel607(entrada)
+      // Se carga solo al exportar, para no pesar en la carga de la página.
+      const { default: writeXlsxFile } = await import('write-excel-file/browser')
+      await writeXlsxFile(libro.hojas).toFile(libro.nombreArchivo)
+    } catch (e) {
+      setErrorExcel(e instanceof Error ? e.message : 'No se pudo generar el Excel.')
+    }
+  }
+
+  // El TXT solo se descarga si NADA del período quedó fuera: ni pendientes ni con errores.
   const completo = !!analisis && analisis.pendientes.length === 0 && analisis.conErrores.length === 0
 
   return (
@@ -122,14 +146,24 @@ export default function ReportesPage() {
                       Vence el {formatDate(fechaLimite606607(analisis.anio, analisis.mes))} (día 15 del mes siguiente; no ajustado por fines de semana ni feriados).
                     </p>
                   </div>
-                  <button
-                    onClick={() => analisis.archivo && descargar(analisis.archivo)}
-                    disabled={!analisis.archivo || !completo}
-                    className={BTN_PRIMARY}
-                  >
-                    <Download className="h-4 w-4" />
-                    Descargar TXT
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => void exportarExcel()}
+                      disabled={analisis.validas.length === 0}
+                      className={BTN_SECONDARY}
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                      Exportar a Excel
+                    </button>
+                    <button
+                      onClick={() => analisis.archivo && descargar(analisis.archivo)}
+                      disabled={!analisis.archivo || !completo}
+                      className={BTN_PRIMARY}
+                    >
+                      <Download className="h-4 w-4" />
+                      Descargar TXT
+                    </button>
+                  </div>
                 </div>
 
                 <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -140,6 +174,7 @@ export default function ReportesPage() {
                 </dl>
 
                 {analisis.archivo && <p className="text-xs text-zinc-500 dark:text-zinc-400">Archivo: <span className="font-mono">{analisis.archivo.nombreArchivo}</span>. Las notas de crédito restan en los totales.</p>}
+                {errorExcel && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{errorExcel}</p>}
                 {analisis.errorArchivo && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{analisis.errorArchivo}</p>}
               </div>
 

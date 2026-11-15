@@ -367,6 +367,13 @@ Lo esencial:
    cuando el MVP esté validado.
 9. Hub/landing compartido de la suite, si hay ya 2+ productos en venta.
 
+**Pregunta abierta al usuario (2026-11-15):** si el OCR debe también
+SUGERIR el "tipo de bienes y servicios" (las 11 categorías del 606) a
+partir de la descripción de la factura. Hoy el OCR ya reparte el monto
+entre bienes y servicios, pero la categoría la elige la persona. Se le
+recomendó que sí, como sugerencia marcada para confirmar; no implementar
+hasta que responda.
+
 Candidatos sin decidir (confirmar con el usuario antes de hacerlos):
 respaldo/exportación de los datos del navegador; subida de varias facturas
 a la vez; estado "descartada" en la interfaz (el tipo ya lo contempla).
@@ -408,7 +415,8 @@ roadmap.
   cliente), `/clientes` (alta, edición, borrado en cascada), `/facturas`
   (filtros por cliente/tipo/mes/estado, totales, alta por OCR o a mano,
   edición, borrado), `/reportes` (genera y descarga el TXT del 606 o 607
-  de un cliente y un mes), `/configuracion` (código de acceso al OCR).
+  de un cliente y un mes, y lo exporta a Excel), `/configuracion` (código
+  de acceso al OCR).
 - **Servidor**: solo `src/app/api/ocr/route.ts`.
 - **Datos** (`src/lib/datos`): `repositorio.ts` (interfaz),
   `repositorio-local.ts` (`localStorage`, claves `cielo-fiscal:clientes:v1`
@@ -416,6 +424,7 @@ roadmap.
 - **Lógica pura** (`src/lib`): `dgii-formatos.ts` (catálogos, reglas y
   generadores del 606 y 607), `documentos.ts` (qué factura puede marcarse
   revisada y entrar a un reporte, duplicados, validación de cliente),
+  `excel-reporte.ts` (arma las hojas del Excel del 606/607),
   `dgii-fiscal.ts` (motor fiscal), `utils.ts` (fechas locales, montos),
   `ocr-tipos.ts` (contrato servidor↔navegador), `ocr-cliente.ts` (prepara
   el archivo y llama a la ruta), `config-local.ts`.
@@ -453,6 +462,15 @@ roadmap.
   aviso que NO bloquea.
 - **Reportes**: no deja descargar si en ese mes hay facturas pendientes o
   revisadas con errores — un archivo incompleto es peor que ninguno.
+- **Exportar a Excel** (requisito del usuario: "es vital"): papel de
+  trabajo, no lo que se envía a la DGII. Hoja 1 = tabla limpia con las 23
+  columnas del formato (mismos valores que el TXT; una prueba compara cada
+  fila contra la línea del TXT) + nombre y total como referencia; hoja
+  "Resumen" con totales y estado; en el 607, hoja "Facturas de consumo".
+  A diferencia del TXT, **sí se puede exportar con el reporte incompleto**
+  (decisión propia, no confirmada con el usuario): en ese caso el nombre
+  del archivo termina en `_INCOMPLETO` y el Resumen lo dice en rojo.
+  RNC, NCF y fechas van como texto para que Excel no les quite los ceros.
 - Los registros guardados con el modelo anterior (9 campos) se completan
   con `null` al leerlos (`normalizarDocumento`) y aparecen en Reportes como
   facturas con errores hasta que alguien las complete.
@@ -470,7 +488,7 @@ roadmap.
   avisos altos). Al quitar Firebase desapareció el otro override.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
   `/api/ocr` dinámica).
-- `npm test` (vitest, en zona horaria de RD): **75 de 75** pasan — fechas
+- `npm test` (vitest, en zona horaria de RD): **85 de 85** pasan — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
   comparados carácter por carácter, dígito verificador, duplicados.
@@ -486,6 +504,12 @@ roadmap.
   comprobaciones cubrió clientes, filtros, persistencia, borrado en
   cascada, datos dañados y móvil antes del cambio de modelo. Los scripts
   vivían en el scratchpad y NO están en el repo.
+- Excel: exportado de verdad desde el navegador y leído de vuelta con
+  openpyxl y LibreOffice. 606: hojas `Formato 606` y `Resumen`, 3 filas,
+  totales 1,400.00 / 252.00, cédula `00112345673` con sus ceros, fila 1
+  fija. 607: hojas `Formato 607`, `Resumen` y `Facturas de consumo`. Con
+  una factura pendiente el archivo se llamó
+  `Formato_606_401007551_202603_INCOMPLETO.xlsx`.
 - Dato de control del dígito verificador: el algoritmo de la macro da
   correcto el RNC `401007551`.
 - Ruta OCR contra el servidor real: sin código o código incorrecto → 401;
@@ -494,7 +518,10 @@ roadmap.
   la llamada llega a Anthropic, que la rechaza, y la ruta responde 503.
 - Versiones: Next 15.5.29, React 18.3.1, TypeScript 5.9.3,
   `@anthropic-ai/sdk` 1.8.0, zod 4.6.7, Tailwind 3.4.19, lucide-react
-  0.400.0, vitest 5.1.0, `@types/node` 22 (lo exige vitest 5).
+  0.400.0, vitest 5.1.0, `@types/node` 22 (lo exige vitest 5),
+  `write-excel-file` 4.1.1 (elegida en vez de `xlsx`/SheetJS, que es la que
+  usa Nómina, porque la versión de npm de esa arrastra avisos de seguridad;
+  esta solo escribe y `npm audit` queda en 0).
 
 ### NO verificado
 
