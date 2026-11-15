@@ -89,9 +89,13 @@ Consecuencias que hay que respetar mientras dure el MVP:
    (`OCR_CODIGO_ACCESO`), no con cuentas. Es protección de MVP: sirve para
    que un desconocido no gaste la API key, no para distinguir usuarios. No
    hay límite de uso por persona.
-4. **Los archivos de las facturas no se guardan.** Se envían al servidor
-   solo para leerlos; queda el nombre del archivo como referencia. Para
-   re-revisar una factura contra su imagen hay que volver a subirla.
+4. **Las imágenes de las facturas se guardan en el navegador** (IndexedDB),
+   una por factura, detrás de la misma interfaz `Repositorio`
+   (`guardarArchivo` / `obtenerArchivo`). Así se puede revisar una factura
+   contra su original días después. Al servidor solo viajan cuando se pide
+   leerlas con IA, y este no las conserva. (Hasta la captura por lotes no
+   se guardaban; se cambió porque revisar cientos de facturas no se termina
+   en una sentada. Decisión propia, coherente con "datos en el navegador".)
 5. **Limitación conocida y aceptada**: los datos viven en un solo navegador
    y se pierden si el usuario borra los datos del sitio. No hay respaldo ni
    exportación todavía.
@@ -200,7 +204,7 @@ confirmado contra la Guía No.14 DGII).
 606 y 607 — ver la sección "Formatos 606 y 607" y
 `docs/dgii/formatos-606-607.md`.
 
-## Requisito de captura (dicho por el usuario el 2026-11-15) — NO construido todavía
+## Requisito de captura (dicho por el usuario el 2026-11-15) — construido en parte
 
 El cliente va a subir **tres tipos de entrada**, y el sistema tiene que
 soportar las tres:
@@ -209,9 +213,11 @@ soportar las tres:
 2. **Un PDF con una sola factura.**
 3. **PDFs con cientos de facturas.**
 
-Lo construido hasta hoy solo cubre "un archivo de hasta 4 MB = una
-factura". El caso 3 no cabe en ese diseño y obliga a rehacer la captura.
-Variables a contemplar al diseñarla (lista de trabajo, no cerrada):
+**Estado**: la pantalla "Subir lote" (`/lote`) ya recibe un PDF de hasta
+100 páginas o varias fotos, separa las páginas en el navegador y lee el
+código QR de cada una (ver "Captura por lotes" más abajo). Lo que sigue
+pendiente de esta lista está marcado ahí. Variables a contemplar (lista de
+trabajo, no cerrada):
 
 - **Foto de celular**: rotada o de lado, torcida, con sombra o reflejo,
   borrosa, cortada; papel térmico desteñido; factura manuscrita; más de
@@ -247,6 +253,54 @@ Los formatos del 606 y 607 ya se recibieron y los campos de la factura ya
 siguen sus columnas (ver "Formatos 606 y 607"). Lo que sigue pendiente de
 este requisito es la captura en sí: partir PDFs grandes, procesar por
 partes, y la revisión a escala.
+
+## Captura por lotes (construida el 2026-11-15)
+
+Flujo: Facturas → "Subir lote" → se elige el cliente y se sube un PDF o
+varias fotos → cada página queda como una tarjeta con su miniatura y lo que
+dijo su QR → "Guardar N como pendientes" → cada factura se abre después en
+Facturas con su imagen al lado.
+
+- **Todo este paso ocurre en el navegador**: no llama al servidor ni cuesta
+  nada. `src/lib/lote/leer-paginas.ts` dibuja cada página con pdf.js a 200
+  ppp y busca el QR con ZXing (WebAssembly); `src/lib/lote/borrador.ts`
+  (lógica pura, probada) decide qué factura sale de cada página.
+- **Del QR salen, exactos**: RNC de la contraparte, e-NCF, fecha y total.
+  Comparando emisor y comprador con el RNC del cliente se sabe si es compra
+  o venta, y si la factura es de otro contribuyente (no se deja guardar:
+  suele ser señal de haber elegido el cliente equivocado).
+- **Del QR NO salen**: subtotal, ITBIS, descripción ni categoría. Esos
+  campos quedan vacíos y la factura queda pendiente.
+- **Páginas sin QR**: se guardan vacías con su imagen, para completarlas a
+  mano o con IA. La persona quita las que no son facturas.
+- **Duplicados**: se detectan contra lo ya guardado y dentro del mismo lote.
+- **"Leer con IA lo que falta"** (en el formulario de una factura que tiene
+  imagen guardada): llama al OCR con esa imagen y llena SOLO los campos
+  vacíos. Nunca pisa lo que vino del QR o lo que puso una persona. Es
+  página por página y a pedido, para que el costo lo controle el usuario.
+- **Tope de 100 páginas por lote**, comprobado antes de procesar nada.
+- El worker de pdf.js y el `.wasm` del lector de QR se sirven desde el
+  propio sitio: `scripts/copiar-estaticos.mjs` los copia a `public/` en
+  `postinstall`, `predev` y `prebuild` (no se versionan). Sin eso el lector
+  intentaría bajarse de un CDN externo.
+
+**Medido con el PDF real de 58 páginas** (en Chromium, vía la pantalla):
+27 códigos QR leídos, todos compras del cliente correcto, 17.5 segundos en
+total. Guardar las 58 páginas ocupó 67 KB en `localStorage` más 58 imágenes
+en IndexedDB. Subir el mismo PDF otra vez marcó las 27 como duplicadas.
+Comparación de lectores sobre las mismas páginas: ZXing imagen entera 19;
+ZXing con ventanas ampliadas ×2, 24 fuera del navegador y 27 dentro; jsQR
+20 en 110 s; OpenCV 23. Se eligió ZXing con ventanas.
+
+**Pendiente de la captura:**
+- Leer con IA todo un lote de una vez (hoy es factura por factura). Esperar
+  a tener API key para medir costo y precisión antes de automatizarlo.
+- Las tiras largas de los recibos (hasta 4,400 px de alto): la imagen se
+  guarda entera, pero al enviarla al OCR el modelo la reduce por su lado
+  mayor. Probablemente haya que partirlas en tramos. Sin medir.
+- Reconocer solas las páginas que no son facturas (hoy las quita la persona).
+- Revisión a escala: no hay todavía una cola ordenada por lo que falta.
+- Foto con varias facturas, y fotos HEIC de iPhone: sin tratar.
 
 ## Costo y límites (aprobado por el usuario el 2026-11-15) — NO construido todavía
 
@@ -469,11 +523,12 @@ descartar páginas que no son facturas.
    **TXT del 606**, **reporte de ingresos** (ventas, interno) y
    **exportación a Excel** de ambos — hecho el 2026-11-15. Falta que el
    usuario pase un 606 por el pre-validador de la DGII.
-4. ⏭️ **Siguiente**: (a) medir el OCR con facturas reales, comparando
-   modelos (requiere API key y facturas de muestra); (b) rediseñar la
-   captura para fotos, PDF de una factura y PDF de cientos (ver "Requisito
-   de captura"); (c) snapshot al declarar; (d) resolver las dudas abiertas
-   de "Formatos 606 y 607".
+4. ✅ **Captura por lotes con lectura de QR** — hecho el 2026-11-15 (ver
+   "Captura por lotes").
+5. ⏭️ **Siguiente**: (a) medir el OCR con facturas reales, comparando
+   modelos (requiere API key); (b) lo pendiente de la captura por lotes;
+   (c) snapshot al declarar; (d) resolver las dudas abiertas de "Formatos
+   606 y 607".
 5. Declaración ITBIS mensual (ya es solo aritmética sobre 606+607).
 6. IR-17 (adaptar el mismo concepto ya implementado en Nómina).
 7. Proyección de ISR.
@@ -521,17 +576,20 @@ roadmap.
 - **Pantallas** (`src/app`): `/` Inicio (conteos y facturas por revisar por
   cliente), `/clientes` (alta, edición, borrado en cascada), `/facturas`
   (filtros por cliente/tipo/mes/estado, totales, alta por OCR o a mano,
-  edición, borrado), `/reportes` (genera y descarga el TXT del 606 o 607
+  edición, borrado), `/lote` (captura por lotes: PDF o varias fotos), `/reportes` (genera y descarga el TXT del 606 o 607
   de un cliente y un mes y lo exporta a Excel; y el reporte de ingresos en
   Excel), `/configuracion` (código de acceso al OCR).
 - **Servidor**: solo `src/app/api/ocr/route.ts`.
 - **Datos** (`src/lib/datos`): `repositorio.ts` (interfaz),
   `repositorio-local.ts` (`localStorage`, claves `cielo-fiscal:clientes:v1`
-  y `cielo-fiscal:documentos:v1`), `datos-context.tsx` (estado compartido).
+  y `cielo-fiscal:documentos:v1`; imágenes en IndexedDB, base
+  `cielo-fiscal`, almacén `archivos`), `datos-context.tsx` (estado compartido).
 - **Lógica pura** (`src/lib`): `dgii-formatos.ts` (catálogos, reglas y
   generadores del 606 y 607), `documentos.ts` (qué factura puede marcarse
   revisada y entrar a un reporte, duplicados, validación de cliente),
-  `excel-reporte.ts` (arma las hojas del Excel del 606/607),
+  `excel-reporte.ts` (arma las hojas del Excel del 606 y de ingresos),
+  `qr-ecf.ts` (interpreta el QR de un comprobante electrónico),
+  `lote/` (lectura de páginas y borradores de la captura por lotes),
   `dgii-fiscal.ts` (motor fiscal), `utils.ts` (fechas locales, montos),
   `ocr-tipos.ts` (contrato servidor↔navegador), `ocr-cliente.ts` (prepara
   el archivo y llama a la ruta), `config-local.ts`.
@@ -597,7 +655,7 @@ roadmap.
   avisos altos). Al quitar Firebase desapareció el otro override.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
   `/api/ocr` dinámica).
-- `npm test` (vitest, en zona horaria de RD): **98 de 98** pasan — fechas
+- `npm test` (vitest, en zona horaria de RD): **119 de 119** pasan — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
   comparados carácter por carácter, dígito verificador, duplicados.
@@ -627,6 +685,14 @@ roadmap.
   con e-NCF y solo NCF/fecha/monto/ITBIS se guarda como revisada, y los dos
   Excel leídos de vuelta (606 con columna "Activo"; Ingresos con su hoja y
   resumen).
+- Captura por lotes: además de la medición con el PDF real, 15 de 15
+  comprobaciones con datos inventados (un QR generado para la prueba):
+  lote de 101 páginas rechazado, archivo de texto rechazado, cliente
+  equivocado detectado, fotos sueltas con y sin QR, total con coma de miles,
+  "Leer con IA lo que falta" con respuesta simulada (no pisa RNC, NCF, fecha
+  ni total del QR; llena lo vacío), borrar la factura borra su imagen, la
+  factura subida una por una también guarda su imagen, y vista móvil.
+  Regresión: 9 de 9 y 16 de 16 de los recorridos anteriores.
 - Dato de control del dígito verificador: el algoritmo de la macro da
   correcto el RNC `401007551`.
 - Ruta OCR contra el servidor real: sin código o código incorrecto → 401;
@@ -636,6 +702,7 @@ roadmap.
 - Versiones: Next 15.5.29, React 18.3.1, TypeScript 5.9.3,
   `@anthropic-ai/sdk` 1.8.0, zod 4.6.7, Tailwind 3.4.19, lucide-react
   0.400.0, vitest 5.1.0, `@types/node` 22 (lo exige vitest 5),
+  `pdfjs-dist` 6.5.438, `zxing-wasm` 3.1.7,
   `write-excel-file` 4.1.1 (elegida en vez de `xlsx`/SheetJS, que es la que
   usa Nómina, porque la versión de npm de esa arrastra avisos de seguridad;
   esta solo escribe y `npm audit` queda en 0).

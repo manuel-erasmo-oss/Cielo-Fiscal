@@ -3,14 +3,14 @@
 import { Suspense, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { Pencil, Plus, ReceiptText, Trash2, Users } from 'lucide-react'
+import { Files, Pencil, Plus, ReceiptText, Trash2, Users } from 'lucide-react'
 import { FacturaModal } from '@/components/facturas/FacturaModal'
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
 import { Badge } from '@/components/ui/Badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Toast } from '@/components/ui/Toast'
-import { CARD_CLASS, INPUT_CLASS, LABEL_CLASS, TH_CLASS } from '@/components/ui/clases'
+import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS, TH_CLASS } from '@/components/ui/clases'
 import { useDatos } from '@/lib/datos/datos-context'
 import { montoFacturadoDe, periodoDe } from '@/lib/documentos'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD, redondear2 } from '@/lib/utils'
@@ -24,7 +24,7 @@ function monto(valor: number | null) {
 
 function FacturasContenido() {
   const params = useSearchParams()
-  const { listo, errorCarga, clientes, documentos, guardarDocumento, eliminarDocumento } = useDatos()
+  const { listo, errorCarga, clientes, documentos, guardarDocumento, eliminarDocumento, obtenerArchivo } = useDatos()
 
   const [clienteId, setClienteId] = useState(params.get('cliente') ?? '')
   const [tipo, setTipo] = useState<TipoDocumento | ''>('')
@@ -62,8 +62,8 @@ function FacturasContenido() {
     total: redondear2(filtrados.reduce((s, d) => s + (d.montoTotal ?? 0), 0)),
   }), [filtrados])
 
-  async function handleGuardar(documento: DocumentoFiscal) {
-    await guardarDocumento(documento)
+  async function handleGuardar(documento: DocumentoFiscal, archivo?: Blob) {
+    await guardarDocumento(documento, archivo)
     setEnEdicion(undefined)
     setAviso({
       mensaje: documento.estadoRevision === 'revisado' ? 'Factura guardada como revisada' : 'Factura guardada como pendiente',
@@ -92,10 +92,16 @@ function FacturasContenido() {
       subtitle="Compras y ventas de tus clientes"
       actions={
         clientes.length > 0 && (
-          <button onClick={() => setEnEdicion(null)} className={BTN_PRIMARY}>
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Nueva factura</span>
-          </button>
+          <>
+            <Link href={clienteFiltro ? `/lote?cliente=${clienteFiltro}` : '/lote'} className={BTN_SECONDARY}>
+              <Files className="h-4 w-4" />
+              <span className="hidden sm:inline">Subir lote</span>
+            </Link>
+            <button onClick={() => setEnEdicion(null)} className={BTN_PRIMARY}>
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">Nueva factura</span>
+            </button>
+          </>
         )
       }
     >
@@ -246,6 +252,7 @@ function FacturasContenido() {
           documentos={documentos}
           clienteIdInicial={clienteFiltro || undefined}
           onGuardar={handleGuardar}
+          obtenerArchivo={obtenerArchivo}
           onClose={() => setEnEdicion(undefined)}
         />
       )}

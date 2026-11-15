@@ -8,12 +8,20 @@ import type { ClienteFiscal, DocumentoFiscal } from '@/types'
 export interface Repositorio {
   listarClientes(): Promise<ClienteFiscal[]>
   guardarCliente(cliente: ClienteFiscal): Promise<void>
-  // Elimina el cliente Y todas sus facturas.
+  // Elimina el cliente, todas sus facturas y las imágenes de estas.
   eliminarCliente(id: string): Promise<void>
 
   listarDocumentos(): Promise<DocumentoFiscal[]>
   guardarDocumento(documento: DocumentoFiscal): Promise<void>
+  // Varias facturas de una vez (captura por lotes).
+  guardarDocumentos(documentos: readonly DocumentoFiscal[]): Promise<void>
+  // Elimina la factura Y su imagen.
   eliminarDocumento(id: string): Promise<void>
+
+  // Imagen o PDF de una factura, para poder revisarla contra el original más
+  // tarde. Una por factura, identificada por el id del documento.
+  guardarArchivo(documentoId: string, archivo: Blob): Promise<void>
+  obtenerArchivo(documentoId: string): Promise<Blob | null>
 }
 
 export class AlmacenamientoError extends Error {

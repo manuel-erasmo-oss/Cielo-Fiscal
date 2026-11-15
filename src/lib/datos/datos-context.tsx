@@ -19,8 +19,12 @@ interface DatosCtx {
   documentos: DocumentoFiscal[]
   guardarCliente(cliente: ClienteFiscal): Promise<void>
   eliminarCliente(id: string): Promise<void>
-  guardarDocumento(documento: DocumentoFiscal): Promise<void>
+  // `archivo`: imagen o PDF de la factura, si se subió una nueva.
+  guardarDocumento(documento: DocumentoFiscal, archivo?: Blob): Promise<void>
+  // Captura por lotes: varias facturas con su imagen.
+  guardarLote(lote: readonly { documento: DocumentoFiscal; archivo: Blob }[]): Promise<void>
   eliminarDocumento(id: string): Promise<void>
+  obtenerArchivo(documentoId: string): Promise<Blob | null>
 }
 
 const DatosContext = createContext<DatosCtx | null>(null)
@@ -62,10 +66,18 @@ export function DatosProvider({
       await repositorio.eliminarCliente(id)
       await recargar()
     },
-    async guardarDocumento(documento) {
+    async guardarDocumento(documento, archivo) {
+      // Primero la imagen: si no cabe, la factura no queda guardada a medias.
+      if (archivo) await repositorio.guardarArchivo(documento.id, archivo)
       await repositorio.guardarDocumento(documento)
       await recargar()
     },
+    async guardarLote(lote) {
+      for (const { documento, archivo } of lote) await repositorio.guardarArchivo(documento.id, archivo)
+      await repositorio.guardarDocumentos(lote.map(l => l.documento))
+      await recargar()
+    },
+    obtenerArchivo: id => repositorio.obtenerArchivo(id),
     async eliminarDocumento(id) {
       await repositorio.eliminarDocumento(id)
       await recargar()
