@@ -1,6 +1,10 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
+import { ThemeProvider } from '@/lib/theme'
+import { DatosProvider } from '@/lib/datos/datos-context'
+import { Sidebar } from '@/components/layout/Sidebar'
+import { BottomNav } from '@/components/layout/BottomNav'
 
 // Misma tipografía y variable CSS que Cielo Cloud Nómina.
 const inter = Inter({
@@ -28,8 +32,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           } catch(e) {}
         `}} />
       </head>
-      <body className="min-h-screen bg-zinc-50 dark:bg-[#0d0f1a] font-sans transition-colors duration-200">
-        {children}
+      <body className="flex h-screen overflow-hidden bg-zinc-50 dark:bg-[#0d0f1a] font-sans transition-colors duration-200">
+        <ThemeProvider>
+          <DatosProvider>
+            <Sidebar />
+            {/* pb-16 en móvil: deja libre el alto de la barra inferior fija. */}
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0">
+              {children}
+            </div>
+            <BottomNav />
+          </DatosProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

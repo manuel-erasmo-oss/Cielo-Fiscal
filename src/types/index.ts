@@ -5,9 +5,10 @@
 //   `parseFechaLocal` (src/lib/utils.ts), nunca con `new Date(iso)`.
 // - Instantes (creadoEn, declaradoEn…) son strings ISO 8601 completos con hora.
 // - Montos en RD$ como number con 2 decimales (ver `redondear2`).
-// - Todo documento lleva `contadorUid`: las reglas de seguridad de
-//   Firestore/Storage deben exigir `contadorUid === request.auth.uid` en cada
-//   lectura/escritura (multi-tenant por contador).
+// - Todo registro lleva `contadorUid`. En el MVP (datos en el navegador, sin
+//   cuentas) vale siempre `CONTADOR_LOCAL`; el campo se conserva para que al
+//   pasar a Firestore las reglas puedan exigir
+//   `contadorUid === request.auth.uid` sin migrar la forma de los datos.
 //
 // Este archivo NO codifica el layout oficial de columnas del 606/607 ni las
 // casillas del IT-1: eso requiere la Norma General / el instructivo vigente
@@ -15,6 +16,9 @@
 
 export type FechaISO = string    // "YYYY-MM-DD"
 export type InstanteISO = string // ISO 8601 con hora
+
+// Valor de `contadorUid` mientras no hay cuentas (MVP con datos locales).
+export const CONTADOR_LOCAL = 'local'
 
 // ─── Cliente ─────────────────────────────────────────────────────────────────
 
@@ -69,10 +73,16 @@ export interface DocumentoFiscal {
   clienteId: string
   tipo: TipoDocumento
 
-  // El archivo real (imagen/PDF) vive en Firebase Storage; aquí solo su ruta.
-  // Nunca embebido en el documento de Firestore.
-  archivoPath: string
-  archivoMimeType: string
+  // 'ocr': los campos salieron de la extracción automática. 'manual': los
+  // digitó una persona desde cero.
+  origen: 'ocr' | 'manual'
+
+  // En el MVP el archivo NO se conserva: se usa para el OCR y la revisión, y
+  // solo queda su nombre como referencia. `archivoPath` es la ruta en Storage
+  // cuando exista almacenamiento en la nube; nunca se embebe el archivo aquí.
+  archivoNombre?: string
+  archivoMimeType?: string
+  archivoPath?: string
 
   // ── Campos extraídos (null = el OCR no pudo leerlo con seguridad) ──
   // Proveedor en una compra, cliente en una venta. Solo dígitos.

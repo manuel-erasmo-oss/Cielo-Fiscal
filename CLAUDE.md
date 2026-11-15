@@ -56,6 +56,51 @@ las API routes para las operaciones que requieren confianza del servidor
 (llamar a Anthropic, verificar el ID token, escribir con privilegios de
 admin). Ver `.env.example` para las variables necesarias.
 
+## Decisión de arquitectura del MVP (2026-11-15) — MANDA SOBRE LA SECCIÓN ANTERIOR
+
+La sección anterior describe el **producto final** (Firebase Auth +
+Firestore + Storage, multi-tenant real). El usuario decidió, con la opción
+recomendada y confirmada explícitamente, que el **MVP arranca híbrido**:
+
+- **Datos en el navegador** (`localStorage`), igual que Cielo Cloud Nómina.
+  Sin cuentas, sin Firebase todavía.
+- **Una sola pieza de servidor**: `POST /api/ocr`, porque la API key de
+  Anthropic no puede vivir en el navegador. Por eso se despliega en
+  **Vercel** y no en GitHub Pages (Pages solo sirve archivos estáticos).
+- El desarrollo sigue siendo en estas sesiones en la nube + GitHub; "local"
+  se refiere a dónde se guardan los datos del contador, no a dónde se
+  desarrolla.
+
+Por qué: el OCR es lo que vende el producto y lo de mayor riesgo, así que
+conviene probarlo con facturas reales cuanto antes, sin esperar a montar
+Firebase, auth y reglas de seguridad.
+
+Consecuencias que hay que respetar mientras dure el MVP:
+
+1. **Toda lectura/escritura de datos pasa por `Repositorio`**
+   (`src/lib/datos/repositorio.ts`). Las pantallas nunca tocan
+   `localStorage` directo. Migrar a Firestore = escribir otra
+   implementación de esa interfaz (ya es asíncrona a propósito), no rehacer
+   pantallas. No romper esta regla.
+2. **`contadorUid` se conserva en todos los registros** con el valor fijo
+   `CONTADOR_LOCAL = 'local'`, para no cambiar la forma de los datos al
+   migrar.
+3. **La ruta OCR se protege con un código de acceso compartido**
+   (`OCR_CODIGO_ACCESO`), no con cuentas. Es protección de MVP: sirve para
+   que un desconocido no gaste la API key, no para distinguir usuarios. No
+   hay límite de uso por persona.
+4. **Los archivos de las facturas no se guardan.** Se envían al servidor
+   solo para leerlos; queda el nombre del archivo como referencia. Para
+   re-revisar una factura contra su imagen hay que volver a subirla.
+5. **Limitación conocida y aceptada**: los datos viven en un solo navegador
+   y se pierden si el usuario borra los datos del sitio. No hay respaldo ni
+   exportación todavía.
+
+Firebase (cliente y Admin) se quitó del proyecto en esta decisión. La
+versión que lo tenía cableado está en el commit `6e89a90`
+(`src/lib/firebase.ts`, `src/lib/firebase-admin.ts`, y la ruta OCR leyendo
+de Storage con verificación de ID token) para cuando llegue la migración.
+
 ## Identidad visual compartida con Cielo Cloud Nómina
 
 Copiada literalmente (no "inspirada de lejos") de los archivos de
@@ -154,37 +199,39 @@ confirmado contra la Guía No.14 DGII).
   construido ningún generador de archivo todavía, a propósito, hasta tener
   la fuente oficial.
 
-## Roadmap sugerido (MVP angosto primero)
+## Roadmap (MVP angosto primero)
 
-1. Auth + `ClienteFiscal` (CRUD) — reutilizar el patrón de multicuenta de
-   Firebase ya portado a `src/lib/firebase.ts`.
-2. Subida de documento (imagen/PDF) → Storage → `src/app/api/ocr/route.ts`
-   → `DocumentoFiscal` con revisión manual de campos de baja confianza.
-3. Reporte 606 (el más simple de los dos, compras) — probar la precisión
-   real del OCR y el formato DGII correcto antes de expandir.
+1. ✅ **Clientes** (`ClienteFiscal`, CRUD) — hecho el 2026-11-15, sin auth
+   (ver decisión de arquitectura del MVP).
+2. ✅ **Facturas**: subida de imagen/PDF → `POST /api/ocr` → revisión manual
+   de campos → `DocumentoFiscal`; también captura a mano. Hecho el
+   2026-11-15, **pero el OCR no se ha probado con una factura real**.
+3. ⏭️ **Siguiente: medir el OCR con facturas reales** (requiere desplegar
+   en Vercel con las dos variables de entorno) y **Reporte 606** (compras).
+   El 606 NO se empieza sin traer antes la norma/instructivo vigente de la
+   DGII con el layout de columnas (lección 2).
 4. Reporte 607 (ventas).
 5. Declaración ITBIS mensual (ya es solo aritmética sobre 606+607).
 6. IR-17 (adaptar el mismo concepto ya implementado en Nómina).
 7. Proyección de ISR.
-8. Recién en esta fase: hub/landing compartido de la suite, si hay ya 2+
-   productos reales en venta.
+8. Migración a Firebase (cuentas, datos en la nube, archivos en Storage)
+   cuando el MVP esté validado.
+9. Hub/landing compartido de la suite, si hay ya 2+ productos en venta.
 
-## Lo que falta para que esto sea un proyecto real (no solo scaffold local)
+Candidatos sin decidir (confirmar con el usuario antes de hacerlos):
+respaldo/exportación de los datos del navegador; subida de varias facturas
+a la vez; estado "descartada" en la interfaz (el tipo ya lo contempla).
 
-Este árbol de archivos existe hoy solo en el sandbox de la sesión — para
-que sobreviva y se vuelva un proyecto de Claude Code de verdad:
+## Lo que falta para probarlo de verdad
 
-1. ~~**Repo de GitHub nuevo y vacío**~~ — HECHO (2026-11-15): el usuario
-   creó `manuel-erasmo-oss/Cielo-Fiscal` y lo conectó a una sesión de
-   Claude Code. Ver "Estado real del repo" abajo.
-2. **Firebase project nuevo** (separado del de Nómina, por limpieza de
-   seguridad/facturación) — Auth, Firestore, Storage habilitados; llenar
-   `.env.local` a partir de `.env.example`.
-3. **`ANTHROPIC_API_KEY`** propia para el endpoint de OCR — nunca
-   reutilizar una key personal en un producto que se va a vender.
-4. Reglas de seguridad de Firestore/Storage reales (aislamiento por
-   `contadorUid`) — no se han escrito todavía, es boilerplate crítico antes
-   de cualquier dato real.
+1. ~~Repo de GitHub~~ — HECHO: `manuel-erasmo-oss/Cielo-Fiscal`.
+2. **Desplegar en Vercel** (lo hace el usuario una vez): importar el repo y
+   definir dos variables de entorno del servidor, `ANTHROPIC_API_KEY` y
+   `OCR_CODIGO_ACCESO` (ver `.env.example`). Vercel publica desde la rama
+   de producción, así que el trabajo tiene que llegar a `main`.
+3. **`ANTHROPIC_API_KEY` propia del producto** — nunca una key personal.
+4. Firebase project nuevo y reglas de seguridad: **pospuesto** hasta la
+   migración (paso 8 del roadmap).
 
 ## Nombre del producto
 
@@ -200,93 +247,109 @@ otro (ej. "Cielo Cloud Impuestos", "Cielo Cloud 606").
 
 ## Estado real del repo (2026-11-15)
 
-Este archivo se escribió en la sesión de Cielo Cloud Nómina, describiendo
-un scaffold que vivía solo en el sandbox de aquella sesión. El código NO
-vino con el archivo, así que **el scaffold se recreó en este repo** en la
-sesión del 2026-11-15, siguiendo este documento. No es el código original:
-es una reconstrucción, y difiere donde se indica abajo.
+Este archivo se escribió en la sesión de Cielo Cloud Nómina describiendo un
+scaffold que vivía solo en aquel sandbox; el código no vino con él. En la
+sesión del 2026-11-15 se recreó el scaffold en este repo y, tras la
+decisión de arquitectura del MVP, se construyeron los pasos 1 y 2 del
+roadmap.
 
 ### Qué hay en el árbol
 
-- Config: `package.json`, `next.config.mjs` (sin `output: 'export'`),
-  `tsconfig.json`, `postcss.config.mjs`, `.gitignore`, `.env.example`.
+- **Pantallas** (`src/app`): `/` Inicio (conteos y facturas por revisar por
+  cliente), `/clientes` (alta, edición, borrado en cascada), `/facturas`
+  (filtros por cliente/tipo/mes/estado, totales, alta por OCR o a mano,
+  edición, borrado), `/configuracion` (código de acceso al OCR).
+- **Servidor**: solo `src/app/api/ocr/route.ts`.
+- **Datos** (`src/lib/datos`): `repositorio.ts` (interfaz),
+  `repositorio-local.ts` (`localStorage`, claves `cielo-fiscal:clientes:v1`
+  y `cielo-fiscal:documentos:v1`), `datos-context.tsx` (estado compartido).
+- **Lógica pura** (`src/lib`): `documentos.ts` (campos requeridos, qué
+  factura puede entrar a un reporte, duplicados, validación de cliente),
+  `dgii-fiscal.ts` (motor fiscal), `utils.ts` (fechas locales, montos),
+  `ocr-tipos.ts` (contrato servidor↔navegador), `ocr-cliente.ts` (prepara
+  el archivo y llama a la ruta), `config-local.ts`.
+- **Interfaz** (`src/components`): `layout/` (Sidebar portado de Nómina sin
+  selector de empresa ni logout, Header, BottomNav, Pagina), `ui/`
+  (Toast, Badge, EmptyState, ThemeToggle y StatCard copiados de Nómina;
+  Modal y ConfirmDialog nuevos), `clientes/ClienteModal`,
+  `facturas/FacturaModal`.
 - Copiados byte a byte de `manuel-erasmo-oss/tyui` (commit `1555027`):
-  `tailwind.config.ts`, `src/app/globals.css`, `postcss.config.mjs`,
-  `tsconfig.json`, `.gitignore`. `BTN_PRIMARY`, `formatCedula`, el patrón
-  de multicuenta de `firebase.ts`, `TRAMOS_ISR` y el SVG del isotipo
-  (`Sidebar.tsx`) se copiaron literalmente dentro de archivos propios.
-- `src/lib/utils.ts` — `parseFechaLocal`, `fechaLocalISO`, `hoyLocalISO`,
-  `formatDate`, `formatRD`, `redondear2`, `soloDigitos`, `formatCedula`.
-  Nota: en `tyui` NO existen `parseFechaLocal`/`hoyLocalISO` con esos
-  nombres; aquí se escribieron nuevos.
-- `src/lib/firebase.ts` (cliente: Auth + Firestore + Storage) y
-  `src/lib/firebase-admin.ts` (servidor, con `import 'server-only'`).
-- `src/types/index.ts` — el modelo de datos descrito arriba.
-- `src/lib/dgii-fiscal.ts` — constantes con su procedencia, fechas límite,
-  aritmética base de ITBIS, proyección de ISR.
-- `src/app/api/ocr/route.ts` — ver "Ruta OCR" abajo.
-- `src/app/layout.tsx`, `src/app/page.tsx` (placeholder con el isotipo y
-  el roadmap; sin funcionalidad).
+  `src/app/globals.css`, `postcss.config.mjs`, `tsconfig.json`,
+  `.gitignore`. `tailwind.config.ts` es igual salvo una línea añadida al
+  `content` (`./src/lib/**`): sin ella el gradiente de `BTN_PRIMARY` no se
+  generaba, porque aquí esas clases solo aparecen en `src/lib/utils.ts`.
 
-### Verificado en esa sesión (resultado real, no solo "implementado")
+### Reglas de negocio ya implementadas (y probadas)
 
-- `npm audit`: **0 vulnerabilidades**, pero solo gracias a dos `overrides`
-  en `package.json`. Sin ellos reportaba 6 (1 moderada, 5 altas):
-  `@grpc/grpc-js` 1.9.x arrastrado por el SDK cliente de Firebase
-  (`@firebase/firestore`, incluso en su última versión) y `postcss` 8.4.31
-  fijado dentro de Next 15.5.29. Los overrides fuerzan `@grpc/grpc-js`
-  ^1.14.7 y `postcss` ^8.5.33. Si se sube Next o Firebase, revisar si
-  siguen haciendo falta.
-- `npx tsc --noEmit`: limpio. `npm run build`: limpio (`/` estática,
+- Una factura se guarda como **pendiente** (puede estar incompleta) o como
+  **revisada** (exige RNC/cédula, nombre, NCF, fecha, monto, ITBIS y total).
+  `esIncluibleEnReporte` es el único criterio para que entre a un reporte:
+  revisada Y completa. Los reportes futuros deben usar esa función.
+- Los campos de los que el OCR dudó se marcan en ámbar hasta que una
+  persona los toca. ITBIS en cero es un dato válido, no un faltante.
+- **Duplicado** = mismo cliente, mismo tipo, mismo NCF y misma contraparte.
+  Se avisa y no se deja marcar como revisada dos veces.
+- Si monto + ITBIS no coincide con el total se muestra un aviso que NO
+  bloquea (una factura puede traer otros cargos).
+- RNC/cédula: solo se valida la longitud (9 u 11 dígitos). El dígito
+  verificador NO se comprueba — su algoritmo no se consultó en fuente
+  oficial. El formato del NCF tampoco se valida, por la misma razón.
+- Datos dañados en `localStorage` producen un aviso y **no se
+  sobrescriben**.
+- Fotos de más de 4 MB se reducen en el navegador (lado mayor 2200 px,
+  JPEG) antes de subir; el tope de 4 MB existe por el límite de 4.5 MB del
+  cuerpo de una función de Vercel (dato recordado, no re-verificado en la
+  documentación de Vercel).
+
+### Verificado el 2026-11-15 (resultado real)
+
+- `npm audit`: **0 vulnerabilidades**, con un `override` en `package.json`
+  que fuerza `postcss` ^8.5.33 dentro de Next 15.5.29 (que fija 8.4.31, con
+  avisos altos). Al quitar Firebase desapareció el otro override.
+- `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
   `/api/ocr` dinámica).
-- Versiones instaladas: Next 15.5.29, React 18.3.1, TypeScript 5.9.3,
-  firebase 12.19.0, firebase-admin 14.5.1, `@anthropic-ai/sdk` 1.8.0,
-  zod 4.6.7, Tailwind 3.4.19. TypeScript y Firebase se dejaron en la misma
-  major que Nómina a propósito (hay TS 7 y firebase 13 publicados).
-- Fechas, con `TZ=America/Santo_Domingo`: `parseFechaLocal('2026-03-01')`
-  da día 1 de marzo; `new Date('2026-03-01')` da día **28** (el bug de la
-  lección 1, reproducido). `2026-02-30`, `2026-3-1` y un ISO con hora
-  lanzan error.
-- Motor fiscal: IR-17 de nov-2026 → `2026-12-10`, de dic-2026 →
-  `2027-01-10`. ITBIS 18,000 − 5,400.10 − 1,000.20 → 11,599.70 a pagar;
-  1,000 − 5,400 → 4,400 de saldo a favor. ISR jurídica sobre 1,000,000 →
-  270,000. ISR física: 416,220 → 0; 624,329 → 31,216.35; 867,123 →
-  79,774.80; 1,000,000 → 112,995.25.
-- App levantada con `next start`: `/` responde 200 y renderiza en claro y
-  oscuro sin errores de consola. `POST /api/ocr` sin token → 401; con
-  token y sin Firebase Admin configurado → 503 con mensaje claro;
-  `GET /api/ocr` → 405.
+- `npm test` (vitest, en zona horaria de RD): **40 de 40** pasan — fechas
+  (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
+  1), motor fiscal, reglas de facturas, duplicados, validación de cliente.
+- Recorrido en navegador real (Chromium) contra `next start`: **41 de 41**
+  comprobaciones — alta/edición/borrado de clientes, captura manual,
+  flujo OCR con respuesta simulada, duplicados, reducción de imagen
+  (37.9 MB → 2.81 MB), totales (RD$3,500.50 / RD$180.00 / RD$1,180.00),
+  filtros, persistencia tras recargar, borrado en cascada, datos dañados,
+  vista móvil sin desborde, sin errores de consola. El script vivía en el
+  scratchpad de la sesión y NO está en el repo: no hay pruebas de
+  navegador automatizadas todavía.
+- Ruta OCR contra el servidor real: sin código o código incorrecto → 401;
+  tipo inválido → 400; tipo de archivo no soportado → 415; JSON en vez de
+  formulario → 400; más de 4 MB → 413; código correcto con API key falsa →
+  la llamada llega a Anthropic, que la rechaza, y la ruta responde 503.
+- Versiones: Next 15.5.29, React 18.3.1, TypeScript 5.9.3,
+  `@anthropic-ai/sdk` 1.8.0, zod 4.6.7, Tailwind 3.4.19, lucide-react
+  0.400.0, vitest 5.1.0, `@types/node` 22 (lo exige vitest 5).
 
-### NO verificado (no había credenciales en la sesión)
+### NO verificado
 
-- **La extracción OCR nunca corrió contra una factura real.** No había
-  `ANTHROPIC_API_KEY` ni proyecto Firebase: de la route solo se probaron
-  los caminos de rechazo previos a la llamada al modelo. La precisión real
-  es desconocida — es justo lo que el paso 3 del roadmap debe medir.
-- Firebase (Auth, Firestore, Storage, Admin) no se ejecutó contra un
-  proyecto real; solo compila.
-- No hay tests automatizados ni ESLint configurado.
+- **El OCR nunca ha leído una factura real.** No había API key válida: se
+  probó todo lo que rodea a la llamada al modelo y la pantalla de revisión
+  con una respuesta simulada, pero no la extracción. Su precisión es
+  desconocida.
+- No se ha desplegado en Vercel.
+- No hay ESLint configurado.
 
 ### Ruta OCR (`POST /api/ocr`)
 
-- Request: `Authorization: Bearer <ID token>` +
-  `{ archivoPath, tipo: 'compra' | 'venta' }`. Verifica el token con
-  Firebase Admin, exige que `archivoPath` empiece por
-  `contadores/<uid>/` (el Admin SDK salta las reglas de Storage, así que
-  el aislamiento se comprueba en la route), descarga el archivo y lo envía
-  al modelo. Acepta JPEG/PNG/WebP/GIF/PDF hasta 10 MB.
-- **Convención nueva que esto introduce**: los archivos de un contador
-  viven bajo `contadores/<uid>/…` en Storage. Las reglas de Storage, cuando
-  se escriban, deben usar el mismo prefijo.
+- Request: encabezado `x-codigo-acceso` + `multipart/form-data` con
+  `archivo` y `tipo` (`compra` | `venta`). Acepta JPEG/PNG/WebP/GIF/PDF
+  hasta 4 MB. Si faltan `ANTHROPIC_API_KEY` u `OCR_CODIGO_ACCESO` responde
+  503 en vez de quedar abierta.
 - Modelo `claude-opus-5-5`, salida estructurada con Zod, `effort: medium`,
-  con fallback de servidor (`fallbacks: 'default'`) por si el modelo
-  declina. Cambiar de modelo es una constante (`MODELO_OCR`) — decisión de
-  costo/precisión pendiente de medir con facturas reales.
-- No escribe en Firestore: devuelve `{ extraccion, confianzaOCR,
-  camposIncompletos, archivoMimeType }` para revisión manual. Lo que no
-  pasa validación (fecha inexistente, monto negativo) vuelve como `null` y
-  entra a `camposIncompletos`. `confianzaOCR` es autorreportada por el
-  modelo: sirve para ordenar la cola de revisión, no para saltársela.
+  con fallback de servidor (`fallbacks: 'default'`). Cambiar de modelo es
+  una constante (`MODELO_OCR`) — decisión de costo/precisión pendiente de
+  medir con facturas reales.
+- No guarda nada. Devuelve `{ extraccion, confianzaOCR, camposIncompletos }`.
+  Lo que no pasa validación (fecha inexistente, monto negativo) vuelve como
+  `null` y entra a `camposIncompletos`. `confianzaOCR` es autorreportada por
+  el modelo: orientativa.
 
 ### Procedencia de los parámetros en `dgii-fiscal.ts`
 
@@ -299,3 +362,5 @@ es una reconstrucción, y difiere donde se indica abajo.
   feriado. El recargo "10% + 4% + 1.10%" del IR-17 que menciona la lección
   2 NO se codificó: no aparece en el código de `tyui` y este documento no
   dice cómo se aplica cada porcentaje.
+- Nada del motor fiscal se usa todavía en pantalla: los pasos 1 y 2 no
+  calculan impuestos.

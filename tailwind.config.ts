@@ -6,6 +6,10 @@ const config: Config = {
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+    // Única diferencia con el config de Cielo Cloud Nómina: BTN_PRIMARY vive
+    // en src/lib/utils.ts y aquí ningún otro archivo repite sus clases, así
+    // que sin esta línea Tailwind no genera el gradiente del botón.
+    './src/lib/**/*.{ts,tsx}',
   ],
   theme: {
     extend: {
