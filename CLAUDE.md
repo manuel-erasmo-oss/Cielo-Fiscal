@@ -687,9 +687,17 @@ roadmap.
 
 ### Verificado el 2026-11-15 (resultado real)
 
-- `npm audit`: **0 vulnerabilidades**, con un `override` en `package.json`
-  que fuerza `postcss` ^8.5.33 dentro de Next 15.5.29 (que fija 8.4.31, con
-  avisos altos). Al quitar Firebase desapareció el otro override.
+- `npm audit`: 0 vulnerabilidades hasta el 2026-11-15, con un `override`
+  en `package.json` que fuerza `postcss` ^8.5.33 dentro de Next 15.5.29
+  (que fija 8.4.31, con avisos altos). Al quitar Firebase desapareció el
+  otro override.
+  **2026-11-17**: aparece GHSA-fc5q-39xc-vjpf (ReDoS en `picomatch`
+  <=4.0.7, severidad alta). La versión más nueva publicada es la 4.0.7, así
+  que no hay arreglo todavía. Solo lo usan herramientas de desarrollo
+  (Tailwind al compilar, vitest/vite); `npm audit --omit=dev` da **0**, o
+  sea, nada de lo que se publica lo trae. Los patrones que procesa son los
+  de la configuración del proyecto, no datos de usuarios. Revisar cuando
+  salga picomatch 4.0.8 o superior.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
   `/api/ocr` dinámica).
 - `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan — fechas
