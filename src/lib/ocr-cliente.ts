@@ -1,4 +1,5 @@
 import { leerCodigoOCR } from '@/lib/config-local'
+import { trocearSiEsLarga } from '@/lib/lote/tramos'
 import {
   ENCABEZADO_CODIGO,
   MIME_PDF,
@@ -17,6 +18,9 @@ export class OCRError extends Error {
     // true cuando el problema es el código de acceso (falta o es incorrecto):
     // la pantalla ofrece ir a Configuración en vez de reintentar.
     readonly esDeCodigo = false,
+    // true cuando el servidor no tiene configurada la lectura con IA: no
+    // tiene sentido seguir intentando con las demás páginas de un lote.
+    readonly sinServicio = false,
   ) {
     super(mensaje)
     this.name = 'OCRError'
@@ -76,19 +80,35 @@ export async function prepararArchivo(archivo: File): Promise<File> {
   return reducido
 }
 
-// `actividadCliente`: a qué se dedica el cliente; orienta la clasificación
-// de la compra (costo, gasto o activo).
-export async function extraerFactura(archivo: File, tipo: TipoDocumento, actividadCliente?: string): Promise<ResultadoOCR> {
+export interface ContextoCliente {
+  // RNC o cédula del cliente: con él el servidor deduce si es compra o venta.
+  rncCliente?: string
+  // A qué se dedica: orienta la clasificación de la compra (costo, gasto, activo).
+  actividad?: string
+}
+
+// Lee una factura con IA. `tipo` es el que se asume si la factura no deja
+// saber si es compra o venta. Una imagen muy larga (un recibo de caja) se
+// envía partida en tramos.
+export async function extraerFactura(archivo: File, tipo: TipoDocumento, contexto: ContextoCliente = {}): Promise<ResultadoOCR> {
   const codigo = leerCodigoOCR()
   if (!codigo) {
     throw new OCRError('Falta el código de acceso al OCR. Escríbelo en Configuración.', true)
   }
 
-  const listo = await prepararArchivo(archivo)
+  const partes = await trocearSiEsLarga(archivo)
   const form = new FormData()
-  form.set('archivo', listo)
+  if (partes.length > 1) {
+    if (partes.reduce((s, p) => s + p.size, 0) > TAMANO_MAXIMO_BYTES) {
+      throw new OCRError('El recibo es demasiado grande para leerlo con IA. Captúralo a mano.')
+    }
+    partes.forEach((parte, i) => form.append('archivo', parte, `tramo-${i + 1}.jpg`))
+  } else {
+    form.set('archivo', await prepararArchivo(archivo))
+  }
   form.set('tipo', tipo)
-  if (actividadCliente?.trim()) form.set('actividad', actividadCliente.trim())
+  if (contexto.rncCliente) form.set('rncCliente', contexto.rncCliente)
+  if (contexto.actividad?.trim()) form.set('actividad', contexto.actividad.trim())
 
   let respuesta: Response
   try {
@@ -109,7 +129,8 @@ export async function extraerFactura(archivo: File, tipo: TipoDocumento, activid
   }
   if (!respuesta.ok || !cuerpo || 'error' in cuerpo) {
     const mensaje = cuerpo && 'error' in cuerpo ? cuerpo.error : `El OCR falló (error ${respuesta.status}).`
-    throw new OCRError(mensaje, respuesta.status === 401)
+    // 401: código incorrecto. 503: el servidor no tiene la lectura configurada.
+    throw new OCRError(mensaje, respuesta.status === 401, respuesta.status === 503)
   }
   return cuerpo
 }

@@ -3,58 +3,92 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { AlertTriangle, CircleCheck, FileUp, Info, LoaderCircle, QrCode, Users } from 'lucide-react'
+import { AlertTriangle, CheckCheck, CircleCheck, CircleStop, FileUp, Info, LoaderCircle, QrCode, Sparkles, Users } from 'lucide-react'
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS } from '@/components/ui/clases'
+import { leerCodigoOCR } from '@/lib/config-local'
 import { useDatos } from '@/lib/datos/datos-context'
-import { documentoDesdePagina, interpretarPagina, type BorradorPagina, type EstadoPagina } from '@/lib/lote/borrador'
+import { ETIQUETA_CAMPO } from '@/lib/documentos'
+import {
+  documentoDesdePagina,
+  fusionarConLectura,
+  interpretarPagina,
+  observaciones,
+  type BorradorPagina,
+  type ContextoLote,
+  type EstadoPagina,
+} from '@/lib/lote/borrador'
 import { LoteError, MAXIMO_PAGINAS_LOTE, leerPaginas, type PaginaLeida } from '@/lib/lote/leer-paginas'
+import { OCRError, extraerFactura } from '@/lib/ocr-cliente'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD } from '@/lib/utils'
-import type { DocumentoFiscal, TipoDocumento } from '@/types'
+import type { CampoExtraido, DocumentoFiscal, TipoDocumento } from '@/types'
 
 // Captura por lotes: un PDF de muchas páginas (o varias fotos) → una factura
-// pendiente por página, con lo que diga su código QR. Ver CLAUDE.md,
-// "Requisito de captura" y "Primera muestra real".
+// por página, llenada por la IA. Dos pasos automáticos:
+//   1. En el navegador, gratis: separar las páginas y leer el código QR de los
+//      comprobantes electrónicos (RNC, e-NCF, fecha y total exactos).
+//   2. En el servidor, con costo: la IA lee cada página y llena el resto
+//      (montos, ITBIS, categoría, nombre…), decide si es compra o venta y si
+//      la página es una factura. Lo que vino del QR manda sobre lo que lea.
+// La persona solo interviene en las páginas con observaciones.
+// Ver CLAUDE.md, "Captura por lotes".
 
 interface PaginaLote extends PaginaLeida {
   url: string // object URL de la imagen, para la miniatura
   borrador: BorradorPagina
   incluir: boolean
+  // La lectura con IA de esta página falló (se puede reintentar).
+  errorIA?: string
 }
 
-type Fase = 'inicio' | 'leyendo' | 'resultado' | 'guardado'
+type Fase = 'inicio' | 'leyendo' | 'leyendo_ia' | 'resultado' | 'guardado'
 
-const ETIQUETA_ESTADO: Record<EstadoPagina, { texto: string; variante: 'success' | 'neutral' | 'danger' | 'warning' }> = {
-  qr: { texto: 'QR leído', variante: 'success' },
+// Páginas que se leen con IA a la vez: acelera el lote sin saturar el servidor.
+const LECTURAS_SIMULTANEAS = 3
+
+const ETIQUETA_ESTADO: Record<EstadoPagina, { texto: string; variante: 'success' | 'neutral' | 'danger' | 'warning' | 'default' }> = {
+  qr: { texto: 'QR leído', variante: 'default' },
   sin_qr: { texto: 'Sin QR', variante: 'neutral' },
   ajena: { texto: 'De otro contribuyente', variante: 'danger' },
   duplicada: { texto: 'Duplicada', variante: 'warning' },
+  no_factura: { texto: 'No es factura', variante: 'neutral' },
 }
 
-// Una página duplicada o ajena no se puede incluir.
-const esIncluible = (p: PaginaLote) => p.borrador.estado === 'qr' || p.borrador.estado === 'sin_qr'
+// Una página duplicada o de otro contribuyente no se puede incluir.
+const esIncluible = (p: PaginaLote) => p.borrador.estado !== 'ajena' && p.borrador.estado !== 'duplicada'
+// Las que no pasan por la IA: no aportan nada y costarían igual.
+const leerConIA = (p: PaginaLote) => esIncluible(p) && !p.borrador.leidaConIA
 
 function LoteContenido() {
   const params = useSearchParams()
-  const { listo, errorCarga, clientes, documentos, guardarLote } = useDatos()
+  const { listo, errorCarga, clientes, documentos, guardarLote, guardarDocumentos } = useDatos()
 
   const [clienteId, setClienteId] = useState(params.get('cliente') ?? '')
   const [tipoPorDefecto, setTipoPorDefecto] = useState<TipoDocumento>('compra')
   const [fase, setFase] = useState<Fase>('inicio')
   const [paginas, setPaginas] = useState<PaginaLote[]>([])
   const [total, setTotal] = useState(0)
+  const [leidasIA, setLeidasIA] = useState(0)
+  const [aLeerIA, setALeerIA] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  // Por qué la lectura con IA no corrió o se interrumpió (sin código, sin servicio…).
+  const [avisoIA, setAvisoIA] = useState<{ mensaje: string; deCodigo: boolean } | null>(null)
   const [guardando, setGuardando] = useState(false)
-  const [guardadas, setGuardadas] = useState(0)
+  const [guardados, setGuardados] = useState<DocumentoFiscal[]>([])
+  const [aprobadas, setAprobadas] = useState(0)
+  const [hayCodigo, setHayCodigo] = useState(true)
   const inputArchivos = useRef<HTMLInputElement>(null)
 
   const cliente = clientes.find(c => c.id === clienteId) ?? clientes[0]
 
+  useEffect(() => { setHayCodigo(!!leerCodigoOCR()) }, [])
+
   // Si se sale de la pantalla a mitad de la lectura, esta se detiene; y las
   // miniaturas se liberan.
   const vivo = useRef(true)
+  const detener = useRef(false)
   const urls = useRef<string[]>([])
   useEffect(() => {
     vivo.current = true
@@ -69,8 +103,85 @@ function LoteContenido() {
     urls.current = []
     setPaginas([])
     setTotal(0)
+    setLeidasIA(0)
+    setALeerIA(0)
     setError(null)
+    setAvisoIA(null)
+    setGuardados([])
+    setAprobadas(0)
     setFase('inicio')
+  }
+
+  // Facturas contra las que se detectan duplicados: las guardadas y las de
+  // las demás páginas del lote.
+  function contexto(lista: readonly PaginaLote[], excepto?: number): ContextoLote {
+    const existentes: ContextoLote['existentes'][number][] = [...documentos]
+    for (const p of lista) {
+      if (p.numero === excepto || !esIncluible(p) || !p.borrador.campos.ncf) continue
+      existentes.push({
+        id: `lote-${p.numero}`, clienteId: cliente.id, tipo: p.borrador.tipo, ncf: p.borrador.campos.ncf,
+        rncCedulaContraparte: p.borrador.campos.rncCedulaContraparte, estadoRevision: 'pendiente_revision',
+      })
+    }
+    return { cliente, tipoPorDefecto, existentes }
+  }
+
+  // Paso 2: la IA lee las páginas indicadas, varias a la vez.
+  async function leerConIALasPaginas(lista: PaginaLote[]) {
+    const pendientes = lista.filter(leerConIA)
+    if (pendientes.length === 0) return lista
+    if (!leerCodigoOCR()) {
+      setAvisoIA({ mensaje: 'La lectura con IA no corrió: falta el código de acceso. Escríbelo en Configuración y vuelve a intentarlo.', deCodigo: true })
+      return lista
+    }
+    setFase('leyendo_ia')
+    setAvisoIA(null)
+    setALeerIA(pendientes.length)
+    setLeidasIA(0)
+    detener.current = false
+
+    let actual = lista
+    const actualizar = (numero: number, cambio: (p: PaginaLote) => PaginaLote) => {
+      actual = actual.map(p => (p.numero === numero ? cambio(p) : p))
+      if (vivo.current) setPaginas(actual)
+    }
+
+    const cola = [...pendientes]
+    let abortar: { mensaje: string; deCodigo: boolean } | null = null
+    async function trabajador() {
+      while (cola.length > 0 && !abortar && !detener.current && vivo.current) {
+        const pagina = cola.shift()!
+        try {
+          const archivo = new File([pagina.imagen], `${pagina.archivoNombre}-p${pagina.paginaEnArchivo}.jpg`, { type: 'image/jpeg' })
+          const lectura = await extraerFactura(archivo, pagina.borrador.tipo, { rncCliente: cliente.rncCedula, actividad: cliente.actividad })
+          const vigente = actual.find(p => p.numero === pagina.numero) ?? pagina
+          const borrador = fusionarConLectura(vigente.borrador, lectura, contexto(actual, pagina.numero))
+          actualizar(pagina.numero, p => ({
+            ...p,
+            borrador,
+            errorIA: undefined,
+            // Lo que la IA descarta (no factura, duplicada) deja de estar marcado.
+            incluir: borrador.estado === 'no_factura' || borrador.estado === 'duplicada' ? false : p.incluir,
+          }))
+        } catch (e) {
+          const err = e instanceof OCRError ? e : new OCRError('La lectura con IA falló.')
+          if (err.esDeCodigo || err.sinServicio) {
+            // Ninguna de las páginas que quedan va a poder leerse.
+            abortar = { mensaje: err.message, deCodigo: err.esDeCodigo }
+            cola.unshift(pagina)
+          } else {
+            actualizar(pagina.numero, p => ({ ...p, errorIA: err.message }))
+          }
+        }
+        if (vivo.current) setLeidasIA(n => n + 1)
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(LECTURAS_SIMULTANEAS, pendientes.length) }, trabajador))
+    if (abortar && vivo.current) setAvisoIA(abortar)
+    else if (detener.current && vivo.current) {
+      setAvisoIA({ mensaje: `Lectura detenida. ${cola.length} página(s) quedaron sin leer con IA.`, deCodigo: false })
+    }
+    return actual
   }
 
   async function procesar(lista: FileList | null) {
@@ -79,42 +190,56 @@ function LoteContenido() {
     reiniciar()
     setFase('leyendo')
 
-    // Facturas contra las que se detectan duplicados: las guardadas y las de
-    // las páginas ya leídas de este mismo lote.
-    const existentes: Pick<DocumentoFiscal, 'id' | 'clienteId' | 'tipo' | 'ncf' | 'rncCedulaContraparte' | 'estadoRevision'>[] = [...documentos]
+    // Paso 1: páginas y QR, en el navegador.
+    let leidas: PaginaLote[] = []
     try {
       await leerPaginas(archivos, (pagina, totalPaginas) => {
-        const borrador = interpretarPagina(pagina.textoQr, { cliente, tipoPorDefecto, existentes })
-        if (borrador.estado === 'qr') {
-          existentes.push({
-            id: `lote-${pagina.numero}`, clienteId: cliente.id, tipo: borrador.tipo, ncf: borrador.campos.ncf,
-            rncCedulaContraparte: borrador.campos.rncCedulaContraparte, estadoRevision: 'pendiente_revision',
-          })
-        }
+        const borrador = interpretarPagina(pagina.textoQr, contexto(leidas))
         const url = URL.createObjectURL(pagina.imagen)
         urls.current.push(url)
+        leidas = [...leidas, { ...pagina, url, borrador, incluir: borrador.estado === 'qr' || borrador.estado === 'sin_qr' }]
         setTotal(totalPaginas)
-        setPaginas(prev => [...prev, { ...pagina, url, borrador, incluir: borrador.estado === 'qr' || borrador.estado === 'sin_qr' }])
+        setPaginas(leidas)
       }, () => !vivo.current)
-      if (vivo.current) setFase('resultado')
     } catch (e) {
       if (!vivo.current) return
       setError(e instanceof LoteError ? e.message : 'No se pudo leer el lote. Intenta de nuevo con otro archivo.')
-      setFase(prev => (prev === 'leyendo' ? 'inicio' : prev))
+      setFase('inicio')
+      return
     }
+    if (!vivo.current) return
+
+    // Paso 2: la IA llena el resto.
+    await leerConIALasPaginas(leidas)
+    if (vivo.current) setFase('resultado')
   }
+
+  // Las que fallaron o no se alcanzaron a leer (también tienen leidaConIA = false).
+  async function reintentarFallidas() {
+    await leerConIALasPaginas(paginas)
+    if (vivo.current) setFase('resultado')
+  }
+
+  const rnc = cliente?.rncCedula ?? ''
+  const pendientesDe = (p: PaginaLote): CampoExtraido[] => observaciones(p.borrador, rnc)
 
   const conteo = useMemo(() => {
     const por = (estado: EstadoPagina) => paginas.filter(p => p.borrador.estado === estado).length
-    return { qr: por('qr'), sinQr: por('sin_qr'), ajenas: por('ajena'), duplicadas: por('duplicada'), incluidas: paginas.filter(p => p.incluir).length }
-  }, [paginas])
+    const validas = paginas.filter(p => p.incluir)
+    return {
+      conQr: paginas.filter(p => p.borrador.conQr).length,
+      leidasIA: paginas.filter(p => p.borrador.leidaConIA).length,
+      sinLeerIA: paginas.filter(leerConIA).length,
+      noFactura: por('no_factura'),
+      ajenas: por('ajena'),
+      duplicadas: por('duplicada'),
+      incluidas: validas.length,
+      listas: validas.filter(p => observaciones(p.borrador, rnc).length === 0).length,
+    }
+  }, [paginas, rnc])
 
   function alternar(numero: number) {
     setPaginas(prev => prev.map(p => (p.numero === numero && esIncluible(p) ? { ...p, incluir: !p.incluir } : p)))
-  }
-
-  function incluirSinQr(incluir: boolean) {
-    setPaginas(prev => prev.map(p => (p.borrador.estado === 'sin_qr' ? { ...p, incluir } : p)))
   }
 
   async function guardar() {
@@ -125,11 +250,12 @@ function LoteContenido() {
     setError(null)
     const ahora = new Date().toISOString()
     try {
-      await guardarLote(elegidas.map(p => ({
+      const lote = elegidas.map(p => ({
         documento: documentoDesdePagina(crypto.randomUUID(), p.borrador, cliente, { nombre: p.archivoNombre, pagina: p.paginaEnArchivo }, ahora),
         archivo: p.imagen,
-      })))
-      setGuardadas(elegidas.length)
+      }))
+      await guardarLote(lote)
+      setGuardados(lote.map(l => l.documento))
       setFase('guardado')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar el lote.')
@@ -137,6 +263,21 @@ function LoteContenido() {
       setGuardando(false)
     }
   }
+
+  // Facturas guardadas a las que la IA les llenó todo sin dudas.
+  const sinObservaciones = guardados.filter(d => d.camposIncompletos.length === 0)
+
+  async function aprobarSinObservaciones() {
+    const ahora = new Date().toISOString()
+    try {
+      await guardarDocumentos(sinObservaciones.map(d => ({ ...d, estadoRevision: 'revisado' as const, revisadoEn: ahora, actualizadoEn: ahora })))
+      setAprobadas(sinObservaciones.length)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudieron aprobar.')
+    }
+  }
+
+  const leyendo = fase === 'leyendo' || fase === 'leyendo_ia'
 
   return (
     <Pagina title="Subir lote" subtitle="Un PDF con muchas facturas, o varias fotos">
@@ -156,6 +297,17 @@ function LoteContenido() {
         </div>
       )}
 
+      {avisoIA && (fase === 'resultado' || fase === 'leyendo_ia') && (
+        <div role="alert" className="flex items-start gap-3 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-5 py-4 text-sm text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p>{avisoIA.mensaje}</p>
+            <p className="mt-1 text-xs">Las páginas quedan con lo que dio el código QR; puedes guardarlas igual y completarlas después.</p>
+            {avisoIA.deCodigo && <Link href="/configuracion" className="mt-1 inline-block font-semibold underline">Ir a Configuración</Link>}
+          </div>
+        </div>
+      )}
+
       {/* ── Inicio: cliente y archivos ─────────────────────────────────── */}
       {cliente && fase === 'inicio' && (
         <div className={cn(CARD_CLASS, 'space-y-4 px-5 py-4')}>
@@ -167,10 +319,10 @@ function LoteContenido() {
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="lote-tipo" className={LABEL_CLASS}>Páginas sin código QR</label>
+              <label htmlFor="lote-tipo" className={LABEL_CLASS}>Si no se puede saber si es compra o venta</label>
               <select id="lote-tipo" value={tipoPorDefecto} onChange={e => setTipoPorDefecto(e.target.value as TipoDocumento)} className={INPUT_CLASS}>
-                <option value="compra">Tratarlas como compras</option>
-                <option value="venta">Tratarlas como ventas</option>
+                <option value="compra">Tratarla como compra</option>
+                <option value="venta">Tratarla como venta</option>
               </select>
             </div>
           </div>
@@ -197,30 +349,60 @@ function LoteContenido() {
             onChange={e => { void procesar(e.target.files); e.target.value = '' }}
           />
 
-          <p className="flex items-start gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="flex items-start gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#1B2980] dark:text-indigo-400" />
             <span>
-              El sistema separa las páginas y lee el código QR de los comprobantes electrónicos: de ahí salen, exactos,
-              el RNC, el e-NCF, la fecha y el total, y si la factura es una compra o una venta de este cliente. Este
-              paso ocurre en tu navegador: no envía nada a ningún servidor ni tiene costo.
+              La IA lee cada página y llena los campos del 606: RNC, nombre, NCF, fecha, montos en bienes y servicios,
+              ITBIS, otros impuestos y el tipo de gasto, costo o activo. También decide si es compra o venta y descarta
+              las páginas que no son facturas. Del código QR de los comprobantes electrónicos se toman, exactos, el RNC,
+              el e-NCF, la fecha y el total. Tú solo revisas las facturas con observaciones.
             </span>
-          </p>
+          </div>
+          {!hayCodigo && (
+            <p className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-3.5 py-2.5 text-xs text-amber-800 dark:text-amber-300">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                Sin el código de acceso la IA no puede leer las facturas: solo se tomarán los datos del código QR.{' '}
+                <Link href="/configuracion" className="font-semibold underline">Escríbelo en Configuración</Link>.
+              </span>
+            </p>
+          )}
         </div>
       )}
 
       {/* ── Leyendo ────────────────────────────────────────────────────── */}
-      {fase === 'leyendo' && (
+      {leyendo && (
         <div role="status" className={cn(CARD_CLASS, 'flex items-center gap-4 px-5 py-4')}>
           <LoaderCircle className="h-6 w-6 shrink-0 animate-spin text-[#1B2980] dark:text-indigo-400" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-              {total > 0 ? `Leyendo página ${Math.min(paginas.length + 1, total)} de ${total}…` : 'Abriendo los archivos…'}
-            </p>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Códigos QR leídos hasta ahora: {conteo.qr}. No cierres esta pantalla.</p>
+            {fase === 'leyendo' ? (
+              <>
+                <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                  Paso 1 de 2 · {total > 0 ? `Separando páginas y leyendo códigos QR: ${Math.min(paginas.length + 1, total)} de ${total}…` : 'Abriendo los archivos…'}
+                </p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Códigos QR leídos hasta ahora: {conteo.conQr}.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                  Paso 2 de 2 · La IA está leyendo las facturas: {leidasIA} de {aLeerIA}
+                </p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Puede tardar varios minutos. No cierres esta pantalla.</p>
+              </>
+            )}
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-[#1a1d2e]">
-              <div className="h-full rounded-full bg-[#1B2980] dark:bg-indigo-500 transition-[width]" style={{ width: `${total ? (paginas.length / total) * 100 : 0}%` }} />
+              <div
+                className="h-full rounded-full bg-[#1B2980] dark:bg-indigo-500 transition-[width]"
+                style={{ width: `${fase === 'leyendo' ? (total ? (paginas.length / total) * 100 : 0) : (aLeerIA ? (leidasIA / aLeerIA) * 100 : 0)}%` }}
+              />
             </div>
           </div>
+          {fase === 'leyendo_ia' && (
+            <button type="button" onClick={() => { detener.current = true }} className={BTN_SECONDARY}>
+              <CircleStop className="h-4 w-4" />
+              Detener
+            </button>
+          )}
         </div>
       )}
 
@@ -233,28 +415,39 @@ function LoteContenido() {
                 {paginas.length} página(s) de {cliente.razonSocial}
               </h2>
               <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                {conteo.qr} con QR leído · {conteo.sinQr} sin QR
+                {conteo.leidasIA} leídas por la IA · {conteo.conQr} con QR
+                {conteo.noFactura > 0 && ` · ${conteo.noFactura} no son facturas`}
                 {conteo.duplicadas > 0 && ` · ${conteo.duplicadas} duplicada(s)`}
                 {conteo.ajenas > 0 && ` · ${conteo.ajenas} de otro contribuyente`}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={reiniciar} className={BTN_SECONDARY}>Empezar de nuevo</button>
+              {conteo.sinLeerIA > 0 && (
+                <button type="button" onClick={() => void reintentarFallidas()} className={BTN_SECONDARY}>
+                  <Sparkles className="h-4 w-4" />
+                  Leer con IA las {conteo.sinLeerIA} que faltan
+                </button>
+              )}
               <button type="button" onClick={() => void guardar()} disabled={guardando || conteo.incluidas === 0} className={BTN_PRIMARY}>
-                Guardar {conteo.incluidas} como pendientes
+                Guardar {conteo.incluidas} factura(s)
               </button>
             </div>
           </div>
-          {conteo.sinQr > 0 && (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-zinc-200 dark:border-[#252840] bg-zinc-50 dark:bg-[#1a1d2e] px-3.5 py-2.5 text-xs text-zinc-600 dark:text-zinc-400">
-              <span className="min-w-[240px] flex-1">
-                Las {conteo.sinQr} páginas sin QR se guardan vacías, con su imagen, para completarlas después. Quita las
-                que no sean facturas (portadas, declaraciones, hojas en blanco).
-              </span>
-              <button type="button" onClick={() => incluirSinQr(false)} className="font-semibold text-[#1B2980] dark:text-indigo-400 hover:underline">Quitar todas las sin QR</button>
-              <button type="button" onClick={() => incluirSinQr(true)} className="font-semibold text-[#1B2980] dark:text-indigo-400 hover:underline">Incluirlas todas</button>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex items-center gap-3 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/20 px-3.5 py-2.5">
+              <CircleCheck className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <p className="text-sm text-emerald-800 dark:text-emerald-300">
+                <strong>{conteo.listas}</strong> lista(s): la IA llenó todo y cuadra.
+              </p>
             </div>
-          )}
+            <div className="flex items-center gap-3 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-3.5 py-2.5">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <p className="text-sm text-amber-800 dark:text-amber-300">
+                <strong>{conteo.incluidas - conteo.listas}</strong> con observaciones: necesitan que las mires.
+              </p>
+            </div>
+          </div>
           {conteo.ajenas > 0 && (
             <p className="flex items-start gap-2 text-xs text-rose-700 dark:text-rose-300">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -264,11 +457,13 @@ function LoteContenido() {
         </div>
       )}
 
-      {(fase === 'leyendo' || fase === 'resultado') && paginas.length > 0 && (
+      {(leyendo || fase === 'resultado') && paginas.length > 0 && (
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {paginas.map(p => {
             const { texto, variante } = ETIQUETA_ESTADO[p.borrador.estado]
             const c = p.borrador.campos
+            const pendientes = p.incluir ? pendientesDe(p) : []
+            const sinDatos = !c.ncf && !c.rncCedulaContraparte && c.montoTotal === null
             return (
               <li key={p.numero} className={cn(CARD_CLASS, 'flex flex-col overflow-hidden', !p.incluir && 'opacity-60')}>
                 <div className="relative h-44 bg-zinc-100 dark:bg-[#0d0f1a]">
@@ -278,14 +473,21 @@ function LoteContenido() {
                 </div>
                 <div className="flex flex-1 flex-col gap-1.5 px-3 py-2.5">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant={variante}>{p.borrador.estado === 'qr' && <QrCode className="mr-1 h-3 w-3" />}{texto}</Badge>
-                    {p.borrador.estado !== 'sin_qr' && <Badge variant="default">{p.borrador.tipo === 'compra' ? 'Compra' : 'Venta'}</Badge>}
+                    {p.borrador.estado !== 'qr' && p.borrador.estado !== 'sin_qr' && <Badge variant={variante}>{texto}</Badge>}
+                    {p.borrador.conQr && <Badge variant="default"><QrCode className="mr-1 h-3 w-3" />QR</Badge>}
+                    {p.borrador.leidaConIA && <Badge variant="default"><Sparkles className="mr-1 h-3 w-3" />IA</Badge>}
+                    {p.borrador.estado !== 'no_factura' && !sinDatos && (
+                      <Badge variant="neutral">{p.borrador.tipo === 'compra' ? 'Compra' : 'Venta'}</Badge>
+                    )}
                   </div>
-                  {p.borrador.estado === 'sin_qr' ? (
-                    <p className="text-xs text-zinc-400 dark:text-zinc-500">Sin datos: se completa después.</p>
+                  {sinDatos ? (
+                    <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                      {p.borrador.estado === 'no_factura' ? 'Se deja fuera. Márcala si sí es una factura.' : 'Sin datos todavía.'}
+                    </p>
                   ) : (
                     <div className="text-xs text-zinc-600 dark:text-zinc-400">
-                      <p className="font-medium tabular-nums text-zinc-800 dark:text-zinc-200">{c.ncf}</p>
+                      {c.nombreContraparte && <p className="truncate font-medium text-zinc-800 dark:text-zinc-200">{c.nombreContraparte}</p>}
+                      <p className="tabular-nums">{c.ncf ?? 'Sin NCF'}</p>
                       <p className="tabular-nums">{c.rncCedulaContraparte ? formatCedula(c.rncCedulaContraparte) : 'Sin RNC'}</p>
                       <p className="tabular-nums">
                         {c.fechaComprobante ? formatDate(c.fechaComprobante) : 'Sin fecha'}
@@ -293,7 +495,20 @@ function LoteContenido() {
                       </p>
                     </div>
                   )}
-                  {p.borrador.nota && <p className="text-[11px] text-rose-600 dark:text-rose-400">{p.borrador.nota}</p>}
+                  {p.incluir && p.borrador.leidaConIA && (pendientes.length === 0 ? (
+                    <p className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                      <CircleCheck className="h-3 w-3" /> Lista
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                      Revisar: {pendientes.slice(0, 3).map(campo => ETIQUETA_CAMPO[campo]).join(', ')}
+                      {pendientes.length > 3 && ` y ${pendientes.length - 3} más`}
+                    </p>
+                  ))}
+                  {p.borrador.nota && p.borrador.estado !== 'no_factura' && (
+                    <p className="text-[11px] text-rose-600 dark:text-rose-400">{p.borrador.nota}</p>
+                  )}
+                  {p.errorIA && <p className="text-[11px] text-rose-600 dark:text-rose-400">La IA no pudo leerla: {p.errorIA}</p>}
                   {fase === 'resultado' && esIncluible(p) && (
                     <label className="mt-auto flex cursor-pointer items-center gap-2 pt-1 text-xs font-medium text-zinc-700 dark:text-zinc-300">
                       <input type="checkbox" checked={p.incluir} onChange={() => alternar(p.numero)} className="h-4 w-4 rounded accent-[#1B2980]" />
@@ -311,12 +526,27 @@ function LoteContenido() {
       {cliente && fase === 'guardado' && (
         <div className={cn(CARD_CLASS, 'flex flex-col items-center gap-3 px-6 py-12 text-center')}>
           <CircleCheck className="h-10 w-10 text-emerald-500" strokeWidth={1.75} />
-          <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{guardadas} factura(s) guardadas como pendientes</p>
-          <p className="max-w-md text-sm text-zinc-500 dark:text-zinc-400">
-            Ahora ábrelas una por una en Facturas: verás la imagen al lado y lo que falta por completar antes de darlas por revisadas.
-          </p>
+          <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{guardados.length} factura(s) guardadas</p>
+          {aprobadas > 0 ? (
+            <p className="max-w-md text-sm text-zinc-500 dark:text-zinc-400">
+              Aprobaste {aprobadas}. Las {guardados.length - aprobadas} restantes quedan pendientes: ábrelas en Facturas, verás la
+              imagen al lado y qué falta revisar.
+            </p>
+          ) : (
+            <p className="max-w-md text-sm text-zinc-500 dark:text-zinc-400">
+              {sinObservaciones.length > 0
+                ? `${sinObservaciones.length} no tienen observaciones: la IA llenó todo y cuadra. Puedes aprobarlas ahora; las demás quedan pendientes para que las revises con la imagen al lado.`
+                : 'Todas quedaron pendientes de revisión: ábrelas en Facturas, verás la imagen al lado y qué falta revisar.'}
+            </p>
+          )}
           <div className="flex flex-wrap justify-center gap-2 pt-1">
             <button type="button" onClick={reiniciar} className={BTN_SECONDARY}>Subir otro lote</button>
+            {aprobadas === 0 && sinObservaciones.length > 0 && (
+              <button type="button" onClick={() => void aprobarSinObservaciones()} className={BTN_SECONDARY}>
+                <CheckCheck className="h-4 w-4" />
+                Aprobar las {sinObservaciones.length} sin observaciones
+              </button>
+            )}
             <Link href={`/facturas?cliente=${cliente.id}`} className={BTN_PRIMARY}>Ver las facturas</Link>
           </div>
         </div>

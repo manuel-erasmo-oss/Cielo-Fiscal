@@ -193,8 +193,16 @@ export function FacturaModal({
     setArchivo(seleccionado)
     setPaso('extrayendo')
     try {
-      const resultado = await extraerFactura(seleccionado, tipo, clientes.find(c => c.id === clienteId)?.actividad)
+      const delCliente = clientes.find(c => c.id === clienteId)
+      const resultado = await extraerFactura(seleccionado, tipo, { rncCliente: delCliente?.rncCedula, actividad: delCliente?.actividad })
       if (!vivo.current) return
+      if (!resultado.esComprobante) {
+        setErrorOCR(new OCRError('El sistema no reconoce esto como una factura. Si lo es, captúrala a mano.'))
+        setPaso('origen')
+        return
+      }
+      // Si la factura dice que es una venta (o una compra), manda la factura.
+      setTipo(resultado.tipo)
       setValores(aValores(resultado.extraccion))
       setDudosos(new Set(resultado.camposDudosos))
       setConfianza(resultado.confianzaOCR)
@@ -216,8 +224,19 @@ export function FacturaModal({
     setLeyendo(true)
     try {
       const comoArchivo = new File([guardado], documento?.archivoNombre ?? 'factura.jpg', { type: guardado.type || 'image/jpeg' })
-      const resultado = await extraerFactura(comoArchivo, tipo, clientes.find(c => c.id === clienteId)?.actividad)
+      const delCliente = clientes.find(c => c.id === clienteId)
+      const resultado = await extraerFactura(comoArchivo, tipo, { rncCliente: delCliente?.rncCedula, actividad: delCliente?.actividad })
       if (!vivo.current) return
+      if (!resultado.esComprobante) {
+        setErrorOCR(new OCRError('El sistema no reconoce esta imagen como una factura. Si lo es, complétala a mano.'))
+        return
+      }
+      if (resultado.tipo !== tipo) {
+        // Los montos de una compra y los de una venta van en campos distintos:
+        // no se mezclan. Que la persona confirme el tipo y vuelva a leer.
+        setErrorOCR(new OCRError(`El sistema leyó esta factura como una ${resultado.tipo}, pero está registrada como ${tipo}. Cambia el tipo si corresponde y vuelve a leerla.`))
+        return
+      }
       const leidos = aValores(resultado.extraccion)
       const nuevos = CAMPOS_POR_TIPO[tipo].filter(c => !valores[c].trim() && leidos[c])
       setValores(v => {

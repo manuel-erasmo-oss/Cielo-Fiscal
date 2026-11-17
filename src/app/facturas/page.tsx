@@ -3,7 +3,7 @@
 import { Suspense, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { Files, Pencil, Plus, ReceiptText, Trash2, Users } from 'lucide-react'
+import { CheckCheck, Files, Pencil, Plus, ReceiptText, Trash2, Users } from 'lucide-react'
 import { FacturaModal } from '@/components/facturas/FacturaModal'
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
 import { Badge } from '@/components/ui/Badge'
@@ -12,7 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Toast } from '@/components/ui/Toast'
 import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS, TH_CLASS } from '@/components/ui/clases'
 import { useDatos } from '@/lib/datos/datos-context'
-import { montoFacturadoDe, periodoDe } from '@/lib/documentos'
+import { montoFacturadoDe, periodoDe, puedeMarcarseRevisada } from '@/lib/documentos'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD, redondear2 } from '@/lib/utils'
 import type { DocumentoFiscal, EstadoRevision, TipoDocumento } from '@/types'
 
@@ -24,7 +24,7 @@ function monto(valor: number | null) {
 
 function FacturasContenido() {
   const params = useSearchParams()
-  const { listo, errorCarga, clientes, documentos, guardarDocumento, eliminarDocumento, obtenerArchivo } = useDatos()
+  const { listo, errorCarga, clientes, documentos, guardarDocumento, guardarDocumentos, eliminarDocumento, obtenerArchivo } = useDatos()
 
   const [clienteId, setClienteId] = useState(params.get('cliente') ?? '')
   const [tipo, setTipo] = useState<TipoDocumento | ''>('')
@@ -34,6 +34,7 @@ function FacturasContenido() {
   const [enEdicion, setEnEdicion] = useState<DocumentoFiscal | null | undefined>(undefined)
   const [porEliminar, setPorEliminar] = useState<DocumentoFiscal | null>(null)
   const [aviso, setAviso] = useState<Aviso | null>(null)
+  const [confirmarAprobar, setConfirmarAprobar] = useState(false)
 
   const nombreCliente = useMemo(() => new Map(clientes.map(c => [c.id, c.razonSocial])), [clientes])
   // Un id de cliente en la URL que ya no existe equivale a "todos".
@@ -61,6 +62,29 @@ function FacturasContenido() {
     itbis: redondear2(filtrados.reduce((s, d) => s + (d.itbisFacturado ?? 0), 0)),
     total: redondear2(filtrados.reduce((s, d) => s + (d.montoTotal ?? 0), 0)),
   }), [filtrados])
+
+  // Pendientes de la lista actual a las que no les falta nada ni tienen
+  // ningún dato en duda: se pueden aprobar de una vez.
+  const rncDe = useMemo(() => new Map(clientes.map(c => [c.id, c.rncCedula])), [clientes])
+  const aprobables = useMemo(
+    () => filtrados.filter(d =>
+      d.estadoRevision === 'pendiente_revision' &&
+      d.camposIncompletos.length === 0 &&
+      puedeMarcarseRevisada(d.tipo, d, rncDe.get(d.clienteId) ?? ''),
+    ),
+    [filtrados, rncDe],
+  )
+
+  async function aprobarSinObservaciones() {
+    setConfirmarAprobar(false)
+    const ahora = new Date().toISOString()
+    try {
+      await guardarDocumentos(aprobables.map(d => ({ ...d, estadoRevision: 'revisado' as const, revisadoEn: ahora, actualizadoEn: ahora })))
+      setAviso({ mensaje: `${aprobables.length} factura(s) aprobadas`, tipo: 'success' })
+    } catch (err) {
+      setAviso({ mensaje: err instanceof Error ? err.message : 'No se pudieron aprobar.', tipo: 'error' })
+    }
+  }
 
   async function handleGuardar(documento: DocumentoFiscal, archivo?: Blob) {
     await guardarDocumento(documento, archivo)
@@ -151,6 +175,19 @@ function FacturasContenido() {
               </select>
             </div>
           </div>
+
+          {aprobables.length > 0 && (
+            <div className={cn(CARD_CLASS, 'flex flex-wrap items-center gap-3 px-5 py-3')}>
+              <p className="min-w-[240px] flex-1 text-sm text-zinc-700 dark:text-zinc-300">
+                <strong>{aprobables.length}</strong> factura(s) de esta lista no tienen observaciones: el sistema leyó
+                todos los datos, cuadran y no quedó ninguno en duda.
+              </p>
+              <button onClick={() => setConfirmarAprobar(true)} className={BTN_PRIMARY}>
+                <CheckCheck className="h-4 w-4" />
+                Aprobar las {aprobables.length}
+              </button>
+            </div>
+          )}
 
           {/* ── Tabla ──────────────────────────────────────────────────── */}
           {filtrados.length === 0 ? (
@@ -254,6 +291,17 @@ function FacturasContenido() {
           onGuardar={handleGuardar}
           obtenerArchivo={obtenerArchivo}
           onClose={() => setEnEdicion(undefined)}
+        />
+      )}
+
+      {confirmarAprobar && (
+        <ConfirmDialog
+          tono="normal"
+          mensaje={`¿Aprobar ${aprobables.length} factura(s) sin revisarlas una por una?`}
+          detalle="Quedarán como revisadas y entrarán a los reportes. Puedes abrir cualquiera después y corregirla."
+          textoConfirmar="Aprobar"
+          onConfirm={() => void aprobarSinObservaciones()}
+          onCancel={() => setConfirmarAprobar(false)}
         />
       )}
 

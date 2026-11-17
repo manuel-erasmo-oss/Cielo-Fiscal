@@ -21,6 +21,8 @@ interface DatosCtx {
   eliminarCliente(id: string): Promise<void>
   // `archivo`: imagen o PDF de la factura, si se subió una nueva.
   guardarDocumento(documento: DocumentoFiscal, archivo?: Blob): Promise<void>
+  // Varias facturas ya existentes de una vez (p. ej. aprobar en bloque).
+  guardarDocumentos(documentos: readonly DocumentoFiscal[]): Promise<void>
   // Captura por lotes: varias facturas con su imagen.
   guardarLote(lote: readonly { documento: DocumentoFiscal; archivo: Blob }[]): Promise<void>
   eliminarDocumento(id: string): Promise<void>
@@ -70,6 +72,10 @@ export function DatosProvider({
       // Primero la imagen: si no cabe, la factura no queda guardada a medias.
       if (archivo) await repositorio.guardarArchivo(documento.id, archivo)
       await repositorio.guardarDocumento(documento)
+      await recargar()
+    },
+    async guardarDocumentos(lista) {
+      await repositorio.guardarDocumentos(lista)
       await recargar()
     },
     async guardarLote(lote) {
