@@ -8,12 +8,14 @@ interface ConfirmDialogProps {
   mensaje: string
   detalle?: string
   textoConfirmar: string
+  // 'peligro' (por defecto) para acciones que borran; 'normal' para las demás.
+  tono?: 'peligro' | 'normal'
   onConfirm: () => void
   onCancel: () => void
 }
 
-// Confirmación para acciones que borran datos.
-export function ConfirmDialog({ mensaje, detalle, textoConfirmar, onConfirm, onCancel }: ConfirmDialogProps) {
+// Confirmación antes de una acción que afecta a varios datos o los borra.
+export function ConfirmDialog({ mensaje, detalle, textoConfirmar, tono = 'peligro', onConfirm, onCancel }: ConfirmDialogProps) {
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-backdrop-in">
       <div role="alertdialog" aria-modal="true" className="mx-4 w-full max-w-sm rounded-xl border border-zinc-200 dark:border-[#252840] bg-white dark:bg-[#141722] p-6 shadow-2xl animate-modal-in">
@@ -28,7 +30,9 @@ export function ConfirmDialog({ mensaje, detalle, textoConfirmar, onConfirm, onC
           <button onClick={onCancel} className={BTN_SECONDARY}>Cancelar</button>
           <button
             onClick={onConfirm}
-            className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition-colors"
+            className={tono === 'peligro'
+              ? 'rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition-colors'
+              : 'rounded-lg bg-[#1B2980] px-4 py-2 text-sm font-semibold text-white hover:bg-[#151f66] transition-colors'}
           >
             {textoConfirmar}
           </button>

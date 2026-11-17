@@ -2,9 +2,11 @@ import { normalizarDocumento } from '@/lib/documentos'
 import type { ClienteFiscal, DocumentoFiscal } from '@/types'
 import { AlmacenamientoError, type Repositorio } from './repositorio'
 
-// Implementación del MVP: todo en `localStorage` del navegador. Los datos
-// viven solo en este navegador y este equipo; se pierden si el usuario borra
-// los datos del sitio. Ver CLAUDE.md, "Decisión de arquitectura del MVP".
+// Implementación del MVP: todo en el navegador. Clientes y facturas en
+// `localStorage`; las imágenes de las facturas en IndexedDB (son demasiado
+// grandes para `localStorage`). Los datos viven solo en este navegador y este
+// equipo; se pierden si el usuario borra los datos del sitio. Ver CLAUDE.md,
+// "Decisión de arquitectura del MVP".
 
 const CLAVE_CLIENTES = 'cielo-fiscal:clientes:v1'
 const CLAVE_DOCUMENTOS = 'cielo-fiscal:documentos:v1'
@@ -44,6 +46,49 @@ function upsert<T extends { id: string }>(lista: T[], item: T): T[] {
   return copia
 }
 
+// ─── Imágenes de facturas (IndexedDB) ────────────────────────────────────────
+
+const BD_NOMBRE = 'cielo-fiscal'
+const ALMACEN_ARCHIVOS = 'archivos'
+
+function abrirBD(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    let solicitud: IDBOpenDBRequest
+    try {
+      solicitud = window.indexedDB.open(BD_NOMBRE, 1)
+    } catch {
+      reject(new AlmacenamientoError('El navegador no permite guardar las imágenes de las facturas.'))
+      return
+    }
+    solicitud.onupgradeneeded = () => {
+      if (!solicitud.result.objectStoreNames.contains(ALMACEN_ARCHIVOS)) solicitud.result.createObjectStore(ALMACEN_ARCHIVOS)
+    }
+    solicitud.onsuccess = () => resolve(solicitud.result)
+    solicitud.onerror = () => reject(new AlmacenamientoError('No se pudo abrir el almacén de imágenes del navegador.'))
+  })
+}
+
+// Ejecuta una operación sobre el almacén de imágenes y espera a que la
+// transacción termine de verdad (no solo a que la petición responda).
+async function conArchivos<T>(modo: IDBTransactionMode, operar: (almacen: IDBObjectStore) => IDBRequest<T> | void): Promise<T | undefined> {
+  const bd = await abrirBD()
+  try {
+    return await new Promise<T | undefined>((resolve, reject) => {
+      const tx = bd.transaction(ALMACEN_ARCHIVOS, modo)
+      const peticion = operar(tx.objectStore(ALMACEN_ARCHIVOS))
+      tx.oncomplete = () => resolve(peticion ? peticion.result : undefined)
+      tx.onerror = tx.onabort = () => reject(new AlmacenamientoError('No se pudo guardar la imagen: el almacenamiento del navegador está lleno o bloqueado.'))
+    })
+  } finally {
+    bd.close()
+  }
+}
+
+async function eliminarArchivos(ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return
+  await conArchivos('readwrite', almacen => { for (const id of ids) almacen.delete(id) })
+}
+
 export const repositorioLocal: Repositorio = {
   async listarClientes() {
     return leer<ClienteFiscal>(CLAVE_CLIENTES)
@@ -54,8 +99,10 @@ export const repositorioLocal: Repositorio = {
   async eliminarCliente(id) {
     // Primero las facturas: si la segunda escritura fallara, queda un cliente
     // sin facturas (visible y borrable de nuevo), nunca facturas huérfanas.
-    escribir(CLAVE_DOCUMENTOS, leer<DocumentoFiscal>(CLAVE_DOCUMENTOS).filter(d => d.clienteId !== id))
+    const documentos = leer<DocumentoFiscal>(CLAVE_DOCUMENTOS)
+    escribir(CLAVE_DOCUMENTOS, documentos.filter(d => d.clienteId !== id))
     escribir(CLAVE_CLIENTES, leer<ClienteFiscal>(CLAVE_CLIENTES).filter(c => c.id !== id))
+    await eliminarArchivos(documentos.filter(d => d.clienteId === id).map(d => d.id))
   },
 
   async listarDocumentos() {
@@ -64,7 +111,19 @@ export const repositorioLocal: Repositorio = {
   async guardarDocumento(documento) {
     escribir(CLAVE_DOCUMENTOS, upsert(leer<DocumentoFiscal>(CLAVE_DOCUMENTOS), documento))
   },
+  async guardarDocumentos(documentos) {
+    escribir(CLAVE_DOCUMENTOS, documentos.reduce(upsert, leer<DocumentoFiscal>(CLAVE_DOCUMENTOS)))
+  },
   async eliminarDocumento(id) {
     escribir(CLAVE_DOCUMENTOS, leer<DocumentoFiscal>(CLAVE_DOCUMENTOS).filter(d => d.id !== id))
+    await eliminarArchivos([id])
+  },
+
+  async guardarArchivo(documentoId, archivo) {
+    await conArchivos('readwrite', almacen => { almacen.put(archivo, documentoId) })
+  },
+  async obtenerArchivo(documentoId) {
+    const archivo = await conArchivos<unknown>('readonly', almacen => almacen.get(documentoId))
+    return archivo instanceof Blob ? archivo : null
   },
 }

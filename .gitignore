@@ -33,3 +33,7 @@ yarn-error.log*
 
 # claude code
 .claude/
+
+# generados por scripts/copiar-estaticos.mjs
+/public/pdf.worker.min.mjs
+/public/zxing_reader.wasm

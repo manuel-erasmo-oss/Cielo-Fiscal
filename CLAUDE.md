@@ -89,9 +89,13 @@ Consecuencias que hay que respetar mientras dure el MVP:
    (`OCR_CODIGO_ACCESO`), no con cuentas. Es protección de MVP: sirve para
    que un desconocido no gaste la API key, no para distinguir usuarios. No
    hay límite de uso por persona.
-4. **Los archivos de las facturas no se guardan.** Se envían al servidor
-   solo para leerlos; queda el nombre del archivo como referencia. Para
-   re-revisar una factura contra su imagen hay que volver a subirla.
+4. **Las imágenes de las facturas se guardan en el navegador** (IndexedDB),
+   una por factura, detrás de la misma interfaz `Repositorio`
+   (`guardarArchivo` / `obtenerArchivo`). Así se puede revisar una factura
+   contra su original días después. Al servidor solo viajan para que la IA
+   las lea, y este no las conserva. (Hasta la captura por lotes no
+   se guardaban; se cambió porque revisar cientos de facturas no se termina
+   en una sentada. Decisión propia, coherente con "datos en el navegador".)
 5. **Limitación conocida y aceptada**: los datos viven en un solo navegador
    y se pierden si el usuario borra los datos del sitio. No hay respaldo ni
    exportación todavía.
@@ -173,11 +177,17 @@ posterior, no de este arranque.
 - `ClienteFiscal` — la empresa/persona gestionada, con `contadorUid` para
   el aislamiento multi-tenant (reglas de seguridad de Firestore deben
   exigir que `contadorUid === request.auth.uid` en cada lectura/escritura).
-- `DocumentoFiscal` — una factura (compra o venta) con los campos
-  extraídos por OCR + `confianzaOCR`/`camposIncompletos` para revisión
-  manual. El archivo real vive en Storage (`archivoPath`), nunca embebido.
-- `ReporteFormato606607` — snapshot mensual construido desde los
-  `DocumentoFiscal` de ese mes, con `documentoIds[]` para trazabilidad.
+- `ClienteFiscal.actividad` (opcional): a qué se dedica el cliente; se le
+  pasa a la IA para distinguir costo, gasto y activo.
+- `DocumentoFiscal` — una factura (compra o venta). Sus campos siguen las
+  columnas del 606 (compras) y del reporte de ingresos (ventas); los que no
+  aplican a su tipo quedan en `null`. Lleva `origen` (`ocr` | `qr` |
+  `manual`), `confianzaOCR` y `camposIncompletos` (las "observaciones":
+  lo que falta o quedó en duda). La imagen NO va embebida: en el MVP vive
+  en IndexedDB por id de documento; `archivoNombre`/`archivoPagina` dicen
+  de dónde salió y `archivoPath` queda para Storage.
+- `ReporteFormato606607` — snapshot mensual pensado para "marcar como
+  declarado". **Definido pero sin uso todavía** (ver dudas abiertas).
 - `DeclaracionITBIS`, `DeclaracionIR17`, `ProyeccionISR` — ver comentarios
   inline en el propio archivo.
 
@@ -200,7 +210,7 @@ confirmado contra la Guía No.14 DGII).
 606 y 607 — ver la sección "Formatos 606 y 607" y
 `docs/dgii/formatos-606-607.md`.
 
-## Requisito de captura (dicho por el usuario el 2026-11-15) — NO construido todavía
+## Requisito de captura (dicho por el usuario el 2026-11-15) — construido
 
 El cliente va a subir **tres tipos de entrada**, y el sistema tiene que
 soportar las tres:
@@ -209,9 +219,11 @@ soportar las tres:
 2. **Un PDF con una sola factura.**
 3. **PDFs con cientos de facturas.**
 
-Lo construido hasta hoy solo cubre "un archivo de hasta 4 MB = una
-factura". El caso 3 no cabe en ese diseño y obliga a rehacer la captura.
-Variables a contemplar al diseñarla (lista de trabajo, no cerrada):
+**Estado**: los tres casos están cubiertos. Una foto o un PDF de una
+factura se sube en Facturas → "Nueva factura"; un PDF de hasta 100 páginas
+o varias fotos, en "Subir lote", donde la IA lee todo automáticamente (ver
+"Captura por lotes"). Lista de variables que se tuvo en cuenta; lo que
+sigue sin tratar está en "Pendiente de la captura":
 
 - **Foto de celular**: rotada o de lado, torcida, con sombra o reflejo,
   borrosa, cortada; papel térmico desteñido; factura manuscrita; más de
@@ -230,25 +242,97 @@ Variables a contemplar al diseñarla (lista de trabajo, no cerrada):
 - **Costo**: con cientos de páginas por cliente y por mes, la elección de
   modelo (`MODELO_OCR`) deja de ser un detalle. Hay que medir costo y
   precisión por página con facturas reales antes de fijarla.
-- **Revisión a escala**: revisar a mano campo por campo cientos de
-  facturas no es viable. Hace falta priorizar (validaciones automáticas +
-  confianza) para que la persona mire primero las dudosas. Cuánto se puede
-  aprobar en bloque es una **decisión de producto pendiente de confirmar
-  con el usuario** (lección 4: nada entra a un reporte sin revisión).
-- **Imagen durante la revisión**: hoy el archivo no se guarda (decisión 4
-  del MVP). Con cientos de facturas la revisión no se termina en una
-  sentada, así que al volver ya no habría imagen contra la cual comparar.
-  Hay que guardar las páginas en el navegador (IndexedDB) o pedir que se
-  vuelva a subir el PDF. Pendiente de decidir.
+- **Revisión a escala**: resuelto en "Objetivo del sistema" (abajo): la
+  persona solo interviene en las facturas con observaciones y aprueba las
+  demás con un clic.
+- **Imagen durante la revisión**: resuelto, las imágenes se guardan en
+  IndexedDB (decisión 4 del MVP).
 - **Volumen en `localStorage`**: sirve para miles de facturas, no para
   decenas de miles. Vigilarlo.
 
-Los formatos del 606 y 607 ya se recibieron y los campos de la factura ya
-siguen sus columnas (ver "Formatos 606 y 607"). Lo que sigue pendiente de
-este requisito es la captura en sí: partir PDFs grandes, procesar por
-partes, y la revisión a escala.
+## Objetivo del sistema (dicho por el usuario el 2026-11-17) — MANDA
 
-## Costo y límites (aprobado por el usuario el 2026-11-15) — NO construido todavía
+> "El objetivo de hacer este sistema es que la IA llene los formatos de
+> envío, es decir que lea la factura y llene los campos excepto en los
+> cuales se necesite intervención humana."
+
+Consecuencias de diseño (implementadas):
+
+- **La IA lee todas las facturas automáticamente** al subirlas (lote o
+  una por una). No es un botón opcional ni página por página.
+- La IA decide sola si la factura es una **compra o una venta** del
+  cliente (por quién aparece como emisor y quién como comprador) y si una
+  página **no es una factura**.
+- **La persona solo interviene donde hace falta**: cada factura queda con
+  sus "observaciones" (`observaciones()` en `src/lib/lote/borrador.ts`):
+  campos que el formato exige y faltan, campos de los que la IA dudó, y
+  montos que no suman el total. Sin observaciones = lista.
+- **Aprobación en bloque**: las facturas sin observaciones se aprueban con
+  un clic (al terminar el lote, y en Facturas con el botón "Aprobar las
+  N"), con confirmación. Esto reemplaza la idea inicial de revisar todo
+  una por una (lección 4): la revisión humana se concentra donde la
+  máquina no está segura. Decisión propia derivada de la frase del
+  usuario; lo que sigue exigiendo persona: retenciones (decisión del
+  usuario), y cualquier factura con observaciones.
+
+## Captura por lotes (construida el 2026-11-15, IA automática el 2026-11-17)
+
+Flujo: Facturas → "Subir lote" → se elige el cliente y se sube un PDF de
+hasta 100 páginas o varias fotos → **paso 1** (navegador, gratis): separar
+páginas y leer el código QR → **paso 2** (servidor, con costo): la IA lee
+cada página, 3 a la vez, con barra de progreso y botón "Detener" → cada
+página queda como tarjeta con "Lista" o "Revisar: …" → "Guardar N
+factura(s)" → "Aprobar las N sin observaciones".
+
+- `src/lib/lote/leer-paginas.ts`: dibuja cada página con pdf.js a 200 ppp
+  y busca el QR con ZXing (WebAssembly).
+- `src/lib/lote/borrador.ts` (lógica pura, probada): qué factura sale de
+  cada página (`interpretarPagina`), cómo se combina el QR con la lectura
+  de la IA (`fusionarConLectura`) y qué queda para revisar
+  (`observaciones`).
+- **Regla de combinación: lo del QR manda** (RNC, e-NCF, fecha y total los
+  firmó el emisor); la IA aporta todo lo demás. Si los montos de la IA no
+  suman el total del QR, quedan marcados. Si la IA entendió la factura al
+  revés (compra por venta), se descarta su lectura y queda solo el QR.
+- **Recibos largos** (tiras de ~620 × 4,400 px): `src/lib/lote/tramos.ts`
+  los parte en tramos solapados (máx. 8) que viajan juntos en la misma
+  solicitud; el prompt le dice al modelo que son partes de un mismo
+  documento. En el PDF real, 42 páginas salieron partidas (máx. 6 tramos).
+- Páginas que la IA no reconoce como factura → "No es factura",
+  desmarcadas (se pueden marcar a mano).
+- Duplicados: contra lo guardado y dentro del lote, con el NCF del QR o el
+  que leyó la IA. Factura de otro contribuyente (por QR): no se deja
+  guardar.
+- Si falta el código de acceso o el servidor responde 503, la lectura con
+  IA se detiene enseguida (no sigue intentando con cada página) y las
+  páginas quedan con lo del QR. Una página que falla por otro motivo queda
+  marcada y se reintenta con "Leer con IA las N que faltan" (solo esas).
+- En el formulario de una factura con imagen guardada sigue el botón
+  "Leer con IA lo que falta" (llena solo campos vacíos).
+- El worker de pdf.js y el `.wasm` del lector de QR se sirven desde el
+  propio sitio: `scripts/copiar-estaticos.mjs` los copia a `public/` en
+  `postinstall`, `predev` y `prebuild` (no se versionan).
+
+**Medido con el PDF real de 58 páginas:**
+- Paso 1 (QR, real): 27 códigos leídos, todos compras del cliente
+  correcto, 17.5 s. Comparación de lectores: ZXing imagen entera 19; ZXing
+  con ventanas ampliadas ×2, 27 en el navegador; jsQR 20 en 110 s; OpenCV
+  23.
+- Paso 2 con la IA **simulada** (no hay API key): las 58 páginas pasaron
+  por la ruta, 3 a la vez, con el RNC y la actividad del cliente; todo el
+  lote tardó ~22 s con respuestas de 150 ms (con la IA real tardará más:
+  sin medir). Guardar ocupó 67 KB en `localStorage` más 58 imágenes en
+  IndexedDB.
+
+**Pendiente de la captura:**
+- **Medir con la IA real** (requiere API key): precisión campo por campo,
+  tiempo por página y costo por página. En particular, si los tramos de
+  los recibos se leen bien.
+- Foto con varias facturas, y fotos HEIC de iPhone: sin tratar.
+- No se puede retomar un lote si se cierra la pestaña a mitad del paso 2
+  (lo leído hasta ahí se pierde si no se guardó).
+
+## Costo y límites (aprobado por el usuario el 2026-11-15) — construido en parte
 
 Contexto: es un producto de venta; el costo de IA no puede crecer sin
 control y tiene que dejar margen.
@@ -272,6 +356,15 @@ control y tiene que dejar margen.
 4. **No pagar dos veces por lo mismo**: detectar páginas repetidas antes de
    enviarlas, no volver a procesar páginas ya leídas al reintentar, saltar
    páginas en blanco.
+
+**Estado:** construido el tope de 100 páginas (punto 1); las páginas
+duplicadas por QR y las de otro contribuyente no se envían a la IA, y el
+reintento solo relee las que fallaron (parte del punto 4). Las páginas en
+blanco SÍ se envían (la IA las marca como "no es factura"), y una página
+sin QR que resulte duplicada solo se detecta después de pagar su lectura.
+Sin construir: cupo por plan (requiere cuentas), aviso de cuántas páginas
+quedan en el mes, y la medición de modelos (requiere API key). El punto 3
+lo tiene que configurar el usuario en la consola de Anthropic.
 5. **Medir los modelos con facturas reales antes de fijar el modelo y los
    precios de los planes.**
 
@@ -314,9 +407,11 @@ Lo esencial:
   líneas separadas por CRLF y sin salto final.
 - **Vencen el día 15** del mes siguiente. Sin operaciones no hay archivo:
   se presenta en cero por la Oficina Virtual.
-- **606**: tipo de bienes y servicios y forma de pago son obligatorios y
-  NO están impresos en la factura: los decide el contador. Lo mismo las
-  retenciones y el tratamiento del ITBIS. El OCR no los intenta.
+- **606**: tipo de bienes y servicios y forma de pago son obligatorios
+  para la DGII y NO están impresos en la factura. El tipo de bienes lo
+  elige la IA (ver "Decisiones del usuario"); la forma de pago la lee si
+  está impresa y, si no, Reportes pide una por defecto. Retenciones y
+  tratamiento del ITBIS los digita la persona.
 - **607**: EN DESUSO según el usuario (ver "Decisiones del usuario"). La
   especificación y el generador se conservan, pero la aplicación ya no
   genera ese archivo.
@@ -434,7 +529,7 @@ ni RNC. Lo que se aprendió de su estructura (medido, no supuesto):
   unos 620 px de ancho por hasta 4,400 px de alto. Si se reducen por su
   lado mayor quedan ilegibles; hay que partirlas en tramos o enviarlas a
   resolución completa. `reducirImagen` (lado mayor 2200 px) NO sirve para
-  este caso.
+  este caso. **Resuelto con tramos** (`src/lib/lote/tramos.ts`).
 - Todas las facturas vistas son **comprobantes electrónicos (e-NCF, serie
   E31)**. Esto hace real la duda del 607: si las ventas del cliente también
   son e-CF, la herramienta 607 versión 2023.1.1 no las admite.
@@ -454,47 +549,100 @@ ni RNC. Lo que se aprendió de su estructura (medido, no supuesto):
     comparar emisor/comprador con el RNC del cliente dice si es compra o
     venta sin preguntarle a nadie.
 
-Esto alimenta el rediseño de la captura (ver "Requisito de captura"): leer
-el QR en el navegador antes de llamar al OCR, partir las tiras largas,
-descartar páginas que no son facturas.
+De aquí salió el diseño de la captura por lotes: leer el QR en el
+navegador antes de llamar a la IA, partir las tiras largas, y que la IA
+descarte las páginas que no son facturas. El lector final (ZXing con
+ventanas) lee 27 de las 58, no 23.
 
 ## Roadmap (MVP angosto primero)
 
-1. ✅ **Clientes** (`ClienteFiscal`, CRUD) — hecho el 2026-11-15, sin auth
-   (ver decisión de arquitectura del MVP).
-2. ✅ **Facturas**: subida de imagen/PDF → `POST /api/ocr` → revisión manual
-   de campos → `DocumentoFiscal`; también captura a mano. Hecho el
-   2026-11-15, **pero el OCR no se ha probado con una factura real**.
-3. ✅ **Campos de la factura alineados con los formatos de la DGII**,
-   **TXT del 606**, **reporte de ingresos** (ventas, interno) y
-   **exportación a Excel** de ambos — hecho el 2026-11-15. Falta que el
-   usuario pase un 606 por el pre-validador de la DGII.
-4. ⏭️ **Siguiente**: (a) medir el OCR con facturas reales, comparando
-   modelos (requiere API key y facturas de muestra); (b) rediseñar la
-   captura para fotos, PDF de una factura y PDF de cientos (ver "Requisito
-   de captura"); (c) snapshot al declarar; (d) resolver las dudas abiertas
-   de "Formatos 606 y 607".
-5. Declaración ITBIS mensual (ya es solo aritmética sobre 606+607).
-6. IR-17 (adaptar el mismo concepto ya implementado en Nómina).
-7. Proyección de ISR.
-8. Migración a Firebase (cuentas, datos en la nube, archivos en Storage)
-   cuando el MVP esté validado.
-9. Hub/landing compartido de la suite, si hay ya 2+ productos en venta.
+1. ✅ **Clientes** (`ClienteFiscal`, CRUD) — 2026-11-15, sin auth (ver
+   decisión de arquitectura del MVP).
+2. ✅ **Facturas**: subida de imagen/PDF → IA → revisión → `DocumentoFiscal`;
+   también captura a mano — 2026-11-15.
+3. ✅ **Campos alineados con los formatos de la DGII**, **TXT del 606**,
+   **reporte de ingresos** (ventas, interno) y **exportación a Excel** de
+   ambos — 2026-11-15. Falta que el usuario pase un 606 por el
+   pre-validador de la DGII.
+4. ✅ **Captura por lotes** con lectura de QR (2026-11-15) e **IA
+   automática** sobre todo el lote, con aprobación en bloque de las
+   facturas sin observaciones (2026-11-17).
+5. ⏭️ **Siguiente**:
+   a. **Medir la IA real** con facturas reales (requiere que el usuario
+      configure `ANTHROPIC_API_KEY` en Vercel): precisión campo por campo,
+      tiempo y costo por página, y comparar modelos (`MODELO_OCR`) antes
+      de fijar precios.
+   b. Snapshot al declarar ("marcar como declarado", lección 3).
+   c. Resolver las preguntas abiertas al usuario (sección propia, abajo).
+6. Declaración ITBIS mensual (aritmética sobre 606 + ingresos).
+7. IR-17 (adaptar el mismo concepto ya implementado en Nómina).
+8. Proyección de ISR.
+9. Migración a Firebase (cuentas, datos en la nube, archivos en Storage).
+   Se adelanta si se quiere vender con planes y cupos (ver "Costo y
+   límites").
+10. Hub/landing compartido de la suite, si hay ya 2+ productos en venta.
 
 Candidatos sin decidir (confirmar con el usuario antes de hacerlos):
-respaldo/exportación de los datos del navegador; subida de varias facturas
-a la vez; estado "descartada" en la interfaz (el tipo ya lo contempla).
+respaldo/exportación de los datos del navegador; estado "descartada" en la
+interfaz (el tipo ya lo contempla); recordar la categoría por proveedor a
+partir de lo que corrija el contador; umbral de monto para activo por
+cliente.
 
-## Lo que falta para probarlo de verdad
+## Preguntas abiertas al usuario (consolidadas el 2026-11-17)
 
-1. ~~Repo de GitHub~~ — HECHO: `manuel-erasmo-oss/Cielo-Fiscal`.
-2. **Desplegar en Vercel** (lo hace el usuario una vez): importar el repo y
-   definir dos variables de entorno del servidor, `ANTHROPIC_API_KEY` y
-   `OCR_CODIGO_ACCESO` (ver `.env.example`). Vercel publica desde la rama
-   de producción, así que el trabajo tiene que llegar a `main`.
-3. **`ANTHROPIC_API_KEY` propia del producto** — nunca una key personal.
-4. Firebase project nuevo y reglas de seguridad: **pospuesto** hasta la
-   migración (paso 8 del roadmap).
+Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
+
+1. **Qué tipos de e-CF son nota de crédito y nota de débito.** Hoy solo
+   resta en los totales el tipo 04 de serie B; una nota de crédito
+   electrónica SUMA. Importa porque los clientes facturan en electrónico.
+2. **Monto mínimo para tratar una compra duradera como activo.** La norma
+   no lo fija; hoy no hay umbral.
+3. **Aprobación en bloque de las facturas sin observaciones** (decisión
+   propia, derivada de "Objetivo del sistema"): confirmar que está bien o
+   si alguien debe mirar todas.
+4. **Excel exportable aunque el reporte esté incompleto** (decisión
+   propia; el archivo lo advierte en el nombre y en el Resumen).
+5. **Segunda remisión por retenciones en el 606** (NCF que se vuelve a
+   enviar el mes en que se paga): no modelada.
+6. **Pasar un TXT del 606 por la Herramienta de Pre-validación de la
+   DGII** (aplicación de Windows): solo lo puede hacer el usuario.
+7. **Plan de Vercel**: el proyecto está en el plan Hobby, que hasta donde
+   se sabe es para uso no comercial. Confirmar antes de vender.
+
+## Despliegue
+
+- **Sitio publicado**: https://cielo-fiscal.vercel.app/ (Vercel, equipo
+  del usuario, plan Hobby, proyecto `Cielo-Fiscal`). Vercel publica solo
+  cada vez que cambia `main`; las ramas no se publican.
+- Comprobado el 2026-11-15: las cinco pantallas responden 200 y
+  `/api/ocr` responde 503 "El OCR no está configurado en el servidor",
+  porque **todavía no hay `ANTHROPIC_API_KEY`**. La lectura de QR y todo lo
+  demás funciona sin ella.
+- Para activar la IA: en Vercel, Settings → Environment Variables, agregar
+  `ANTHROPIC_API_KEY` (key propia del producto, nunca personal) y
+  `OCR_CODIGO_ACCESO` (frase larga elegida por el usuario), ambas en
+  Production; luego Redeploy. En la app, escribir esa frase en
+  Configuración. Recomendado: tope de gasto mensual en la consola de
+  Anthropic.
+- La ruta declara `maxDuration = 120` y el despliegue en Hobby lo aceptó;
+  no se ha comprobado cuánto tarda una lectura real.
+
+## Cómo trabajar en este repo
+
+- `npm install` (copia además a `public/` el worker de pdf.js y el `.wasm`
+  del lector de QR, vía `scripts/copiar-estaticos.mjs`).
+- `npm run dev` · `npm test` (vitest, zona horaria de RD) ·
+  `npx tsc --noEmit` · `npm run build`.
+- Para probar la ruta OCR en local hacen falta `ANTHROPIC_API_KEY` y
+  `OCR_CODIGO_ACCESO` en `.env.local` (ver `.env.example`).
+- Las pruebas de navegador (Playwright) que se usaron en las sesiones
+  vivían en el scratchpad y **no están en el repo**. Si se agregan,
+  conviene simular `/api/ocr` como se hizo ahí (sin gastar API).
+- **Nunca subir al repo facturas ni datos de clientes reales**: es un
+  repositorio público. El PDF de muestra del usuario no está aquí.
+- Historial: PR #1 (MVP completo) y PR #2 (criterios NIIF verificados)
+  fusionados el 2026-11-15; PR #3 (captura por lotes + IA automática) el
+  2026-11-17.
 
 ## Nombre del producto
 
@@ -505,36 +653,46 @@ otro (ej. "Cielo Cloud Impuestos", "Cielo Cloud 606").
 ## Branch / repo de trabajo
 
 - Repo: `manuel-erasmo-oss/Cielo-Fiscal`.
-- Branch de desarrollo de la sesión que trajo este archivo:
-  `claude/new-session-697xwv`.
+- Rama de producción: `main` (la publica Vercel).
+- Rama de desarrollo de las sesiones de noviembre 2026:
+  `claude/new-session-697xwv`; el trabajo llega a `main` por pull request.
 
-## Estado real del repo (2026-11-15)
+## Estado real del repo (actualizado el 2026-11-17)
 
 Este archivo se escribió en la sesión de Cielo Cloud Nómina describiendo un
 scaffold que vivía solo en aquel sandbox; el código no vino con él. En la
 sesión del 2026-11-15 se recreó el scaffold en este repo y, tras la
-decisión de arquitectura del MVP, se construyeron los pasos 1 y 2 del
-roadmap.
+decisión de arquitectura del MVP, se construyeron los pasos 1 a 4 del
+roadmap (el 4 se completó el 2026-11-17).
 
 ### Qué hay en el árbol
 
 - **Pantallas** (`src/app`): `/` Inicio (conteos y facturas por revisar por
   cliente), `/clientes` (alta, edición, borrado en cascada), `/facturas`
   (filtros por cliente/tipo/mes/estado, totales, alta por OCR o a mano,
-  edición, borrado), `/reportes` (genera y descarga el TXT del 606 o 607
+  edición, borrado), `/lote` (captura por lotes: PDF o varias fotos), `/reportes` (genera y descarga el TXT del 606 o 607
   de un cliente y un mes y lo exporta a Excel; y el reporte de ingresos en
   Excel), `/configuracion` (código de acceso al OCR).
 - **Servidor**: solo `src/app/api/ocr/route.ts`.
 - **Datos** (`src/lib/datos`): `repositorio.ts` (interfaz),
   `repositorio-local.ts` (`localStorage`, claves `cielo-fiscal:clientes:v1`
-  y `cielo-fiscal:documentos:v1`), `datos-context.tsx` (estado compartido).
+  y `cielo-fiscal:documentos:v1`; imágenes en IndexedDB, base
+  `cielo-fiscal`, almacén `archivos`), `datos-context.tsx` (estado compartido).
 - **Lógica pura** (`src/lib`): `dgii-formatos.ts` (catálogos, reglas y
   generadores del 606 y 607), `documentos.ts` (qué factura puede marcarse
   revisada y entrar a un reporte, duplicados, validación de cliente),
-  `excel-reporte.ts` (arma las hojas del Excel del 606/607),
+  `excel-reporte.ts` (arma las hojas del Excel del 606 y de ingresos),
+  `qr-ecf.ts` (interpreta el QR de un comprobante electrónico),
+  `ocr-interpretar.ts` (de la lectura del modelo a los campos: compra o
+  venta, contraparte, dudas), `lote/leer-paginas.ts` (páginas y QR),
+  `lote/borrador.ts` (combina QR + IA y calcula observaciones),
+  `lote/tramos.ts` (parte los recibos largos),
   `dgii-fiscal.ts` (motor fiscal), `utils.ts` (fechas locales, montos),
   `ocr-tipos.ts` (contrato servidor↔navegador), `ocr-cliente.ts` (prepara
   el archivo y llama a la ruta), `config-local.ts`.
+- **Scripts**: `scripts/copiar-estaticos.mjs`.
+- **Documentación**: `docs/dgii/formatos-606-607.md` (especificación del
+  606 y 607 extraída de las fuentes de la DGII).
 - **Interfaz** (`src/components`): `layout/` (Sidebar portado de Nómina sin
   selector de empresa ni logout, Header, BottomNav, Pagina), `ui/`
   (Toast, Badge, EmptyState, ThemeToggle y StatCard copiados de Nómina;
@@ -554,11 +712,14 @@ roadmap.
   `esIncluibleEnReporte` es el único criterio para entrar a un reporte.
 - Los problemas tienen nivel `error` (bloquea) o `aviso` (solo se muestra:
   dígito verificador que no cuadra, cobros que no suman el total).
-- El OCR extrae lo impreso (RNC, nombre, NCF, fechas, montos, impuestos,
-  forma de pago si aparece). En compras además reparte el subtotal entre
-  servicios y bienes (dudoso si no está seguro o si no suma el subtotal) y
-  elige el tipo de bienes y servicios. Retenciones, tipo de ingreso y
-  formas de cobro los llena la persona.
+- El OCR lee emisor y comprador por separado y, con el RNC del cliente,
+  decide si es compra o venta; dice si la página no es un comprobante.
+  Extrae lo impreso (RNC, nombre, NCF, fechas, montos, impuestos, forma de
+  pago si aparece). En compras además reparte el subtotal entre servicios
+  y bienes (dudoso si no está seguro o si no suma el subtotal) y elige el
+  tipo de bienes y servicios. Retenciones, tipo de ingreso y formas de
+  cobro los llena la persona. El paso de la lectura del modelo a los campos
+  está en `src/lib/ocr-interpretar.ts` (lógica pura, probada).
 - Los campos de los que el OCR dudó se marcan en ámbar hasta que una
   persona los toca. ITBIS en cero es un dato válido, pero hay que
   escribirlo: se exige un valor explícito (criterio propio, más estricto
@@ -592,12 +753,20 @@ roadmap.
 
 ### Verificado el 2026-11-15 (resultado real)
 
-- `npm audit`: **0 vulnerabilidades**, con un `override` en `package.json`
-  que fuerza `postcss` ^8.5.33 dentro de Next 15.5.29 (que fija 8.4.31, con
-  avisos altos). Al quitar Firebase desapareció el otro override.
+- `npm audit`: 0 vulnerabilidades hasta el 2026-11-15, con un `override`
+  en `package.json` que fuerza `postcss` ^8.5.33 dentro de Next 15.5.29
+  (que fija 8.4.31, con avisos altos). Al quitar Firebase desapareció el
+  otro override.
+  **2026-11-17**: aparece GHSA-fc5q-39xc-vjpf (ReDoS en `picomatch`
+  <=4.0.7, severidad alta). La versión más nueva publicada es la 4.0.7, así
+  que no hay arreglo todavía. Solo lo usan herramientas de desarrollo
+  (Tailwind al compilar, vitest/vite); `npm audit --omit=dev` da **0**, o
+  sea, nada de lo que se publica lo trae. Los patrones que procesa son los
+  de la configuración del proyecto, no datos de usuarios. Revisar cuando
+  salga picomatch 4.0.8 o superior.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
   `/api/ocr` dinámica).
-- `npm test` (vitest, en zona horaria de RD): **98 de 98** pasan — fechas
+- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
   comparados carácter por carácter, dígito verificador, duplicados.
@@ -627,6 +796,23 @@ roadmap.
   con e-NCF y solo NCF/fecha/monto/ITBIS se guarda como revisada, y los dos
   Excel leídos de vuelta (606 con columna "Activo"; Ingresos con su hoja y
   resumen).
+- Captura por lotes: además de la medición con el PDF real, 15 de 15
+  comprobaciones con datos inventados (un QR generado para la prueba):
+  lote de 101 páginas rechazado, archivo de texto rechazado, cliente
+  equivocado detectado, fotos sueltas con y sin QR, total con coma de miles,
+  "Leer con IA lo que falta" con respuesta simulada (no pisa RNC, NCF, fecha
+  ni total del QR; llena lo vacío), borrar la factura borra su imagen, la
+  factura subida una por una también guarda su imagen, y vista móvil.
+  Regresión: 9 de 9 y 16 de 16 de los recorridos anteriores.
+- IA automática en lotes (2026-11-17), con el PDF real y la IA simulada:
+  19 de 19 comprobaciones — sin código avisa y deja solo el QR; con código
+  la IA arranca sola; 58 llamadas, máximo 3 simultáneas; 42 recibos en
+  tramos; RNC y actividad del cliente en cada llamada; las 5 páginas de la
+  declaración salen como "No es factura"; una lectura fallida se reintenta
+  sola (1 llamada más); en la pág. 9 se conservan el e-NCF y el total del
+  QR y los montos que no cuadran quedan en observación; 21 listas y 32 con
+  observaciones; al aprobar quedan 21 revisadas y entran al 606; con 503
+  se detiene tras 3 llamadas. Regresión: 15/15, 9/9 y 16/16.
 - Dato de control del dígito verificador: el algoritmo de la macro da
   correcto el RNC `401007551`.
 - Ruta OCR contra el servidor real: sin código o código incorrecto → 401;
@@ -636,6 +822,7 @@ roadmap.
 - Versiones: Next 15.5.29, React 18.3.1, TypeScript 5.9.3,
   `@anthropic-ai/sdk` 1.8.0, zod 4.6.7, Tailwind 3.4.19, lucide-react
   0.400.0, vitest 5.1.0, `@types/node` 22 (lo exige vitest 5),
+  `pdfjs-dist` 6.5.438, `zxing-wasm` 3.1.7,
   `write-excel-file` 4.1.1 (elegida en vez de `xlsx`/SheetJS, que es la que
   usa Nómina, porque la versión de npm de esa arrastra avisos de seguridad;
   esta solo escribe y `npm audit` queda en 0).
@@ -648,24 +835,28 @@ roadmap.
   respuesta simulada, pero no la extracción. Su precisión es desconocida.
 - **Los archivos 606 y 607 no se han pasado por el pre-validador de la
   DGII ni se han enviado.** Solo se verificaron contra la macro.
-- No se ha desplegado en Vercel.
+- La lectura de la IA en lote solo se probó con respuestas simuladas;
+  tampoco se sabe si los tramos de los recibos se leen bien.
 - No hay ESLint configurado.
 
 ### Ruta OCR (`POST /api/ocr`)
 
 - Request: encabezado `x-codigo-acceso` + `multipart/form-data` con
-  `archivo` y `tipo` (`compra` | `venta`). Acepta JPEG/PNG/WebP/GIF/PDF
-  hasta 4 MB. Si faltan `ANTHROPIC_API_KEY` u `OCR_CODIGO_ACCESO` responde
-  503 en vez de quedar abierta.
+  `archivo` (una imagen o un PDF; o hasta 8 imágenes que son tramos de un
+  mismo recibo), `tipo` (`compra` | `venta`, el que se asume si no se
+  puede deducir), y opcionales `rncCliente` y `actividad`. Hasta 4 MB en
+  total. Si faltan `ANTHROPIC_API_KEY` u `OCR_CODIGO_ACCESO` responde 503
+  en vez de quedar abierta.
 - Modelo `claude-opus-5-5`, salida estructurada con Zod, `effort: medium`,
   con fallback de servidor (`fallbacks: 'default'`). Cambiar de modelo es
   una constante (`MODELO_OCR`) — decisión de costo/precisión pendiente de
   medir con facturas reales.
-- No guarda nada. Devuelve `{ extraccion, confianzaOCR, camposDudosos }`.
-  Lo que no pasa validación (fecha inexistente, monto negativo) vuelve como
-  `null` y entra a `camposDudosos`. Lo que le FALTA a la factura lo calcula
-  el navegador con las reglas del formato (necesita el RNC del cliente).
-  `confianzaOCR` es autorreportada por el modelo: orientativa.
+- No guarda nada. Devuelve `{ esComprobante, tipo, coincideCliente,
+  extraccion, confianzaOCR, camposDudosos }` (ver `ResultadoOCR` en
+  `src/lib/ocr-tipos.ts`). Lo que no pasa validación vuelve como `null` y
+  entra a `camposDudosos`. Lo que le FALTA a la factura lo calcula el
+  navegador con las reglas del formato. `confianzaOCR` es autorreportada
+  por el modelo: orientativa.
 
 ### Procedencia de los parámetros en `dgii-fiscal.ts`
 

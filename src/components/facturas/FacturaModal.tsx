@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, FileUp, Info, Keyboard, LoaderCircle } from 'lucide-react'
+import { AlertTriangle, FileUp, Info, Keyboard, LoaderCircle, ScanText } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { BTN_SECONDARY, INPUT_CLASS, LABEL_CLASS } from '@/components/ui/clases'
 import {
@@ -45,7 +45,10 @@ interface FacturaModalProps {
   clientes: readonly ClienteFiscal[]
   documentos: readonly DocumentoFiscal[]
   clienteIdInicial?: string
-  onGuardar: (documento: DocumentoFiscal) => Promise<void>
+  // `archivo`: la imagen o PDF recién subido, para guardarlo con la factura.
+  onGuardar: (documento: DocumentoFiscal, archivo?: Blob) => Promise<void>
+  // Imagen guardada de una factura existente (null si no tiene).
+  obtenerArchivo: (documentoId: string) => Promise<Blob | null>
   onClose: () => void
 }
 
@@ -117,6 +120,7 @@ export function FacturaModal({
   documentos,
   clienteIdInicial,
   onGuardar,
+  obtenerArchivo,
   onClose,
 }: FacturaModalProps) {
   const [paso, setPaso] = useState<Paso>(documento ? 'formulario' : 'origen')
@@ -143,7 +147,19 @@ export function FacturaModal({
   useEffect(() => () => { vivo.current = false }, [])
 
   // Vista previa del archivo, solo mientras el modal está abierto.
-  const urlVistaPrevia = useMemo(() => (archivo ? URL.createObjectURL(archivo) : null), [archivo])
+  // Imagen guardada con una factura existente (por ejemplo, la página de un
+  // lote): se carga al abrir para poder revisar contra el original.
+  const [guardado, setGuardado] = useState<Blob | null>(null)
+  const [leyendo, setLeyendo] = useState(false)
+  const idDocumento = documento?.id
+  useEffect(() => {
+    if (!idDocumento) return
+    obtenerArchivo(idDocumento).then(b => { if (vivo.current) setGuardado(b) }).catch(() => {})
+  }, [idDocumento, obtenerArchivo])
+
+  // Lo que se muestra al lado del formulario: lo recién subido, o lo guardado.
+  const original: Blob | null = archivo ?? guardado
+  const urlVistaPrevia = useMemo(() => (original ? URL.createObjectURL(original) : null), [original])
   useEffect(() => () => { if (urlVistaPrevia) URL.revokeObjectURL(urlVistaPrevia) }, [urlVistaPrevia])
 
   const { campos } = useMemo(() => aCampos(valores, tipo), [valores, tipo])
@@ -177,8 +193,16 @@ export function FacturaModal({
     setArchivo(seleccionado)
     setPaso('extrayendo')
     try {
-      const resultado = await extraerFactura(seleccionado, tipo, clientes.find(c => c.id === clienteId)?.actividad)
+      const delCliente = clientes.find(c => c.id === clienteId)
+      const resultado = await extraerFactura(seleccionado, tipo, { rncCliente: delCliente?.rncCedula, actividad: delCliente?.actividad })
       if (!vivo.current) return
+      if (!resultado.esComprobante) {
+        setErrorOCR(new OCRError('El sistema no reconoce esto como una factura. Si lo es, captúrala a mano.'))
+        setPaso('origen')
+        return
+      }
+      // Si la factura dice que es una venta (o una compra), manda la factura.
+      setTipo(resultado.tipo)
       setValores(aValores(resultado.extraccion))
       setDudosos(new Set(resultado.camposDudosos))
       setConfianza(resultado.confianzaOCR)
@@ -188,6 +212,53 @@ export function FacturaModal({
       if (!vivo.current) return
       setErrorOCR(err instanceof OCRError ? err : new OCRError('El OCR falló. Intenta de nuevo o captura la factura a mano.'))
       setPaso('origen')
+    }
+  }
+
+  // Lee con IA la imagen guardada de una factura existente y llena SOLO los
+  // campos vacíos: lo que ya puso una persona o salió del código QR (datos
+  // exactos) no se toca.
+  async function leerGuardadaConIA() {
+    if (!guardado) return
+    setErrorOCR(null)
+    setLeyendo(true)
+    try {
+      const comoArchivo = new File([guardado], documento?.archivoNombre ?? 'factura.jpg', { type: guardado.type || 'image/jpeg' })
+      const delCliente = clientes.find(c => c.id === clienteId)
+      const resultado = await extraerFactura(comoArchivo, tipo, { rncCliente: delCliente?.rncCedula, actividad: delCliente?.actividad })
+      if (!vivo.current) return
+      if (!resultado.esComprobante) {
+        setErrorOCR(new OCRError('El sistema no reconoce esta imagen como una factura. Si lo es, complétala a mano.'))
+        return
+      }
+      if (resultado.tipo !== tipo) {
+        // Los montos de una compra y los de una venta van en campos distintos:
+        // no se mezclan. Que la persona confirme el tipo y vuelva a leer.
+        setErrorOCR(new OCRError(`El sistema leyó esta factura como una ${resultado.tipo}, pero está registrada como ${tipo}. Cambia el tipo si corresponde y vuelve a leerla.`))
+        return
+      }
+      const leidos = aValores(resultado.extraccion)
+      const nuevos = CAMPOS_POR_TIPO[tipo].filter(c => !valores[c].trim() && leidos[c])
+      setValores(v => {
+        const sig = { ...v }
+        for (const c of nuevos) sig[c] = leidos[c]
+        return sig
+      })
+      // Un campo recién llenado deja de estar "pendiente"; queda marcado solo
+      // si la propia IA dijo que dudaba de él.
+      setDudosos(prev => {
+        const sig = new Set(prev)
+        for (const c of nuevos) sig.delete(c)
+        for (const c of resultado.camposDudosos) if (nuevos.includes(c)) sig.add(c)
+        return sig
+      })
+      setConfianza(resultado.confianzaOCR)
+      if (nuevos.length > 0 && origen === 'manual') setOrigen('ocr')
+    } catch (err) {
+      if (!vivo.current) return
+      setErrorOCR(err instanceof OCRError ? err : new OCRError('El OCR falló. Intenta de nuevo o completa la factura a mano.'))
+    } finally {
+      if (vivo.current) setLeyendo(false)
     }
   }
 
@@ -242,7 +313,7 @@ export function FacturaModal({
         revisadoEn: comoRevisada ? ahora : undefined,
         creadoEn: documento?.creadoEn ?? ahora,
         actualizadoEn: ahora,
-      })
+      }, archivo ?? undefined)
     } catch (err) {
       setErrorGuardar(err instanceof Error ? err.message : 'No se pudo guardar la factura.')
       setGuardando(false)
@@ -430,7 +501,7 @@ export function FacturaModal({
         <div className={cn('grid', conVistaPrevia && 'lg:grid-cols-2')}>
           {conVistaPrevia && urlVistaPrevia && (
             <div className="border-b border-zinc-100 dark:border-[#1d2035] bg-zinc-100 dark:bg-[#0d0f1a] p-3 lg:sticky lg:top-0 lg:self-start lg:border-b-0">
-              {archivo?.type === MIME_PDF ? (
+              {original?.type === MIME_PDF ? (
                 <iframe src={urlVistaPrevia} title="Factura" className="h-[45vh] w-full rounded-lg bg-white lg:h-[70vh]" />
               ) : (
                 <div className="max-h-[45vh] overflow-auto rounded-lg lg:max-h-[70vh]">
@@ -446,6 +517,28 @@ export function FacturaModal({
             onSubmit={e => { e.preventDefault(); void guardar(true) }}
             className="space-y-4 px-5 py-4"
           >
+            {documento && guardado && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 dark:border-[#252840] bg-zinc-50 dark:bg-[#1a1d2e] px-3.5 py-2.5">
+                <p className="min-w-[200px] flex-1 text-xs text-zinc-600 dark:text-zinc-400">
+                  {documento.origen === 'qr'
+                    ? 'RNC, NCF, fecha y total salieron del código QR. Completa lo que falta mirando la imagen, o deja que el sistema lo lea.'
+                    : 'Completa los datos mirando la imagen, o deja que el sistema los lea.'}
+                </p>
+                <button type="button" onClick={() => void leerGuardadaConIA()} disabled={leyendo} className={BTN_SECONDARY}>
+                  {leyendo ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ScanText className="h-4 w-4" />}
+                  {leyendo ? 'Leyendo…' : 'Leer con IA lo que falta'}
+                </button>
+              </div>
+            )}
+            {paso === 'formulario' && errorOCR && (
+              <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3.5 py-3 text-sm text-rose-700 dark:text-rose-300">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p>{errorOCR.message}</p>
+                  {errorOCR.esDeCodigo && <Link href="/configuracion" className="mt-1 inline-block font-semibold underline">Ir a Configuración</Link>}
+                </div>
+              </div>
+            )}
             {documento && (
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-1.5">

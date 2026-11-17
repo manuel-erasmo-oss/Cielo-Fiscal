@@ -108,15 +108,19 @@ export interface DocumentoFiscal {
   clienteId: string
   tipo: TipoDocumento
 
-  // 'ocr': los campos salieron de la extracción automática. 'manual': los
-  // digitó una persona desde cero.
-  origen: 'ocr' | 'manual'
+  // De dónde salieron los campos: 'ocr' de la lectura automática, 'qr' del
+  // código QR del comprobante electrónico (datos exactos, pero pocos) y
+  // 'manual' si los digitó una persona desde cero.
+  origen: 'ocr' | 'qr' | 'manual'
 
-  // En el MVP el archivo NO se conserva: se usa para el OCR y la revisión, y
-  // solo queda su nombre como referencia. `archivoPath` es la ruta en Storage
-  // cuando exista almacenamiento en la nube; nunca se embebe el archivo aquí.
+  // La imagen o PDF de la factura se guarda aparte (ver `Repositorio`:
+  // `guardarArchivo`/`obtenerArchivo`, por id de documento); nunca se embebe
+  // aquí. De ella quedan el nombre del archivo subido y, si venía de un PDF
+  // de varias páginas, el número de página. `archivoPath` es la ruta en
+  // Storage para cuando exista almacenamiento en la nube.
   archivoNombre?: string
   archivoMimeType?: string
+  archivoPagina?: number
   archivoPath?: string
 
   // ── Comunes a 606 y 607 (null = sin dato) ──
