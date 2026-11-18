@@ -795,6 +795,12 @@ que envía "lo otro" en otro lote):
   demás funciona sin ella.
 - La verificación en la DGII solo necesita `OCR_CODIGO_ACCESO` en Vercel
   (no la API key); sin él responde 503 y las facturas quedan "sin verificar".
+- **2026-11-18: el usuario configuró `OCR_CODIGO_ACCESO` en Vercel** ("puse
+  ocr en vercel"). **Todavía no tiene clave de Anthropic**, así que la IA
+  sigue sin funcionar en producción (503) y las facturas solo se llenan con
+  lo del QR y lo de la DGII. Con el código ya puesto, la verificación en la
+  DGII debería funcionar en producción en cuanto llegue a `main` (falta
+  comprobar que la DGII responde a los servidores de Vercel).
 - Para activar la IA: en Vercel, Settings → Environment Variables, agregar
   `ANTHROPIC_API_KEY` (key propia del producto, nunca personal) y
   `OCR_CODIGO_ACCESO` (frase larga elegida por el usuario), ambas en
@@ -819,7 +825,9 @@ que envía "lo otro" en otro lote):
   repositorio público. El PDF de muestra del usuario no está aquí.
 - Historial: PR #1 (MVP completo) y PR #2 (criterios NIIF verificados)
   fusionados el 2026-11-15; PR #3 (captura por lotes + IA automática) el
-  2026-11-17.
+  2026-11-17; PR #4 (cuatro lotes de normas fiscales aplicados, Ley 30-26 en
+  el motor fiscal, verificación automática en la DGII, serie A rechazada,
+  verificación humana de e-CF sin QR legible) el 2026-11-18.
 
 ## Nombre del producto
 
@@ -834,13 +842,15 @@ otro (ej. "Cielo Cloud Impuestos", "Cielo Cloud 606").
 - Rama de desarrollo de las sesiones de noviembre 2026:
   `claude/new-session-697xwv`; el trabajo llega a `main` por pull request.
 
-## Estado real del repo (actualizado el 2026-11-17)
+## Estado real del repo (actualizado el 2026-11-18)
 
 Este archivo se escribió en la sesión de Cielo Cloud Nómina describiendo un
 scaffold que vivía solo en aquel sandbox; el código no vino con él. En la
 sesión del 2026-11-15 se recreó el scaffold en este repo y, tras la
 decisión de arquitectura del MVP, se construyeron los pasos 1 a 4 del
-roadmap (el 4 se completó el 2026-11-17).
+roadmap (el 4 se completó el 2026-11-17). El 2026-11-18 se aplicaron cuatro
+lotes de normas fiscales (`docs/dgii/marco-legal.md`) y se construyó la
+verificación automática en la DGII.
 
 ### Qué hay en el árbol
 
@@ -943,8 +953,8 @@ roadmap (el 4 se completó el 2026-11-17).
   sea, nada de lo que se publica lo trae. Los patrones que procesa son los
   de la configuración del proyecto, no datos de usuarios. Revisar cuando
   salga picomatch 4.0.8 o superior.
-- `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
-  `/api/ocr` dinámica).
+- `npx tsc --noEmit` limpio; `npm run build` limpio (páginas estáticas +
+  `/api/ocr` y, desde el 2026-11-18, `/api/verificar-dgii` dinámicas).
 - `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (180
   de 180 desde el 2026-11-18, con las reglas de comprobantes, la Ley 30-26
   y la verificación en la DGII) — fechas
