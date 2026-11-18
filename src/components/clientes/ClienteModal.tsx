@@ -51,7 +51,7 @@ export function ClienteModal({ cliente, existentes, onGuardar, onClose }: Client
         actualizadoEn: ahora,
       })
     } catch (err) {
-      setErrorGuardar(err instanceof Error ? err.message : 'No se pudo guardar el cliente.')
+      setErrorGuardar(err instanceof Error ? err.message : 'No se pudo guardar la empresa.')
       setGuardando(false)
     }
   }
@@ -62,7 +62,7 @@ export function ClienteModal({ cliente, existentes, onGuardar, onClose }: Client
   ]
 
   return (
-    <Modal titulo={cliente ? 'Editar cliente' : 'Nuevo cliente'} onClose={onClose}>
+    <Modal titulo={cliente ? 'Editar empresa' : 'Añadir empresa'} onClose={onClose}>
       <form onSubmit={handleSubmit} noValidate className="space-y-4 px-5 py-4">
         <div className="flex flex-col gap-1.5">
           <span className={LABEL_CLASS}>Tipo</span>
@@ -148,7 +148,7 @@ export function ClienteModal({ cliente, existentes, onGuardar, onClose }: Client
         <div className="flex justify-end gap-3 pt-1">
           <button type="button" onClick={onClose} className={BTN_SECONDARY}>Cancelar</button>
           <button type="submit" disabled={guardando} className={BTN_PRIMARY}>
-            {cliente ? 'Guardar cambios' : 'Crear cliente'}
+            {cliente ? 'Guardar cambios' : 'Añadir empresa'}
           </button>
         </div>
       </form>

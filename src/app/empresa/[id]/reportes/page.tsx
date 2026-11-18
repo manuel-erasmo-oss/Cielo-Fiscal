@@ -6,7 +6,7 @@ import { AlertTriangle, Download, FileSpreadsheet, FileText, Info, Users } from 
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS, TH_CLASS } from '@/components/ui/clases'
-import { useDatos } from '@/lib/datos/datos-context'
+import { rutaEmpresa, useEmpresaActiva } from '@/lib/datos/empresa-context'
 import { fechaLimite606607 } from '@/lib/dgii-fiscal'
 import {
   FORMA_PAGO_606,
@@ -32,15 +32,15 @@ function descargar(archivo: ArchivoDGII) {
 }
 
 export default function ReportesPage() {
-  const { listo, errorCarga, clientes, documentos } = useDatos()
-  const [clienteId, setClienteId] = useState('')
+  // Los reportes son siempre de la empresa en la que se entró (ver empresa-context).
+  const { errorCarga, empresa, documentos } = useEmpresaActiva()
   const [formato, setFormato] = useState<Formato>('606')
   const [periodo, setPeriodo] = useState('') // "YYYY-MM"
   const [errorExcel, setErrorExcel] = useState<string | null>(null)
   // Forma de pago para las compras que no la indican (el 606 la exige).
   const [formaPagoDefecto, setFormaPagoDefecto] = useState('')
 
-  const cliente = clientes.find(c => c.id === clienteId) ?? clientes[0]
+  const cliente = empresa
 
   const analisis = useMemo(() => {
     if (!cliente || !periodo) return null
@@ -110,22 +110,9 @@ export default function ReportesPage() {
     <Pagina title="Reportes" subtitle="Formato 606 para la DGII y reporte de ingresos">
       {errorCarga && <AvisoErrorCarga mensaje={errorCarga} />}
 
-      {listo && !errorCarga && clientes.length === 0 && (
-        <div className="flex flex-col items-center gap-4">
-          <EmptyState icon={Users} title="Primero crea un cliente" message="Los reportes se generan por cliente y por mes." className="w-full" />
-          <Link href="/clientes" className={BTN_PRIMARY}>Ir a Clientes</Link>
-        </div>
-      )}
-
       {cliente && (
         <>
-          <div className={cn(CARD_CLASS, 'grid gap-3 px-5 py-4 sm:grid-cols-3')}>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="reporte-cliente" className={LABEL_CLASS}>Cliente</label>
-              <select id="reporte-cliente" value={cliente.id} onChange={e => setClienteId(e.target.value)} className={INPUT_CLASS}>
-                {clientes.map(c => <option key={c.id} value={c.id}>{c.razonSocial}</option>)}
-              </select>
-            </div>
+          <div className={cn(CARD_CLASS, 'grid gap-3 px-5 py-4 sm:grid-cols-2')}>
             <div className="flex flex-col gap-1.5">
               <label htmlFor="reporte-formato" className={LABEL_CLASS}>Reporte</label>
               <select id="reporte-formato" value={formato} onChange={e => setFormato(e.target.value as Formato)} className={INPUT_CLASS}>
@@ -218,7 +205,7 @@ export default function ReportesPage() {
                   <p>
                     Hay {analisis.pendientes.length} factura(s) de este mes sin revisar
                     {formato === '606' ? '. No se puede descargar un archivo incompleto: ' : ' y no entran al reporte: '}
-                    <Link href={`/facturas?cliente=${cliente.id}`} className="font-semibold underline">revísalas</Link> o elimínalas primero.
+                    <Link href={rutaEmpresa(cliente.id, 'facturas')} className="font-semibold underline">revísalas</Link> o elimínalas primero.
                   </p>
                 </div>
               )}

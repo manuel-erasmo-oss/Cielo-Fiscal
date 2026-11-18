@@ -1,9 +1,8 @@
 'use client'
 
-import { Suspense, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
-import { CheckCheck, Files, Pencil, Plus, ReceiptText, ShieldCheck, Trash2, Users } from 'lucide-react'
+import { CheckCheck, Files, Pencil, Plus, ReceiptText, ShieldCheck, Trash2 } from 'lucide-react'
 import { FacturaModal } from '@/components/facturas/FacturaModal'
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
 import { Badge } from '@/components/ui/Badge'
@@ -11,7 +10,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Toast } from '@/components/ui/Toast'
 import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS, TH_CLASS } from '@/components/ui/clases'
-import { useDatos } from '@/lib/datos/datos-context'
+import { rutaEmpresa, useEmpresaActiva } from '@/lib/datos/empresa-context'
 import { montoFacturadoDe, periodoDe, puedeMarcarseRevisada } from '@/lib/documentos'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD, redondear2 } from '@/lib/utils'
 import { VerificacionError, verificarEnDGII } from '@/lib/verificacion-cliente'
@@ -24,11 +23,11 @@ function monto(valor: number | null) {
   return valor === null ? <span className="text-zinc-300 dark:text-zinc-600">—</span> : formatRD(valor)
 }
 
-function FacturasContenido() {
-  const params = useSearchParams()
-  const { listo, errorCarga, clientes, documentos, guardarDocumento, guardarDocumentos, eliminarDocumento, obtenerArchivo } = useDatos()
+export default function FacturasPage() {
+  // Solo la empresa en la que se entró: sus facturas y nada más (ver empresa-context).
+  const { errorCarga, empresa, documentos, guardarDocumento, guardarDocumentos, eliminarDocumento, obtenerArchivo } = useEmpresaActiva()
+  const clientes = useMemo(() => [empresa], [empresa])
 
-  const [clienteId, setClienteId] = useState(params.get('cliente') ?? '')
   const [tipo, setTipo] = useState<TipoDocumento | ''>('')
   const [periodo, setPeriodo] = useState('') // "YYYY-MM"
   const [estado, setEstado] = useState<EstadoRevision | ''>('')
@@ -39,14 +38,9 @@ function FacturasContenido() {
   const [confirmarAprobar, setConfirmarAprobar] = useState(false)
   const [progresoDGII, setProgresoDGII] = useState<{ hechas: number; total: number } | null>(null)
 
-  const nombreCliente = useMemo(() => new Map(clientes.map(c => [c.id, c.razonSocial])), [clientes])
-  // Un id de cliente en la URL que ya no existe equivale a "todos".
-  const clienteFiltro = nombreCliente.has(clienteId) ? clienteId : ''
-
   const filtrados = useMemo(() => {
     return documentos
       .filter(d =>
-        (!clienteFiltro || d.clienteId === clienteFiltro) &&
         (!tipo || d.tipo === tipo) &&
         (!estado || d.estadoRevision === estado) &&
         (!periodo || periodoDe(d) === periodo),
@@ -58,7 +52,7 @@ function FacturasContenido() {
         if (b.fechaComprobante === null) return 1
         return b.fechaComprobante.localeCompare(a.fechaComprobante)
       })
-  }, [documentos, clienteFiltro, tipo, estado, periodo])
+  }, [documentos, tipo, estado, periodo])
 
   const totales = useMemo(() => ({
     monto: redondear2(filtrados.reduce((s, d) => s + (montoFacturadoDe(d) ?? 0), 0)),
@@ -158,17 +152,16 @@ function FacturasContenido() {
     }
   }
 
-  const sinClientes = listo && !errorCarga && clientes.length === 0
-  const hayFiltros = !!(clienteFiltro || tipo || estado || periodo)
+  const hayFiltros = !!(tipo || estado || periodo)
 
   return (
     <Pagina
       title="Facturas"
-      subtitle="Compras y ventas de tus clientes"
+      subtitle="Compras y ventas de esta empresa"
       actions={
-        clientes.length > 0 && (
+        empresa && (
           <>
-            <Link href={clienteFiltro ? `/lote?cliente=${clienteFiltro}` : '/lote'} className={BTN_SECONDARY}>
+            <Link href={rutaEmpresa(empresa.id, 'lote')} className={BTN_SECONDARY}>
               <Files className="h-4 w-4" />
               <span className="hidden sm:inline">Subir lote</span>
             </Link>
@@ -182,29 +175,10 @@ function FacturasContenido() {
     >
       {errorCarga && <AvisoErrorCarga mensaje={errorCarga} />}
 
-      {sinClientes && (
-        <div className="flex flex-col items-center gap-4">
-          <EmptyState
-            icon={Users}
-            title="Primero crea un cliente"
-            message="Cada factura pertenece a un cliente. Crea uno y vuelve aquí para registrar sus facturas."
-            className="w-full"
-          />
-          <Link href="/clientes" className={BTN_PRIMARY}>Ir a Clientes</Link>
-        </div>
-      )}
-
       {clientes.length > 0 && (
         <>
           {/* ── Filtros ────────────────────────────────────────────────── */}
-          <div className={cn(CARD_CLASS, 'grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4')}>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="filtro-cliente" className={LABEL_CLASS}>Cliente</label>
-              <select id="filtro-cliente" value={clienteFiltro} onChange={e => setClienteId(e.target.value)} className={INPUT_CLASS}>
-                <option value="">Todos los clientes</option>
-                {clientes.map(c => <option key={c.id} value={c.id}>{c.razonSocial}</option>)}
-              </select>
-            </div>
+          <div className={cn(CARD_CLASS, 'grid gap-3 px-5 py-4 sm:grid-cols-3')}>
             <div className="flex flex-col gap-1.5">
               <label htmlFor="filtro-tipo" className={LABEL_CLASS}>Tipo</label>
               <select id="filtro-tipo" value={tipo} onChange={e => setTipo(e.target.value as TipoDocumento | '')} className={INPUT_CLASS}>
@@ -293,7 +267,6 @@ function FacturasContenido() {
                           </p>
                           <p className="text-xs text-zinc-400 dark:text-zinc-500">
                             {d.rncCedulaContraparte ? formatCedula(d.rncCedulaContraparte) : 'Sin RNC'}
-                            {!clienteFiltro && ` · ${nombreCliente.get(d.clienteId) ?? 'Cliente eliminado'}`}
                           </p>
                         </td>
                         <td className="px-3 py-3.5 tabular-nums text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
@@ -365,7 +338,7 @@ function FacturasContenido() {
           documento={enEdicion}
           clientes={clientes}
           documentos={documentos}
-          clienteIdInicial={clienteFiltro || undefined}
+          clienteIdInicial={empresa?.id}
           onGuardar={handleGuardar}
           obtenerArchivo={obtenerArchivo}
           onClose={() => setEnEdicion(undefined)}
@@ -395,14 +368,5 @@ function FacturasContenido() {
 
       {aviso && <Toast message={aviso.mensaje} type={aviso.tipo} onClose={() => setAviso(null)} />}
     </Pagina>
-  )
-}
-
-export default function FacturasPage() {
-  // useSearchParams exige un límite de Suspense para el prerender estático.
-  return (
-    <Suspense fallback={null}>
-      <FacturasContenido />
-    </Suspense>
   )
 }

@@ -1,15 +1,14 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
 import { AlertTriangle, CheckCheck, CircleCheck, CircleStop, FileUp, Info, LoaderCircle, QrCode, ShieldCheck, Sparkles, Users } from 'lucide-react'
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS } from '@/components/ui/clases'
 import { leerCodigoOCR } from '@/lib/config-local'
-import { useDatos } from '@/lib/datos/datos-context'
+import { rutaEmpresa, useEmpresaActiva } from '@/lib/datos/empresa-context'
 import { ETIQUETA_CAMPO } from '@/lib/documentos'
 import {
   aplicarVerificacion,
@@ -69,11 +68,10 @@ const leerConIA = (p: PaginaLote) => esIncluible(p) && !p.borrador.leidaConIA
 // Las que tienen un QR de e-CF y todavía no se consultaron en la DGII.
 const verificarDGII = (p: PaginaLote) => esIncluible(p) && !!p.borrador.qrUrl && !p.borrador.dgii
 
-function LoteContenido() {
-  const params = useSearchParams()
-  const { listo, errorCarga, clientes, documentos, guardarLote, guardarDocumentos } = useDatos()
+export default function LotePage() {
+  // El lote es siempre de la empresa en la que se entró (ver empresa-context).
+  const { errorCarga, empresa, documentos, guardarLote, guardarDocumentos } = useEmpresaActiva()
 
-  const [clienteId, setClienteId] = useState(params.get('cliente') ?? '')
   const [tipoPorDefecto, setTipoPorDefecto] = useState<TipoDocumento>('compra')
   const [fase, setFase] = useState<Fase>('inicio')
   const [paginas, setPaginas] = useState<PaginaLote[]>([])
@@ -92,7 +90,7 @@ function LoteContenido() {
   const [avisoDGII, setAvisoDGII] = useState<string | null>(null)
   const inputArchivos = useRef<HTMLInputElement>(null)
 
-  const cliente = clientes.find(c => c.id === clienteId) ?? clientes[0]
+  const cliente = empresa
 
   useEffect(() => { setHayCodigo(!!leerCodigoOCR()) }, [])
 
@@ -349,13 +347,6 @@ function LoteContenido() {
     <Pagina title="Subir lote" subtitle="Un PDF con muchas facturas, o varias fotos">
       {errorCarga && <AvisoErrorCarga mensaje={errorCarga} />}
 
-      {listo && !errorCarga && clientes.length === 0 && (
-        <div className="flex flex-col items-center gap-4">
-          <EmptyState icon={Users} title="Primero crea un cliente" message="Cada lote de facturas pertenece a un cliente." className="w-full" />
-          <Link href="/clientes" className={BTN_PRIMARY}>Ir a Clientes</Link>
-        </div>
-      )}
-
       {error && (
         <div role="alert" className="flex items-start gap-3 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-5 py-4 text-sm text-rose-700 dark:text-rose-300">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -385,12 +376,6 @@ function LoteContenido() {
       {cliente && fase === 'inicio' && (
         <div className={cn(CARD_CLASS, 'space-y-4 px-5 py-4')}>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="lote-cliente" className={LABEL_CLASS}>Cliente</label>
-              <select id="lote-cliente" value={cliente.id} onChange={e => setClienteId(e.target.value)} className={INPUT_CLASS}>
-                {clientes.map(c => <option key={c.id} value={c.id}>{c.razonSocial}</option>)}
-              </select>
-            </div>
             <div className="flex flex-col gap-1.5">
               <label htmlFor="lote-tipo" className={LABEL_CLASS}>Si no se puede saber si es compra o venta</label>
               <select id="lote-tipo" value={tipoPorDefecto} onChange={e => setTipoPorDefecto(e.target.value as TipoDocumento)} className={INPUT_CLASS}>
@@ -543,7 +528,7 @@ function LoteContenido() {
           {conteo.ajenas > 0 && (
             <p className="flex items-start gap-2 text-xs text-rose-700 dark:text-rose-300">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>Hay facturas cuyo QR nombra a otro contribuyente. Si son muchas, revisa que elegiste el cliente correcto.</span>
+              <span>Hay facturas cuyo QR nombra a otro contribuyente. Si son muchas, puede que estés en la empresa equivocada: revísalo arriba o cambia de empresa.</span>
             </p>
           )}
         </div>
@@ -653,19 +638,10 @@ function LoteContenido() {
                 Aprobar las {sinObservaciones.length} sin observaciones
               </button>
             )}
-            <Link href={`/facturas?cliente=${cliente.id}`} className={BTN_PRIMARY}>Ver las facturas</Link>
+            <Link href={rutaEmpresa(cliente.id, 'facturas')} className={BTN_PRIMARY}>Ver las facturas</Link>
           </div>
         </div>
       )}
     </Pagina>
-  )
-}
-
-export default function LotePage() {
-  // useSearchParams exige un límite de Suspense para el prerender estático.
-  return (
-    <Suspense fallback={null}>
-      <LoteContenido />
-    </Suspense>
   )
 }

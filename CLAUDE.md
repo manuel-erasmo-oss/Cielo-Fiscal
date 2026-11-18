@@ -292,6 +292,53 @@ Consecuencias de diseño (implementadas):
   persona: retenciones (decisión del usuario), y cualquier factura con
   observaciones.
 
+## Separación por empresa (pedida por el usuario el 2026-11-18) — construida — MANDA
+
+> "Para mí es fundamental la separación de los datos entre empresas, como
+> los usuarios generalmente serán contadores independientes es fácil
+> actualmente confundirse y meter información de una empresa en otra."
+
+El usuario mostró como referencia la pantalla de inicio de otro producto
+(un "espacio del contador" con la lista de empresas de sus clientes y un
+botón para entrar a cada una). **No se copió**: se tomó la idea. La captura
+traía nombres y RNC reales de sus clientes: no van al repo.
+
+Decisión (con la opción recomendada): **solo la selección de empresa, sin
+cuentas todavía**; el inicio de sesión llega con la migración a la nube
+(paso 9 del roadmap).
+
+- **`/` = "Tus empresas"** (`src/app/page.tsx`): lista de empresas con
+  buscador (nombre, nombre comercial o RNC con o sin guiones), filtro "Con
+  facturas por revisar", "Añadir empresa", botón "Entrar" y menú ⋮ (editar,
+  eliminar con aviso de que se borran sus facturas). Reemplaza al Inicio y
+  a la pantalla de Clientes de antes.
+- **Los módulos solo existen dentro de una empresa**: `/empresa/<id>`
+  (Resumen), `/empresa/<id>/facturas`, `/empresa/<id>/lote` y
+  `/empresa/<id>/reportes`. La empresa va en la dirección, no en un estado
+  oculto: cada pestaña queda atada a una empresa. Las direcciones viejas
+  (`/clientes`, `/facturas`, `/lote`, `/reportes`) llevan a "Tus empresas"
+  (`next.config.mjs`). Una dirección con un id que no existe muestra "Esta
+  empresa no existe" y ninguna pantalla de trabajo
+  (`src/app/empresa/[id]/layout.tsx`).
+- **La separación está en los datos, no solo en la pantalla**:
+  `src/lib/datos/empresa.ts` (lógica pura, probada) +
+  `src/lib/datos/empresa-context.tsx`. Dentro de una empresa las pantallas
+  usan `useEmpresaActiva()`, nunca `useDatos()`: solo ven sus facturas, y
+  guardar, borrar o abrir la imagen de una factura de otra empresa lanza
+  `EmpresaEquivocadaError`. **No usar `useDatos()` en pantallas de
+  trabajo.**
+- Se quitaron los selectores de cliente de Facturas, Subir lote, Reportes y
+  del formulario de factura (ahí la empresa es un campo de solo lectura):
+  una factura no se puede pasar a otra empresa.
+- Siempre visible dentro de una empresa: franja "Trabajando en <empresa>
+  <RNC> · Cambiar de empresa" en el encabezado y bloque "Empresa activa" en
+  el menú lateral. En móvil, la barra inferior trae "Cambiar".
+- Resumen de la empresa: facturas registradas, por revisar, por verificar
+  en la DGII, revisadas, y el próximo vencimiento del 606 (si el día 15 del
+  mes ya pasó, muestra el del mes en curso).
+- Refuerzo que ya existía: en la captura por lotes, una factura cuyo QR
+  nombra a otro contribuyente no se deja guardar.
+
 ## Verificación en la DGII (pedida por el usuario el 2026-11-18) — construida
 
 > "Es necesario que el sistema verifique automáticamente el estatus de las
@@ -798,7 +845,9 @@ que envía "lo otro" en otro lote):
 - La verificación en la DGII solo necesita `OCR_CODIGO_ACCESO` en Vercel
   (no la API key); sin él responde 503 y las facturas quedan "sin verificar".
 - **2026-11-18: el usuario configuró `OCR_CODIGO_ACCESO` en Vercel** ("puse
-  ocr en vercel"). **Todavía no tiene clave de Anthropic**, así que la IA
+  ocr en vercel"). Más tarde ese día dijo que **ya compró saldo en la API de
+  Anthropic** ("la api que ya compré saldo"); falta que agregue
+  `ANTHROPIC_API_KEY` en Vercel y haga Redeploy. Hasta entonces la IA
   sigue sin funcionar en producción (503) y las facturas solo se llenan con
   lo del QR y lo de la DGII.
 - **Comprobado en producción el 2026-11-18, tras fusionar el PR #4**: las
@@ -862,14 +911,17 @@ verificación automática en la DGII.
 
 ### Qué hay en el árbol
 
-- **Pantallas** (`src/app`): `/` Inicio (conteos y facturas por revisar por
-  cliente), `/clientes` (alta, edición, borrado en cascada), `/facturas`
-  (filtros por cliente/tipo/mes/estado, totales, alta por OCR o a mano,
-  edición, borrado), `/lote` (captura por lotes: PDF o varias fotos), `/reportes` (genera y descarga el TXT del 606 o 607
-  de un cliente y un mes y lo exporta a Excel; y el reporte de ingresos en
-  Excel), `/configuracion` (código de acceso al OCR).
+- **Pantallas** (`src/app`), desde el 2026-11-18 (ver "Separación por
+  empresa"): `/` Tus empresas (lista, búsqueda, alta, edición, borrado en
+  cascada, "Entrar"); dentro de una empresa: `/empresa/[id]` Resumen,
+  `/empresa/[id]/facturas` (filtros por tipo/mes/estado, totales, alta por
+  OCR o a mano, edición, borrado, verificación en la DGII),
+  `/empresa/[id]/lote` (captura por lotes), `/empresa/[id]/reportes` (TXT
+  del 606 y Excel; reporte de ingresos en Excel); `/configuracion` (código
+  de acceso, global).
 - **Servidor**: `src/app/api/ocr/route.ts` y `src/app/api/verificar-dgii/route.ts`.
-- **Datos** (`src/lib/datos`): `repositorio.ts` (interfaz),
+- **Datos** (`src/lib/datos`): `empresa.ts` y `empresa-context.tsx`
+  (separación por empresa), `repositorio.ts` (interfaz),
   `repositorio-local.ts` (`localStorage`, claves `cielo-fiscal:clientes:v1`
   y `cielo-fiscal:documentos:v1`; imágenes en IndexedDB, base
   `cielo-fiscal`, almacén `archivos`), `datos-context.tsx` (estado compartido).
@@ -963,8 +1015,8 @@ verificación automática en la DGII.
   salga picomatch 4.0.8 o superior.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (páginas estáticas +
   `/api/ocr` y, desde el 2026-11-18, `/api/verificar-dgii` dinámicas).
-- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (180
-  de 180 desde el 2026-11-18, con las reglas de comprobantes, la Ley 30-26
+- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (183
+  de 183 desde el 2026-11-18, con las reglas de comprobantes, la Ley 30-26
   y la verificación en la DGII) — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
@@ -1031,6 +1083,19 @@ verificación automática en la DGII.
   401 sin código o con código incorrecto. Regresión: 16/16, 9/9 y 15/15.
   El recorrido de 58 páginas (`e2e7.js`) no se volvió a correr: espera el
   texto "Paso 2 de 2", que ahora es "Paso 3 de 3".
+- Separación por empresa (2026-11-18), navegador real contra `next start`:
+  **25 de 25** — sin empresas, el menú solo trae "Tus empresas"; se añaden
+  dos empresas desde la pantalla; buscar por nombre y por RNC con guiones;
+  "Entrar" lleva a `/empresa/<id>` con la franja "Trabajando en…" y el
+  bloque "Empresa activa"; en Facturas de una empresa no aparece la factura
+  de la otra (sembrada a propósito); la factura nueva queda en la empresa
+  activa y el formulario no deja elegir otra; Lote y Reportes sin selector
+  de cliente; "Cambiar de empresa" vuelve a la lista; una dirección con id
+  inexistente muestra "Esta empresa no existe"; `/facturas` y `/clientes`
+  llevan a la lista; eliminar una empresa borra solo sus facturas; móvil
+  con "Cambiar" y sin desplazamiento horizontal; el resumen muestra el 606
+  de noviembre 2026 (el de octubre ya venció el 15). Las pruebas anteriores,
+  adaptadas a las direcciones nuevas: 16/16, 9/9, 15/15 y 26/26.
 - Dato de control del dígito verificador: el algoritmo de la macro da
   correcto el RNC `401007551`.
 - Ruta OCR contra el servidor real: sin código o código incorrecto → 401;
