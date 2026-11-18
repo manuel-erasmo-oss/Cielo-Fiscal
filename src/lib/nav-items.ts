@@ -5,7 +5,7 @@ export interface NavItem {
   href: string
   icon: LucideIcon
   label: string
-  // true si solo se marca activo con la ruta exacta (p. ej. el tablero).
+  // true si solo se marca activo con la ruta exacta (p. ej. el dashboard).
   exacto?: boolean
   // Otras rutas que también lo marcan activo (Subir lote es parte de Facturas).
   activoEn?: string[]
@@ -24,7 +24,7 @@ export const NAV_GLOBAL: NavItem[] = [
 // es un módulo aparte, se entra desde Facturas → "Agregar facturas".
 export function navEmpresa(empresaId: string): NavItem[] {
   return [
-    { href: rutaEmpresa(empresaId), icon: LayoutDashboard, label: 'Tablero', exacto: true },
+    { href: rutaEmpresa(empresaId), icon: LayoutDashboard, label: 'Dashboard', exacto: true },
     { href: rutaEmpresa(empresaId, 'facturas'), icon: ReceiptText, label: 'Facturas', activoEn: [rutaEmpresa(empresaId, 'lote')] },
     { href: rutaEmpresa(empresaId, 'reportes'), icon: FileText, label: 'Reportes' },
   ]

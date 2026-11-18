@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { marcasEje, montoCompacto, type Composicion, type PuntoMensual, type Proveedor } from '@/lib/dashboard'
 import { cn, formatPeriodo, formatRD } from '@/lib/utils'
 
-// Gráficos del tablero, dibujados a mano en SVG/HTML (sin otra dependencia).
+// Gráficos del dashboard, dibujados a mano en SVG/HTML (sin otra dependencia).
 // Siguen la guía de visualización de datos: marcas finas (columnas de 24 px
 // como máximo, punta redondeada de 4 px y base recta), separación de 2 px
 // en el color de la superficie, rejilla de un pelo, leyenda siempre que hay
@@ -17,7 +17,7 @@ import { cn, formatPeriodo, formatRD } from '@/lib/utils'
 //   ventas  / costo  #0f9f8a · oscuro #1aa58c
 //   activo           #c8590f · oscuro #de6e2e
 // Se declaran como variables CSS en VARIABLES_GRAFICOS (en la raíz del
-// tablero) para que el modo oscuro cambie en un solo lugar.
+// dashboard) para que el modo oscuro cambie en un solo lugar.
 
 export const VARIABLES_GRAFICOS =
   '[--c-compras:#3446c4] [--c-ventas:#0f9f8a] [--c-activo:#c8590f] [--c-neutro:#a1a1aa] [--c-sup:#ffffff] ' +

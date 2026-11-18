@@ -408,7 +408,7 @@ export default function FacturasPage() {
 
 // Un solo botón para agregar facturas (pedido por el usuario el 2026-11-18:
 // "subir lote se repite demasiadas veces"). Subir lote vive aquí, no en el
-// menú ni en el tablero.
+// menú ni en el dashboard.
 function AgregarFacturas({ hrefLote, onUna }: { hrefLote: string; onUna: () => void }) {
   const [abierto, setAbierto] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
