@@ -204,8 +204,14 @@ export function esFacturaDeConsumo(ncf: string | null): boolean {
 // promulgación y publicación más los plazos del Código Civil (art. 42), así
 // que el último plazo vence alrededor del 17 de mayo de 2026.
 // ⚠️ SIN VERIFICAR el día exacto: depende de cómo se cuenten esos plazos.
-// Solo se usa para avisos, nunca bloquea.
+// Solo se usa para avisos, nunca bloquea: el usuario confirmó (2026-11-18)
+// que la facturación electrónica ya es obligatoria, pero pidió que los
+// comprobantes serie B se sigan dejando pasar.
 export const FIN_CALENDARIO_ECF = '2026-05-17'
+
+// Último día en que se podían emitir los NCF de 19 posiciones (series A, P,
+// Q): Norma General 06-2018, art. 10. Solo para avisos.
+export const FIN_SERIES_19_POSICIONES = '2018-04-30'
 
 // ─── Dígito verificador ──────────────────────────────────────────────────────
 
@@ -309,8 +315,31 @@ function avisosDeComprobanteCompra(doc: CamposDocumento, tipo: string, p: Proble
   // emisor estaba en contingencia notificada) y art. 8 (prórroga única de
   // hasta 6 meses). No se sabe a qué grupo pertenece cada emisor ni si tuvo
   // prórroga, así que solo se avisa desde el último plazo.
-  if (!esECF(doc.ncf) && doc.fechaComprobante && doc.fechaComprobante >= FIN_CALENDARIO_ECF) {
+  // Norma General 06-2018, art. 10: los NCF autorizados antes de esa norma
+  // (series de 19 posiciones) solo podían emitirse hasta el 30-04-2018.
+  if (doc.ncf?.length === 19 && doc.fechaComprobante && doc.fechaComprobante > FIN_SERIES_19_POSICIONES) {
+    p.push(aviso('ncf', 'NCF de 19 posiciones con fecha posterior al 30 de abril de 2018, cuando dejaron de poder emitirse. Verifica el comprobante.'))
+  } else if (!esECF(doc.ncf) && doc.fechaComprobante && doc.fechaComprobante >= FIN_CALENDARIO_ECF) {
     p.push(aviso('ncf', 'Comprobante no electrónico emitido después de mayo de 2026, cuando venció el último plazo para facturar en electrónico. Solo vale para costos, gastos y crédito de ITBIS si el emisor tenía una prórroga vigente o estaba en contingencia notificada a la DGII. Verifícalo.'))
+  }
+}
+
+// Decreto 293-11 (Reglamento del ITBIS), art. 25 párrafo I: cuando una
+// persona física presta un servicio gravado a una persona jurídica, esta
+// retiene y paga a la DGII la totalidad del ITBIS. Las retenciones las
+// digita la persona y no son obligatorias en el sistema (decisión del
+// usuario), así que solo se avisa. Persona física = proveedor con cédula
+// (11 dígitos); persona jurídica = cliente con RNC de 9 dígitos (un negocio
+// de único dueño con cédula queda fuera del aviso, aunque el artículo
+// también lo alcanza).
+function avisoRetencionItbisPersonaFisica(doc: CamposDocumento, rncCliente: string, p: Problema[]) {
+  const proveedorPersonaFisica = doc.rncCedulaContraparte?.length === 11
+  const clienteJuridico = /^\d{9}$/.test(rncCliente)
+  if (
+    proveedorPersonaFisica && clienteJuridico && !loEmiteElComprador(doc.ncf) &&
+    (doc.montoServicios ?? 0) > 0 && (doc.itbisFacturado ?? 0) > 0 && !tieneValor(doc.itbisRetenido)
+  ) {
+    p.push(aviso('itbisRetenido', 'Servicio de una persona física a una empresa: la empresa debe retener el 100% del ITBIS (Reglamento del ITBIS, art. 25). Si se retuvo, digítalo junto con la fecha de pago.'))
   }
 }
 
@@ -345,6 +374,7 @@ export function validarCompra606(doc: CamposDocumento, rncCliente: string): Prob
     p.push(err('ncfModificado', 'El NCF modificado no tiene una estructura válida.'))
   }
   if (doc.ncf) avisosDeComprobanteCompra(doc, tipo, p)
+  avisoRetencionItbisPersonaFisica(doc, rncCliente, p)
 
   // 6-7. Fechas. La de pago es obligatoria si hay retenciones.
   validarFechas(doc, 'fechaComprobante', 'fechaPago', p)

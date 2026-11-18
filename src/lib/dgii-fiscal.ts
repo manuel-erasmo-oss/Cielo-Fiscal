@@ -19,6 +19,7 @@ import { fechaLocalISO, redondear2 } from '@/lib/utils'
 // ajustarla cada año por la inflación (párrafo I). Las tasas coinciden; los
 // montos de aquí son una escala ya ajustada que ese texto no permite
 // comprobar: hace falta el aviso o la resolución de la DGII del año.
+// Rige hasta el ejercicio fiscal 2026; desde 2027 ver `TRAMOS_ISR_PERSONA_FISICA_2027`.
 export const TRAMOS_ISR_PERSONA_FISICA = [
   { hasta: 416_220.00, tasa: 0.00, fijo: 0 },
   { hasta: 624_329.00, tasa: 0.15, fijo: 0 },
@@ -26,15 +27,36 @@ export const TRAMOS_ISR_PERSONA_FISICA = [
   { hasta: Infinity,   tasa: 0.25, fijo: 79_776.00 },
 ] as const
 
-// Misma lógica que `calcularISRAnual` de Cielo Cloud Nómina.
-export function calcularISRAnualPersonaFisica(rentaNetaImponibleAnual: number): number {
-  const t = TRAMOS_ISR_PERSONA_FISICA
+// Escala del art. 296 del Código Tributario según la Ley 30-26 (art. 10),
+// "a partir del ejercicio fiscal 2027". Agrega un quinto tramo de 27%. Los
+// montos fijos de cada tramo son los que trae la ley y cuadran con la
+// escala (p. ej. 205,000 × 15% = 30,750). La ley manda ajustarla cada año
+// por la inflación (párrafo I): desde 2028 estos montos ya no son los
+// vigentes sin el ajuste que publique la DGII.
+export const TRAMOS_ISR_PERSONA_FISICA_2027 = [
+  { hasta: 480_000.00,   tasa: 0.00, fijo: 0 },
+  { hasta: 685_000.00,   tasa: 0.15, fijo: 0 },
+  { hasta: 910_000.00,   tasa: 0.20, fijo: 30_750.00 },
+  { hasta: 4_800_000.00, tasa: 0.25, fijo: 75_750.00 },
+  { hasta: Infinity,     tasa: 0.27, fijo: 1_048_250.00 },
+] as const
+
+type Tramo = { readonly hasta: number; readonly tasa: number; readonly fijo: number }
+
+export function tramosISRPersonaFisica(anioFiscal: number): readonly Tramo[] {
+  return anioFiscal >= 2027 ? TRAMOS_ISR_PERSONA_FISICA_2027 : TRAMOS_ISR_PERSONA_FISICA
+}
+
+// Misma lógica que `calcularISRAnual` de Cielo Cloud Nómina, generalizada a
+// cualquier número de tramos: monto fijo del tramo + tasa sobre lo que
+// excede el límite del tramo anterior. Sin año usa la escala hasta 2026.
+export function calcularISRAnualPersonaFisica(rentaNetaImponibleAnual: number, anioFiscal = 2026): number {
+  const t = tramosISRPersonaFisica(anioFiscal)
   if (rentaNetaImponibleAnual <= t[0].hasta) return 0
-  if (rentaNetaImponibleAnual <= t[1].hasta)
-    return (rentaNetaImponibleAnual - t[0].hasta) * t[1].tasa
-  if (rentaNetaImponibleAnual <= t[2].hasta)
-    return t[2].fijo + (rentaNetaImponibleAnual - t[1].hasta) * t[2].tasa
-  return t[3].fijo + (rentaNetaImponibleAnual - t[2].hasta) * t[3].tasa
+  for (let i = 1; i < t.length; i++) {
+    if (rentaNetaImponibleAnual <= t[i].hasta) return t[i].fijo + (rentaNetaImponibleAnual - t[i - 1].hasta) * t[i].tasa
+  }
+  return 0 // inalcanzable: el último tramo llega a Infinity
 }
 
 // Impuesto Sustitutivo sobre Retribuciones Complementarias. Mismo valor que
@@ -42,12 +64,35 @@ export function calcularISRAnualPersonaFisica(rentaNetaImponibleAnual: number): 
 // de Cielo Cloud Nómina (allí: "guía oficial DGII").
 export const TASA_IMPUESTO_SUSTITUTIVO_RETRIBUCIONES = 0.27
 
-// ISR de personas jurídicas. Verificado (2026-11-18) contra el Código
-// Tributario, Ley 11-92, texto consolidado de la DGII (actualizado en octubre
-// 2025): art. 297, modificado por la Ley 253-12; su párrafo II baja la tasa
-// al 27% a partir del ejercicio fiscal 2015. Pendiente: confirmar que la Ley
-// 30-26 (no leída todavía) no la cambia.
+// ISR de personas jurídicas: 27%. Código Tributario, art. 297, en la
+// redacción de la Ley 30-26 (art. 15): "a partir del ejercicio fiscal 2026".
+// Antes ya era 27% desde 2015 (Ley 253-12).
 export const TASA_ISR_PERSONA_JURIDICA = 0.27
+
+// Ley 30-26, art. 15 (art. 297 párrafo II): solo en los períodos fiscales
+// 2026, 2027 y 2028, quienes tengan ingresos desde RD$1,000 millones pagan
+// 30%. Desde 2029 vuelven al 27%.
+export const TASA_ISR_PERSONA_JURIDICA_INGRESOS_ALTOS = 0.30
+export const UMBRAL_INGRESOS_ISR_TRANSITORIO = 1_000_000_000
+
+export function tasaISRPersonaJuridica(anioFiscal: number, ingresosBrutos: number): number {
+  const transitorio = anioFiscal >= 2026 && anioFiscal <= 2028 && ingresosBrutos >= UMBRAL_INGRESOS_ISR_TRANSITORIO
+  return transitorio ? TASA_ISR_PERSONA_JURIDICA_INGRESOS_ALTOS : TASA_ISR_PERSONA_JURIDICA
+}
+
+// Recargo por mora: 3% por cada mes o fracción, sobre el impuesto dejado de
+// pagar, sin pasar del 100% del impuesto. Código Tributario, art. 252, en la
+// redacción de la Ley 30-26 (art. 7). Reemplaza el esquema anterior (10% el
+// primer mes y 4% los siguientes). Aparte va el interés indemnizatorio
+// (art. 27 nuevo): tasa activa promedio de la banca múltiple más 30 puntos
+// básicos, que la DGII fija cada año; no se modela.
+export const RECARGO_MORA_MENSUAL = 0.03
+export const TOPE_RECARGO_MORA = 1.0
+
+export function recargoMora(impuesto: number, mesesOFraccion: number): number {
+  if (impuesto <= 0 || mesesOFraccion <= 0) return 0
+  return redondear2(impuesto * Math.min(TOPE_RECARGO_MORA, RECARGO_MORA_MENSUAL * Math.ceil(mesesOFraccion)))
+}
 
 // Día del mes siguiente en que vence el IR-17. En Cielo Cloud Nómina
 // (`src/app/reportes/page.tsx`: "Vencimiento de pago: día 10 del mes
@@ -60,25 +105,25 @@ export const DIA_LIMITE_IR17 = 10
 // de los primeros veinte (20) días de cada mes, aun cuando no exista
 // impuesto a pagar". El período fiscal es el mes calendario (art. 353 a).
 // El día de los formatos 606 y 607 (15) vive en dgii-formatos.ts:
-// `DIA_LIMITE_606_607`. Pendiente: confirmar que la Ley 30-26 no lo cambia.
+// `DIA_LIMITE_606_607`. La Ley 30-26 no modifica el art. 353.
 export const DIA_LIMITE_IT1 = 20
 
 // Tasa reducida de ITBIS. Código Tributario, art. 345 párrafo II (Ley
 // 253-12): 16% a partir de 2016 para una lista cerrada de bienes por código
 // arancelario (yogures, mantequilla, café, aceites comestibles, azúcar,
 // cacao y chocolate, entre otros). La lista no está modelada: la tasa la da
-// la factura. Pendiente: confirmar contra la Ley 30-26.
+// la factura. La Ley 30-26 no toca los arts. 341 ni 345.
 export const TASA_ITBIS_REDUCIDA = 0.16
 
-// ─── ⚠️ SIN VERIFICAR ────────────────────────────────────────────────────────
-
-// ⚠️ SIN VERIFICAR — tasa general de ITBIS. El texto consolidado del Código
-// no lo resuelve solo: el art. 341 dice 16% (texto viejo de la Ley 288-04,
-// ya superado) y el art. 345 (Ley 253-12) dice 18% para 2013 y 2014 y 16%
-// desde 2015, pero su párrafo I condiciona esa rebaja a alcanzar una meta de
-// presión tributaria. Las facturas reales de la muestra cobran 18%. Falta
-// una fuente que diga cuál rige hoy (y leer la Ley 30-26).
+// Tasa general de ITBIS: 18%. Confirmada por el usuario (contador) el
+// 2026-11-18. El texto consolidado del Código no lo dice solo: el art. 341
+// trae 16% (texto viejo de la Ley 288-04) y el art. 345 (Ley 253-12) 18%
+// para 2013-2014 y 16% desde 2015, rebaja condicionada por su párrafo I a
+// una meta de presión tributaria que no se cumplió. La Ley 30-26 no toca
+// esos artículos, y las facturas reales de la muestra cobran 18%.
 export const TASA_ITBIS_GENERAL = 0.18
+
+// ─── ⚠️ SIN VERIFICAR ────────────────────────────────────────────────────────
 
 // ─── Fechas límite ───────────────────────────────────────────────────────────
 

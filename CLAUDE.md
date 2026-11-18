@@ -148,6 +148,9 @@ posterior, no de este arranque.
    Cloud Nómina antes de implementar Retribuciones Complementarias (se
    pidió la Guía del Contribuyente No.14 real antes de tocar código) e
    IR-17 (confirmado contra esa misma guía, día 10, recargo 10%+4%+1.10%).
+   **Ese recargo ya no rige**: la Ley 30-26 lo cambió a 3% por mes con
+   tope de 100%, más un interés indemnizatorio que fija la DGII cada año
+   (ver `docs/dgii/marco-legal.md`). Cielo Cloud Nómina también lo usa.
 3. **Snapshot inmutable al momento de declarar, no recalculado después.**
    Cielo Cloud Nómina aprendió esto por las malas con
    `PeriodoNomina.resultadosPorEmpleado` (una nómina ya cerrada no debe
@@ -199,21 +202,23 @@ físicas (Ley 11-92, mismos 4 tramos que el motor de nómina), Impuesto
 Sustitutivo de Retribuciones Complementarias 27%, día límite IR-17 (10,
 confirmado contra la Guía No.14 DGII).
 
-**Verificado el 2026-11-18 contra el Código Tributario** (Ley 11-92, texto
-consolidado de la DGII actualizado en octubre 2025): ISR de personas
-jurídicas 27% desde 2015 (art. 297 párrafo II); IT-1 vence en los primeros
-20 días del mes (art. 353 c); tasa reducida de ITBIS 16% desde 2016 para
-una lista cerrada de bienes por código arancelario (art. 345 párrafo II, no
-modelada). Todo con la reserva de la Ley 30-26, que no se ha podido leer.
-El día de los formatos 606 y 607 **es el 15** (antes se asumía 20 y era
-incorrecto).
+**Verificado el 2026-11-18** contra el Código Tributario (texto consolidado
+de la DGII, octubre 2025), la **Ley 30-26** y el Decreto 293-11 (detalle en
+`docs/dgii/marco-legal.md`): **ITBIS general 18%** (confirmado por el
+usuario; la Ley 30-26 no toca los arts. 341 y 345); tasa reducida 16% para
+una lista cerrada de bienes (art. 345 párr. II, no modelada); IT-1 en los
+primeros 20 días (art. 353 c y Decreto 293-11 art. 24); ISR jurídicas 27%
+desde 2026 con **30% transitorio 2026-2028** para ingresos desde RD$1,000
+millones (Ley 30-26 art. 15); **escala nueva de ISR de personas físicas
+desde 2027** (Ley 30-26 art. 10); **recargo por mora 3% mensual con tope de
+100%** (Ley 30-26 art. 7, reemplaza el 10% + 4%). El día de los formatos
+606 y 607 **es el 15**.
 
 **Pendiente de verificación oficial antes de producción**:
-- Tasa general de ITBIS (18%): el texto consolidado no lo resuelve (art.
-  341 dice 16%, texto viejo; art. 345 dice 16% desde 2015 condicionado a
-  una meta de presión tributaria). Las facturas reales cobran 18%.
-- Montos de los tramos de ISR de personas físicas: el art. 296 trae la
-  escala base de 2012 y manda ajustarla por inflación cada año.
+- Montos de la escala de ISR de personas físicas hasta 2026 (vienen de
+  Nómina; el art. 296 viejo trae la escala de 2012 ajustable por inflación).
+- Porcentajes de retención del art. 309 según la Ley 30-26: el texto
+  recibido es un OCR con ruido.
 
 **Ya verificado con fuente oficial (2026-11-15)**: layout de los archivos
 606 y 607 — ver la sección "Formatos 606 y 607" y
@@ -600,11 +605,9 @@ partir de lo que corrija el contador.
 
 Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
 
-1. **¿Los avisos de comprobante deben frenar la aprobación en bloque?**
-   Hoy una factura de consumo en compras, o una compra con NCF no
-   electrónico posterior a mayo de 2026, muestra un aviso pero se aprueba
-   en bloque igual (los avisos no son observaciones). Propuesta: que sí la
-   frenen, porque afectan el crédito de ITBIS y la deducción.
+1. **¿Que la IA lea la fecha de vencimiento de la secuencia** impresa en
+   los comprobantes B (NG 06-2018, art. 7) y avise si la factura es
+   posterior? Requiere un campo nuevo. Sin decidir.
 2. **Excel exportable aunque el reporte esté incompleto** (decisión
    propia; el archivo lo advierte en el nombre y en el Resumen).
 3. **Segunda remisión por retenciones en el 606** (NCF que se vuelve a
@@ -614,11 +617,16 @@ Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
 5. **Plan de Vercel**: el proyecto está en el plan Hobby, que hasta donde
    se sabe es para uso no comercial. Confirmar antes de vender.
 
-6. **Ley 30-26 y Ley 11-92**: la DGII bloquea las descargas desde el
-   servidor de estas sesiones (403). La 11-92 se pudo leer por otra vía; la
-   30-26 no (pasa de 10 MB). Pedirle al usuario que la suba directamente.
+6. **Avisos que van a Cielo Cloud Nómina**: el recargo por mora y las
+   retenciones del art. 309 cambiaron con la Ley 30-26; la escala de ISR de
+   asalariados cambia en 2027. Decirle al usuario que Nómina también hay
+   que actualizarla.
 
-Resueltas el 2026-11-18: no hay monto mínimo para activo (decide la
+Resueltas el 2026-11-18: los avisos de comprobante (serie B, consumo) no
+frenan la aprobación en bloque ("deja pasar al sistema los comprobantes
+serie B"); la tasa de ITBIS es 18% (usuario); la Ley 30-26 se recibió en
+Word y se leyó.
+Resueltas antes, el mismo día: no hay monto mínimo para activo (decide la
 actividad y la Sección 17); la aprobación en bloque queda aprobada; qué
 e-CF son nota de crédito y de débito (Guía de NCF: E34 y E33).
 
@@ -648,8 +656,8 @@ no salga de una fuente entregada.
   - Código Tributario, Ley 11-92, texto consolidado (octubre 2025): leídos
     los artículos de ITBIS (335-360), tasas de ISR (296-297) y deberes
     formales (50). No se leyó entero.
-  - **Ley 30-26: NO leída** (la DGII bloquea la descarga desde aquí y el
-    archivo pasa del límite de la herramienta web). Hay que pedirla.
+  - Ley 30-26: no se pudo descargar de la DGII; el usuario la envió en el
+    segundo lote.
 
 **Vigencia — lo que se detectó como NO vigente o superado** (2026-11-18):
 - Código Tributario art. 341 (ITBIS 16%, Ley 288-04): superado por el art.
@@ -683,22 +691,31 @@ comprobantes que emite el propio comprador (11/41, 13/43, 17/47). En
 `dgii-fiscal.ts`: IT-1 día 20, ISR jurídicas 27% y tasa reducida 16% pasan
 a verificados.
 
-**Pedidas al usuario para lo que sigue** (sin recibir):
-- Ley 30-26 (PDF subido directamente) — prioritaria: puede cambiar tasas o
-  plazos ya verificados.
-- Norma General 06-2018 (remisión de informaciones, la que rige el 606),
-  NG 05-2019, NG 01-2020, NG 06-2021, Aviso 24-2019 y Decreto 254-06
+- **Segundo lote (2026-11-18)** → `docs/dgii/marco-legal.md`:
+  - **Ley 30-26** (Word escaneado, leído completo con ruido de OCR).
+  - **Decreto 293-11**, Reglamento del ITBIS (escaneado; OCR propio, leídos
+    los arts. 17-30 y su derogatoria).
+  - Decreto de 2001 que modificaba el Reglamento 140-98: **derogado** por
+    el art. 30 del Decreto 293-11.
+  - **Norma General 06-2018** sobre comprobantes fiscales (leída entera).
+    NO es la de remisión de informaciones, como se dijo antes por error:
+    esa es la NG 06-2014.
+  - El usuario confirmó: ITBIS 18%; la facturación electrónica ya es
+    obligatoria, pero los comprobantes serie B se siguen dejando pasar.
+
+**Pedidas al usuario para lo que sigue** (sin recibir; el usuario dijo
+que envía "lo otro" en otro lote):
+- NG 06-2014 sobre remisión de informaciones (la que rige el 606), o la
+  que la haya sustituido.
+- NG 05-2019, NG 01-2020, NG 06-2021, Aviso 24-2019 y Decreto 254-06
   (reglamento de comprobantes), con sus modificaciones vigentes.
 - Avisos de la DGII con las listas de obligados a e-CF y sus prórrogas.
-- Reglamento de ITBIS (Decreto 293-11) y formulario IT-1 con su anexo A e
-  instructivo vigentes (proporcionalidad, ITBIS llevado al costo,
-  retenciones).
+- Formulario IT-1 con su anexo A e instructivo vigentes.
 - Formulario e instructivo del IR-17 y la norma de retenciones vigente
-  (NG 07-2007 y sus modificaciones, si sigue vigente).
-- Escala de ISR de personas físicas ajustada del año en curso.
-- Reglamento de ISR (Decreto 139-98) para la proyección de ISR.
-- Ojo: los números del Decreto 293-11, la NG 07-2007 y el Decreto 139-98
-  se escribieron de memoria para pedirlos; confirmar con el usuario.
+  (de ISR y de ITBIS).
+- Escala de ISR de personas físicas ajustada de 2026.
+- Reglamento de aplicación del ISR, para la proyección de ISR.
+- Número y fecha de la Gaceta Oficial de la Ley 30-26 (vigencia exacta).
 
 ## Despliegue
 
@@ -783,7 +800,8 @@ roadmap (el 4 se completó el 2026-11-17).
   el archivo y llama a la ruta), `config-local.ts`.
 - **Scripts**: `scripts/copiar-estaticos.mjs`.
 - **Documentación**: `docs/dgii/formatos-606-607.md` (especificación del
-  606 y 607 extraída de las fuentes de la DGII).
+  606 y 607 extraída de las fuentes de la DGII) y `docs/dgii/marco-legal.md`
+  (leyes y normas recibidas, qué está vigente y qué se aplicó).
 - **Interfaz** (`src/components`): `layout/` (Sidebar portado de Nómina sin
   selector de empresa ni logout, Header, BottomNav, Pagina), `ui/`
   (Toast, Badge, EmptyState, ThemeToggle y StatCard copiados de Nómina;
@@ -857,8 +875,9 @@ roadmap (el 4 se completó el 2026-11-17).
   salga picomatch 4.0.8 o superior.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
   `/api/ocr` dinámica).
-- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (154
-  de 154 desde el 2026-11-18, con las reglas de comprobantes) — fechas
+- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (159
+  de 159 desde el 2026-11-18, con las reglas de comprobantes y la Ley
+  30-26) — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
   comparados carácter por carácter, dígito verificador, duplicados.
@@ -954,11 +973,12 @@ roadmap (el 4 se completó el 2026-11-17).
 
 - Copiados del código de `tyui`: tramos de ISR de personas físicas, tasa
   27% del Impuesto Sustitutivo, día 10 del IR-17.
-- Verificados con el Código Tributario el 2026-11-18: ISR de personas
-  jurídicas 27%, día 20 del IT-1, tasa reducida de ITBIS 16%.
-- `⚠️ SIN VERIFICAR` en el código: ITBIS general 18%, y que las fechas
-  límite no se corren por fin de semana o feriado. El recargo "10% + 4% + 1.10%" del IR-17 que menciona la lección
-  2 NO se codificó: no aparece en el código de `tyui` y este documento no
-  dice cómo se aplica cada porcentaje.
+- Verificados el 2026-11-18 (Código Tributario, Ley 30-26, Decreto 293-11
+  y el usuario): ITBIS general 18%, tasa reducida 16%, día 20 del IT-1, ISR
+  de personas jurídicas 27% y 30% transitorio, escala de personas físicas
+  2027, recargo por mora 3% mensual con tope de 100%.
+- `⚠️ SIN VERIFICAR` en el código: que las fechas límite no se corren por
+  fin de semana o feriado, y el día exacto del fin del calendario de e-CF.
+  El viejo recargo "10% + 4% + 1.10%" nunca se codificó y ya no rige.
 - Del motor fiscal solo se usa en pantalla la fecha límite del 606/607.
   Nada calcula impuestos todavía.

@@ -190,6 +190,24 @@ describe('validarCompra606', () => {
     expect(validarCompra606(compra({ ncf: 'E310000000001', fechaComprobante: '2026-06-01' }), RNC_CLIENTE)).toEqual([])
   })
 
+  it('NCF de 19 posiciones después del 30-04-2018 (NG 06-2018, art. 10): un solo aviso', () => {
+    const viejo = 'A010010010100000001'
+    expect(validarCompra606(compra({ ncf: viejo, fechaComprobante: '2018-04-30' }), RNC_CLIENTE)).toEqual([])
+    for (const fecha of ['2018-05-01', '2026-06-01']) {
+      const p = validarCompra606(compra({ ncf: viejo, fechaComprobante: fecha }), RNC_CLIENTE)
+      expect(p.map(x => [x.campo, x.nivel]), fecha).toEqual([['ncf', 'aviso']])
+      expect(p[0].mensaje).toMatch(/19 posiciones/)
+    }
+  })
+
+  it('servicio de persona física a empresa sin ITBIS retenido: aviso (Reglamento del ITBIS, art. 25)', () => {
+    const servicio = compra({ rncCedulaContraparte: '00112345673', montoServicios: 1000, montoBienes: 0, tipoBienesServicios: '02' })
+    expect(validarCompra606(servicio, RNC_CLIENTE).map(x => [x.campo, x.nivel])).toEqual([['itbisRetenido', 'aviso']])
+    expect(validarCompra606({ ...servicio, itbisRetenido: 180, fechaPago: '2026-03-20' }, RNC_CLIENTE)).toEqual([])
+    expect(validarCompra606({ ...servicio, itbisFacturado: 0 }, RNC_CLIENTE)).toEqual([])
+    expect(validarCompra606(servicio, '00112345673')).toEqual([]) // cliente con cédula: sin aviso
+  })
+
   it('con retenciones exige fecha de pago', () => {
     expect(errores(validarCompra606(compra({ itbisRetenido: 54 }), RNC_CLIENTE))).toEqual(['fechaPago'])
     expect(errores(validarCompra606(compra({ tipoRetencionISR: '02', montoRetencionRenta: 100 }), RNC_CLIENTE))).toEqual(['fechaPago'])
