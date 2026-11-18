@@ -1,12 +1,14 @@
-import { Building2, FileText, Files, LayoutDashboard, ReceiptText, Settings, type LucideIcon } from 'lucide-react'
+import { Building2, FileText, LayoutDashboard, ReceiptText, Settings, type LucideIcon } from 'lucide-react'
 import { rutaEmpresa } from '@/lib/rutas'
 
 export interface NavItem {
   href: string
   icon: LucideIcon
   label: string
-  // true si solo se marca activo con la ruta exacta (p. ej. el resumen).
+  // true si solo se marca activo con la ruta exacta (p. ej. el dashboard).
   exacto?: boolean
+  // Otras rutas que también lo marcan activo (Subir lote es parte de Facturas).
+  activoEn?: string[]
 }
 
 // Fuera de una empresa solo se puede elegir empresa (o configurar). Los
@@ -17,12 +19,13 @@ export const NAV_GLOBAL: NavItem[] = [
 ]
 
 // Solo lo que ya existe. ITBIS, IR-17 e ISR se agregan aquí a medida que se
-// construyan — no se listan pantallas vacías.
+// construyan — no se listan pantallas vacías. Cada opción aparece una sola
+// vez en la aplicación (pedido por el usuario el 2026-11-18): Subir lote no
+// es un módulo aparte, se entra desde Facturas → "Agregar facturas".
 export function navEmpresa(empresaId: string): NavItem[] {
   return [
-    { href: rutaEmpresa(empresaId), icon: LayoutDashboard, label: 'Tablero', exacto: true },
-    { href: rutaEmpresa(empresaId, 'facturas'), icon: ReceiptText, label: 'Facturas' },
-    { href: rutaEmpresa(empresaId, 'lote'), icon: Files, label: 'Subir lote' },
+    { href: rutaEmpresa(empresaId), icon: LayoutDashboard, label: 'Dashboard', exacto: true },
+    { href: rutaEmpresa(empresaId, 'facturas'), icon: ReceiptText, label: 'Facturas', activoEn: [rutaEmpresa(empresaId, 'lote')] },
     { href: rutaEmpresa(empresaId, 'reportes'), icon: FileText, label: 'Reportes' },
   ]
 }
@@ -43,5 +46,7 @@ export function empresaDeRuta(pathname: string): string | null {
 }
 
 export function estaActivo(item: NavItem, pathname: string): boolean {
-  return item.exacto ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + '/')
+  const coincide = (href: string) => pathname === href || pathname.startsWith(href + '/')
+  if (item.activoEn?.some(coincide)) return true
+  return item.exacto ? pathname === item.href : coincide(item.href)
 }

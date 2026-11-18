@@ -313,8 +313,8 @@ cuentas todavía**; el inicio de sesión llega con la migración a la nube
   eliminar con aviso de que se borran sus facturas). Reemplaza al Inicio y
   a la pantalla de Clientes de antes.
 - **Los módulos solo existen dentro de una empresa**: `/empresa/<id>`
-  (Tablero), `/empresa/<id>/facturas`, `/empresa/<id>/lote` y
-  `/empresa/<id>/reportes`. La empresa va en la dirección, no en un estado
+  (Dashboard), `/empresa/<id>/facturas`, `/empresa/<id>/lote` (se entra desde
+  Facturas, ver "Cada opción una sola vez") y `/empresa/<id>/reportes`. La empresa va en la dirección, no en un estado
   oculto: cada pestaña queda atada a una empresa. Las direcciones viejas
   (`/clientes`, `/facturas`, `/lote`, `/reportes`) llevan a "Tus empresas"
   (`next.config.mjs`). Una dirección con un id que no existe muestra "Esta
@@ -331,10 +331,11 @@ cuentas todavía**; el inicio de sesión llega con la migración a la nube
   del formulario de factura (ahí la empresa es un campo de solo lectura):
   una factura no se puede pasar a otra empresa.
 - Siempre visible dentro de una empresa: franja "Trabajando en <empresa>
-  <RNC> · Cambiar de empresa" en el encabezado y bloque "Empresa activa" en
-  el menú lateral. En móvil, la barra inferior trae "Cambiar".
-- Al entrar a una empresa se ve su **Tablero** (antes "Resumen"; ver
-  "Tablero de la empresa", abajo).
+  <RNC> · Cambiar de empresa" en el encabezado (único lugar para cambiar
+  de empresa, también en móvil) y bloque "Empresa activa" en el menú
+  lateral (solo muestra la empresa, sin enlace).
+- Al entrar a una empresa se ve su **Dashboard** (antes "Resumen" y luego
+  "Tablero"; ver "Dashboard de la empresa", abajo).
 - Refuerzo que ya existía: en la captura por lotes, una factura cuyo QR
   nombra a otro contribuyente no se deja guardar.
 
@@ -370,7 +371,12 @@ tocó `tailwind.config.ts` ni `globals.css`; solo utilidades de Tailwind).
   otros módulos"): el mismo estilo llegó a Facturas, Subir lote y Reportes,
   y el Resumen se cambió por un tablero (siguiente sección).
 
-### Tablero de la empresa y estilo premium en los módulos (2026-11-18)
+### Dashboard de la empresa y estilo premium en los módulos (2026-11-18)
+
+**Nombre**: se llamó "Tablero" hasta que el usuario pidió, el mismo día,
+"cambia la palabra tablero por dashboard, es más profesional". En la
+interfaz (menú, título, textos) dice **Dashboard**; las secciones de abajo
+que dicen "tablero" se refieren a esa misma pantalla.
 
 > "En vez del resumen ... me gustaría que saliera un dashboard profesional
 > que se vea todo premium."
@@ -379,9 +385,12 @@ tocó `tailwind.config.ts` ni `globals.css`; solo utilidades de Tailwind).
   `src/lib/dashboard.ts`, lógica pura con 12 pruebas; gráficos en
   `src/components/dashboard/Graficos.tsx`, SVG/HTML a mano, sin librería
   nueva). De arriba abajo:
-  - Encabezado de marca con la empresa (monograma, RNC, tipo, actividad),
-    accesos (Subir lote, Facturas, Reportes) y los **tres próximos
-    vencimientos** con los días que faltan: IT-1 (día 20), IR-17 (día 10) y
+  - Encabezado de marca **solo con los tres próximos vencimientos**. Al
+    principio traía la empresa (monograma, nombre, RNC, tipo, actividad) y
+    accesos; se quitaron porque el nombre y el RNC ya están en la franja de
+    arriba y en el menú (pedido del usuario: "quita esa repetición"), y el
+    título de la página ya no lleva el nombre comercial sino "Resumen fiscal
+    de la empresa". Los **tres próximos vencimientos** con los días que faltan: IT-1 (día 20), IR-17 (día 10) y
     606 (día 15). Cada uno es el del mes pasado mientras su día no haya
     pasado; si ya pasó, el del mes en curso (`proximosVencimientos`).
   - **Un solo filtro, el período**, arriba de todo lo que afecta (flechas +
@@ -412,7 +421,9 @@ tocó `tailwind.config.ts` ni `globals.css`; solo utilidades de Tailwind).
     y en oscuro): compras/gasto índigo `#3446c4` (oscuro `#6b7cf0`),
     ventas/costo `#0f9f8a` (`#1aa58c`), activo `#c8590f` (`#de6e2e`). Los
     estados usan su propia paleta, siempre con ícono y texto.
-  - En el menú, "Resumen" pasó a llamarse "Tablero".
+  - En el menú, "Resumen" pasó a llamarse "Tablero" y luego "Dashboard".
+  - En pantallas angostas la variación de cada indicador baja a otra línea
+    para que la etiqueta no se corte.
 - **Estilo compartido**: `src/components/ui/clases.ts` refinado (tarjetas
   `rounded-2xl` con sombra mínima, campos con halo de foco de la marca,
   botones secundarios blancos) y piezas nuevas en
@@ -432,6 +443,43 @@ tocó `tailwind.config.ts` ni `globals.css`; solo utilidades de Tailwind).
 - **Reportes**: el reporte se elige con dos tarjetas (606 / Ingresos), el
   mes abre en el período del 606 en curso, y el resumen del reporte trae
   estado "Completo" o "Incompleto", vencimiento y totales.
+
+### Cada opción una sola vez (pedido por el usuario el 2026-11-18) — MANDA
+
+> "Hay opciones que se repiten en distintos lugares demasiado, subir lote se
+> repite demasiadas veces."
+
+Decidido con las opciones recomendadas:
+
+- **Regla**: la navegación vive en el menú (lateral en computadora, barra
+  inferior en móvil). Un botón dentro de una pantalla solo aparece si es el
+  siguiente paso de esa pantalla (por ejemplo, "Subir el primer lote" en el
+  tablero de una empresa sin facturas, o "Revisar las pendientes" en
+  "Listo para el 606"). No volver a poner accesos que repitan el menú.
+- **Menú de una empresa: Dashboard, Facturas y Reportes.** "Subir lote" ya no
+  es un módulo: es parte de Facturas. En Facturas hay un solo botón,
+  **"Agregar facturas"**, con dos opciones: "Una factura" (foto o PDF de una
+  factura, o a mano) y "Un lote" (PDF con muchas facturas o varias fotos),
+  que lleva a `/empresa/<id>/lote`. Ahí "Facturas" queda marcada en el menú
+  (`NavItem.activoEn`).
+- Se quitaron: "Subir lote" del menú y de la barra móvil; los botones Subir
+  lote / Facturas / Reportes del encabezado del Tablero; el botón "Subir
+  lote" junto a "Nueva factura" (los dos se volvieron "Agregar facturas");
+  el botón del estado vacío de Facturas (el texto remite a "Agregar
+  facturas"); "Cambiar de empresa" del menú lateral y "Cambiar" de la barra
+  móvil (queda solo en la franja de arriba).
+- Comprobado en navegador real: 14/14 del tablero (dos nuevas: el tablero no
+  repite el menú; el menú lateral es exactamente Tablero, Facturas,
+  Reportes), 27/27 de la separación por empresa (nuevas: Subir lote desde
+  "Agregar facturas", Facturas marcada en el menú, un solo "Cambiar de
+  empresa"; en móvil la barra trae Tablero, Facturas y Reportes y "Cambiar"
+  aparece una vez), y 16/16, 9/9, 15/15 y 26/26 adaptadas a "Agregar
+  facturas". Sin desplazamiento horizontal en móvil.
+- **La empresa tampoco se repite**: su nombre y RNC salen en la franja
+  "Trabajando en" y en el bloque "Empresa activa" del menú, y en ninguna
+  otra parte del Dashboard (comprobado: el nombre aparece exactamente 2
+  veces y ninguna dentro del contenido). Con el renombre a "Dashboard":
+  15/15, 27/27, 16/16, 9/9, 15/15 y 26/26.
 
 ## Verificación en la DGII (pedida por el usuario el 2026-11-18) — construida
 
@@ -992,7 +1040,9 @@ que envía "lo otro" en otro lote):
   empresa con "Tus empresas" y diseño premium de esa pantalla y del
   resumen) el 2026-11-18; PR #7 (comprobación en producción del PR #6, solo
   documentación) el mismo día; PR #8 (tablero de la empresa y estilo
-  premium en Facturas, Subir lote y Reportes) el 2026-11-18.
+  premium en Facturas, Subir lote y Reportes) y PR #9 (su comprobación en
+  producción) el 2026-11-18; PR #10 ("Cada opción una sola vez", sin
+  repetir la empresa, "Tablero" pasa a "Dashboard") el mismo día.
 
 ## Nombre del producto
 
@@ -1021,7 +1071,7 @@ verificación automática en la DGII.
 
 - **Pantallas** (`src/app`), desde el 2026-11-18 (ver "Separación por
   empresa"): `/` Tus empresas (lista, búsqueda, alta, edición, borrado en
-  cascada, "Entrar"); dentro de una empresa: `/empresa/[id]` Tablero,
+  cascada, "Entrar"); dentro de una empresa: `/empresa/[id]` Dashboard,
   `/empresa/[id]/facturas` (filtros por tipo/mes/estado, totales, alta por
   OCR o a mano, edición, borrado, verificación en la DGII),
   `/empresa/[id]/lote` (captura por lotes), `/empresa/[id]/reportes` (TXT
@@ -1043,7 +1093,7 @@ verificación automática en la DGII.
   venta, contraparte, dudas), `lote/leer-paginas.ts` (páginas y QR),
   `lote/borrador.ts` (combina QR + IA y calcula observaciones),
   `lote/tramos.ts` (parte los recibos largos),
-  `dashboard.ts` (cálculos del tablero), `dgii-fiscal.ts` (motor fiscal), `utils.ts` (fechas locales, montos),
+  `dashboard.ts` (cálculos del Dashboard), `dgii-fiscal.ts` (motor fiscal), `utils.ts` (fechas locales, montos),
   `ocr-tipos.ts` (contrato servidor↔navegador), `ocr-cliente.ts` (prepara
   el archivo y llama a la ruta), `config-local.ts`.
 - **Scripts**: `scripts/copiar-estaticos.mjs`.
@@ -1273,5 +1323,5 @@ verificación automática en la DGII.
   fin de semana o feriado, y el día exacto del fin del calendario de e-CF.
   El viejo recargo "10% + 4% + 1.10%" nunca se codificó y ya no rige.
 - Del motor fiscal se usan en pantalla las fechas límite del 606, la IT-1 y
-  el IR-17 (Tablero). Nada calcula impuestos todavía: la "diferencia de
-  ITBIS" del tablero es una resta orientativa, no la IT-1.
+  el IR-17 (Dashboard). Nada calcula impuestos todavía: la "diferencia de
+  ITBIS" del Dashboard es una resta orientativa, no la IT-1.

@@ -4,22 +4,21 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowDownRight, ArrowRight, ArrowUpRight, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert,
-  FileSpreadsheet, Files, Minus, PenLine, ReceiptText, ShieldAlert, ShieldX, Table2, Upload,
+  Files, Minus, ReceiptText, ShieldAlert, ShieldX, Table2, Upload,
 } from 'lucide-react'
 import { BarraComposicion, BarraEstado, BarrasProveedores, COLOR_ESTADO, GraficoMensual, Leyenda, VARIABLES_GRAFICOS } from '@/components/dashboard/Graficos'
 import { Pagina } from '@/components/layout/Pagina'
-import { Monograma } from '@/components/ui/Monograma'
 import { rutaEmpresa, useEmpresaActiva } from '@/lib/datos/empresa-context'
 import {
   composicionCompras, periodo606EnCurso, periodosDisponibles, principalesProveedores, proximosVencimientos,
   resumenPeriodo, serieMensual, sumarMeses, variacion, type Periodo,
 } from '@/lib/dashboard'
 import { ETIQUETA_CAMPO, montoFacturadoDe, periodoDe } from '@/lib/documentos'
-import { cn, formatCedula, formatDate, formatPeriodo, formatRD, hoyLocalISO } from '@/lib/utils'
+import { cn, formatDate, formatPeriodo, formatRD, hoyLocalISO } from '@/lib/utils'
 import { requiereVerificacionHumana } from '@/lib/verificacion-dgii'
 import type { DocumentoFiscal } from '@/types'
 
-// Tablero de la empresa (pedido por el usuario el 2026-11-18: "en vez del
+// Dashboard de la empresa (antes "Tablero"; pedido por el usuario el 2026-11-18: "en vez del
 // resumen ... un dashboard profesional que se vea todo premium"). Todo sale
 // de las facturas de esta empresa; los cálculos están en src/lib/dashboard.ts.
 // Un solo filtro, el período, arriba de todo lo que afecta.
@@ -53,7 +52,7 @@ const TONO_MOTIVO = {
   ambar: 'bg-amber-50 text-amber-800 ring-amber-600/15 dark:bg-amber-950/40 dark:text-amber-300',
 }
 
-export default function TableroEmpresaPage() {
+export default function DashboardEmpresaPage() {
   const { empresa, documentos } = useEmpresaActiva()
   const hoyISO = hoyLocalISO()
   const vencimientos = useMemo(() => proximosVencimientos(hoyISO), [hoyISO])
@@ -82,9 +81,9 @@ export default function TableroEmpresaPage() {
   const todoRevisado = e.total > 0 && e.revisadas === e.total
 
   return (
-    <Pagina title="Tablero" subtitle={empresa.nombreComercial ?? empresa.razonSocial}>
+    <Pagina title="Dashboard" subtitle="Resumen fiscal de la empresa">
       <div className={cn('space-y-5', VARIABLES_GRAFICOS)}>
-        {/* ── Encabezado de marca: empresa, accesos y vencimientos ───────── */}
+        {/* ── Encabezado de marca: vencimientos ───────────────────────────── */}
         <section className="animate-content-in relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#151f66] via-[#1B2980] to-[#2f3fa8] text-white shadow-[0_18px_40px_-18px_rgba(27,41,128,0.55)]">
           <svg aria-hidden="true" viewBox="0 0 32 32" fill="none" className="pointer-events-none absolute -right-12 -top-16 h-72 w-72 opacity-[0.08]">
             <circle cx="16" cy="16" r="9" strokeWidth="5.5" strokeDasharray="47.12 9.43" strokeLinecap="round" transform="rotate(30 16 16)" stroke="white" />
@@ -92,35 +91,15 @@ export default function TableroEmpresaPage() {
           </svg>
           <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '22px 22px' }} />
 
-          <div className="relative flex flex-wrap items-start justify-between gap-4 px-5 pt-5 sm:gap-5 sm:px-8 sm:pt-6">
-            <div className="flex min-w-0 items-center gap-4">
-              <Monograma nombre={empresa.razonSocial} clave={empresa.id} tamano="lg" />
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-200/90">Tablero de la empresa</p>
-                <h2 className="mt-1 truncate text-xl font-semibold tracking-[-0.02em] sm:text-2xl">{empresa.razonSocial}</h2>
-                <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-indigo-100/80">
-                  <span className="tabular-nums">{empresa.tipoPersona === 'juridica' ? 'RNC' : 'Cédula'} {formatCedula(empresa.rncCedula)}</span>
-                  <span aria-hidden="true" className="text-indigo-300/50">·</span>
-                  <span>{empresa.tipoPersona === 'juridica' ? 'Persona jurídica' : 'Persona física'}</span>
-                  {empresa.actividad && <><span aria-hidden="true" className="hidden text-indigo-300/50 sm:inline">·</span><span className="hidden max-w-xs truncate sm:inline">{empresa.actividad}</span></>}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href={rutaEmpresa(empresa.id, 'lote')} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#1B2980] shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg">
-                <Upload className="h-4 w-4" /> Subir lote
-              </Link>
-              <Link href={rutaEmpresa(empresa.id, 'facturas')} className="hidden items-center gap-2 rounded-xl bg-white/10 sm:inline-flex px-4 py-2.5 text-sm font-semibold text-white ring-1 ring-inset ring-white/20 transition-colors hover:bg-white/15">
-                <PenLine className="h-4 w-4" /> Facturas
-              </Link>
-              <Link href={rutaEmpresa(empresa.id, 'reportes')} className="hidden items-center gap-2 rounded-xl bg-white/10 sm:inline-flex px-4 py-2.5 text-sm font-semibold text-white ring-1 ring-inset ring-white/20 transition-colors hover:bg-white/15">
-                <FileSpreadsheet className="h-4 w-4" /> Reportes
-              </Link>
-            </div>
+          {/* La empresa ya se ve en la franja de arriba y en el menú: aquí no se
+              repite (pedido por el usuario el 2026-11-18). Solo vencimientos. */}
+          <div className="relative flex items-center justify-between gap-3 px-5 pt-4 sm:px-8 sm:pt-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-200/90">Próximos vencimientos</p>
+            <p className="hidden text-xs text-indigo-200/70 sm:block">Fechas límite de la DGII</p>
           </div>
 
           {/* En móvil, tres columnas compactas; desde sm, la versión completa. */}
-          <ul aria-label="Próximos vencimientos" className="relative mt-5 grid grid-cols-3 border-t border-white/10 sm:mt-6">
+          <ul aria-label="Próximos vencimientos" className="relative mt-3 grid grid-cols-3 border-t border-white/10 sm:mt-4">
             {vencimientos.map((v, i) => (
               <li key={v.clave} className={cn('min-w-0 px-3 py-3 sm:flex sm:items-center sm:gap-3 sm:px-8 sm:py-4', i > 0 && 'border-l border-white/10')}>
                 <span className={cn('hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:flex', v.faltan <= 3 ? 'bg-rose-400/20 text-rose-100' : 'bg-white/10 text-indigo-100')}>
@@ -145,7 +124,7 @@ export default function TableroEmpresaPage() {
             <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#eef0fb] text-[#1B2980] dark:bg-indigo-950/50 dark:text-indigo-300">
               <Files className="h-6 w-6" strokeWidth={1.75} />
             </span>
-            <h3 className="mt-4 text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">El tablero se llena con las facturas</h3>
+            <h3 className="mt-4 text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">El dashboard se llena con las facturas</h3>
             <p className="mt-1.5 max-w-md text-sm text-zinc-500 dark:text-zinc-400">
               Sube el primer lote: un PDF con muchas facturas o varias fotos. El sistema las lee, las verifica en la DGII y aquí verás compras, ventas, ITBIS y lo que falta para el 606.
             </p>
@@ -163,9 +142,9 @@ export default function TableroEmpresaPage() {
                   onClick={() => setElegido(periodos[idx + 1])}
                   className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-[#1a1d2e]"
                 ><ChevronLeft className="h-4 w-4" /></button>
-                <label className="sr-only" htmlFor="periodo-tablero">Período</label>
+                <label className="sr-only" htmlFor="periodo-dashboard">Período</label>
                 <select
-                  id="periodo-tablero" value={periodo} onChange={ev => setElegido(ev.target.value)}
+                  id="periodo-dashboard" value={periodo} onChange={ev => setElegido(ev.target.value)}
                   className="h-8 cursor-pointer rounded-lg border-0 bg-transparent px-2 text-sm font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#1B2980]/30 dark:text-zinc-100 dark:[color-scheme:dark]"
                 >
                   {periodos.map(p => <option key={p} value={p}>{periodoLargo(p)}{p === enCurso ? ' · en curso' : ''}</option>)}
@@ -350,8 +329,9 @@ function Indicador({ etiqueta, valor, detalle, cambio, subirEsBueno, marca, nota
     : cambio! > 0 ? 'text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40' : 'text-rose-700 bg-rose-50 dark:text-rose-300 dark:bg-rose-950/40'
   return (
     <div className={cn(CARD, 'min-w-0 p-4 sm:p-5')} title={nota}>
-      <div className="flex items-center justify-between gap-2">
-        <p className="flex min-w-0 items-center gap-2 truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">
+      {/* En pantallas angostas la variación baja a otra línea: la etiqueta no se corta. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <p className="flex min-w-0 items-center gap-2 whitespace-nowrap text-xs font-medium text-zinc-500 dark:text-zinc-400">
           {marca && <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: marca }} />}
           {etiqueta}
         </p>

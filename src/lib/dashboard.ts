@@ -1,4 +1,4 @@
-// Cálculos del tablero de una empresa (src/app/empresa/[id]/page.tsx).
+// Cálculos del dashboard de una empresa (src/app/empresa/[id]/page.tsx).
 // Lógica pura, probada en dashboard.test.ts: recibe las facturas de UNA
 // empresa (ya filtradas por EmpresaProvider) y devuelve números listos para
 // dibujar. Nada aquí es una declaración: son sumas de control para el

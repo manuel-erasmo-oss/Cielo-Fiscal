@@ -345,7 +345,7 @@ export default function LotePage() {
   const leyendo = fase === 'leyendo' || fase === 'verificando' || fase === 'leyendo_ia'
 
   return (
-    <Pagina title="Subir lote" subtitle="Un PDF con muchas facturas, o varias fotos">
+    <Pagina title="Subir lote" subtitle="Facturas · un PDF con muchas facturas, o varias fotos">
       {errorCarga && <AvisoErrorCarga mensaje={errorCarga} />}
 
       <section className="animate-content-in">
