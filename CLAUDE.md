@@ -956,6 +956,11 @@ que envía "lo otro" en otro lote):
   muestra "Tus empresas"; `/empresa/<id>`, sus Facturas, Subir lote y
   Reportes, y `/configuracion` responden 200; `/facturas` y `/clientes`
   redirigen (307) a `/`.
+- **Comprobado en producción el 2026-11-18, tras fusionar el PR #8**: Vercel
+  publicó en ~1 minuto; `/`, `/empresa/<id>` y sus tres módulos y
+  `/configuracion` responden 200 y `/facturas` redirige (307). Las 12
+  comprobaciones del tablero (`e2e10.js`) pasaron también contra el sitio
+  publicado, con datos inventados sembrados en el navegador de la prueba.
 - Para activar la IA: en Vercel, Settings → Environment Variables, agregar
   `ANTHROPIC_API_KEY` (key propia del producto, nunca personal) y
   `OCR_CODIGO_ACCESO` (frase larga elegida por el usuario), ambas en
@@ -986,8 +991,8 @@ que envía "lo otro" en otro lote):
   (comprobación en producción, solo documentación) y PR #6 (separación por
   empresa con "Tus empresas" y diseño premium de esa pantalla y del
   resumen) el 2026-11-18; PR #7 (comprobación en producción del PR #6, solo
-  documentación) el mismo día. Pendiente de fusionar: tablero de la empresa
-  y estilo premium en Facturas, Subir lote y Reportes (rama de desarrollo).
+  documentación) el mismo día; PR #8 (tablero de la empresa y estilo
+  premium en Facturas, Subir lote y Reportes) el 2026-11-18.
 
 ## Nombre del producto
 
