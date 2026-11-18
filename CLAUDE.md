@@ -67,6 +67,8 @@ recomendada y confirmada explícitamente, que el **MVP arranca híbrido**:
 - **Una sola pieza de servidor**: `POST /api/ocr`, porque la API key de
   Anthropic no puede vivir en el navegador. Por eso se despliega en
   **Vercel** y no en GitHub Pages (Pages solo sirve archivos estáticos).
+  (Desde el 2026-11-18 hay una segunda, `POST /api/verificar-dgii`, porque
+  la DGII no deja que otra página web la consulte desde el navegador.)
 - El desarrollo sigue siendo en estas sesiones en la nube + GitHub; "local"
   se refiere a dónde se guardan los datos del contador, no a dónde se
   desarrolla.
@@ -148,6 +150,9 @@ posterior, no de este arranque.
    Cloud Nómina antes de implementar Retribuciones Complementarias (se
    pidió la Guía del Contribuyente No.14 real antes de tocar código) e
    IR-17 (confirmado contra esa misma guía, día 10, recargo 10%+4%+1.10%).
+   **Ese recargo ya no rige**: la Ley 30-26 lo cambió a 3% por mes con
+   tope de 100%, más un interés indemnizatorio que fija la DGII cada año
+   (ver `docs/dgii/marco-legal.md`). Cielo Cloud Nómina también lo usa.
 3. **Snapshot inmutable al momento de declarar, no recalculado después.**
    Cielo Cloud Nómina aprendió esto por las malas con
    `PeriodoNomina.resultadosPorEmpleado` (una nómina ya cerrada no debe
@@ -199,12 +204,23 @@ físicas (Ley 11-92, mismos 4 tramos que el motor de nómina), Impuesto
 Sustitutivo de Retribuciones Complementarias 27%, día límite IR-17 (10,
 confirmado contra la Guía No.14 DGII).
 
+**Verificado el 2026-11-18** contra el Código Tributario (texto consolidado
+de la DGII, octubre 2025), la **Ley 30-26** y el Decreto 293-11 (detalle en
+`docs/dgii/marco-legal.md`): **ITBIS general 18%** (confirmado por el
+usuario; la Ley 30-26 no toca los arts. 341 y 345); tasa reducida 16% para
+una lista cerrada de bienes (art. 345 párr. II, no modelada); IT-1 en los
+primeros 20 días (art. 353 c y Decreto 293-11 art. 24); ISR jurídicas 27%
+desde 2026 con **30% transitorio 2026-2028** para ingresos desde RD$1,000
+millones (Ley 30-26 art. 15); **escala nueva de ISR de personas físicas
+desde 2027** (Ley 30-26 art. 10); **recargo por mora 3% mensual con tope de
+100%** (Ley 30-26 art. 7, reemplaza el 10% + 4%). El día de los formatos
+606 y 607 **es el 15**.
+
 **Pendiente de verificación oficial antes de producción**:
-- Tasa ITBIS reducida (16%) y catálogo exacto de bienes — solo se asume la
-  general 18% por ahora.
-- Día límite del IT-1 (`DIA_LIMITE_IT1 = 20` es un placeholder sin
-  confirmar). El de los formatos 606 y 607 **sí está verificado: día 15**
-  (antes se asumía 20 y era incorrecto).
+- Montos de la escala de ISR de personas físicas hasta 2026 (vienen de
+  Nómina; el art. 296 viejo trae la escala de 2012 ajustable por inflación).
+- Porcentajes de retención del art. 309 según la Ley 30-26: el texto
+  recibido es un OCR con ruido.
 
 **Ya verificado con fuente oficial (2026-11-15)**: layout de los archivos
 606 y 607 — ver la sección "Formatos 606 y 607" y
@@ -271,15 +287,62 @@ Consecuencias de diseño (implementadas):
   un clic (al terminar el lote, y en Facturas con el botón "Aprobar las
   N"), con confirmación. Esto reemplaza la idea inicial de revisar todo
   una por una (lección 4): la revisión humana se concentra donde la
-  máquina no está segura. Decisión propia derivada de la frase del
-  usuario; lo que sigue exigiendo persona: retenciones (decisión del
-  usuario), y cualquier factura con observaciones.
+  máquina no está segura. **Confirmado por el usuario el 2026-11-18**
+  ("me parece bien que se aprueben en bloques"). Lo que sigue exigiendo
+  persona: retenciones (decisión del usuario), y cualquier factura con
+  observaciones.
+
+## Verificación en la DGII (pedida por el usuario el 2026-11-18) — construida
+
+> "Es necesario que el sistema verifique automáticamente el estatus de las
+> facturas para evitar tener en el reporte facturas rechazadas."
+
+- El código QR de un e-CF es la dirección de la consulta de la DGII. La
+  ruta `POST /api/verificar-dgii` la consulta desde el servidor (solo
+  direcciones `ecf.dgii.gov.do` / `fc.dgii.gov.do` de la consulta de
+  timbres; código de acceso obligatorio; sin redirecciones) y
+  `src/lib/verificacion-dgii.ts` interpreta la respuesta.
+- Dónde corre: paso 2 de 3 de la captura por lotes (gratis, antes de la
+  IA); al subir una factura suelta (se busca el QR en el archivo); y en
+  Facturas con "Verificar en la DGII" (vuelve a consultar todas las de la
+  lista que tienen QR).
+- Reglas: rechazada o "no encontrada" = error (no se aprueba en bloque, no
+  se marca revisada, el 606 no se descarga). NCF de la factura distinto del
+  e-NCF del QR = error.
+- **Factura electrónica sin verificar** (QR borroso o ilegible, consulta
+  fallida) **o en proceso / estado desconocido = verificación humana**
+  (decisión del usuario, 2026-11-18: "si una factura electrónica tiene el QR
+  borroso que pase lo mismo, si la info está borrosa se pone la alerta para
+  que esa en particular sea verificada humanamente"). Se trata como un dato
+  borroso: el NCF queda en observación (`requiereVerificacionHumana`), en
+  ámbar en el formulario, con la marca "Verificar en la DGII" en Facturas, y
+  no entra en la aprobación en bloque. No es un error: una persona la
+  verifica en la DGII y la marca revisada. Si después se verifica y sale
+  aceptada, la observación del NCF se quita sola.
+- **Serie B: no tiene QR** (lo señaló el usuario), así que no hay nada que
+  verificar desde el sistema y pasa sin esa alerta. **Lo de la DGII manda** como lo
+  del QR: su ITBIS reemplaza el de la IA y su razón social llena el nombre.
+  En una factura suelta también mandan los datos del QR (RNC, e-NCF, fecha,
+  total), igual que en los lotes.
+- `DocumentoFiscal.qrUrl` y `DocumentoFiscal.verificacionDGII` guardan la
+  dirección y la última respuesta.
+- **Medido el 2026-11-18 contra la DGII real** (ver
+  `docs/dgii/marco-legal.md`): responde sin desafío; con el QR completo da la
+  tabla con "Estado: Aceptado" (3 facturas reales, y otras 4 en el
+  recorrido de navegador); sin código de seguridad, sin fecha de firma o con
+  el monto alterado responde "No fue encontrada".
+- **Límites**: no se ha comprobado que la
+  DGII responda a los servidores de Vercel (en producción hace falta además
+  `OCR_CODIGO_ACCESO` configurado; la API key de Anthropic no). Los estados
+  distintos de "Aceptado" salen de la NG 01-2020, no se han visto en una
+  respuesta real.
 
 ## Captura por lotes (construida el 2026-11-15, IA automática el 2026-11-17)
 
 Flujo: Facturas → "Subir lote" → se elige el cliente y se sube un PDF de
 hasta 100 páginas o varias fotos → **paso 1** (navegador, gratis): separar
-páginas y leer el código QR → **paso 2** (servidor, con costo): la IA lee
+páginas y leer el código QR → **paso 2** (servidor, gratis, desde el
+2026-11-18): estado de cada e-CF en la DGII → **paso 3** (servidor, con costo): la IA lee
 cada página, 3 a la vez, con barra de progreso y botón "Detener" → cada
 página queda como tarjeta con "Lista" o "Revisar: …" → "Guardar N
 factura(s)" → "Aprobar las N sin observaciones".
@@ -430,9 +493,8 @@ Lo esencial:
 3. El archivo generado **no se ha pasado por la Herramienta de
    Pre-validación de la DGII** (es una aplicación de Windows). Solo se
    verificó contra la lógica de la macro. Lo tiene que probar el usuario.
-4. Qué significa cada tipo de e-CF (31-34, 41-47) no está en las fuentes;
-   no se codificó nada que dependa de ello (por eso una nota de crédito
-   electrónica no resta en los totales, igual que en la macro).
+4. ~~Qué significa cada tipo de e-CF~~: resuelto el 2026-11-18 con la Guía
+   de NCF (ver "Fuentes normativas").
 5. **Snapshot al declarar (lección 3) todavía no existe**: el archivo se
    genera al vuelo desde las facturas y no se guarda. Antes de dar por
    terminado el 606/607 hay que agregar "marcar como declarado" con el
@@ -498,20 +560,20 @@ lo que diga la macro de la DGII en cuanto a qué se le exige a la persona:
      uno revende es costo; lo mismo para uso propio es gasto). Por eso
      `ClienteFiscal` tiene ahora `actividad` (texto libre, opcional), que se
      envía al OCR. Sin ese dato el modelo decide solo con la factura.
-   - **La norma no fija un monto** a partir del cual una compra duradera es
-     activo (se buscó en el texto: los criterios de 17.4 son beneficios
-     futuros probables y costo medible, sin importe). Es política de cada
-     empresa. Hoy no se aplica ningún umbral; sigue pendiente preguntarle
-     al usuario si quiere uno por cliente.
+   - **El precio NO decide si algo es activo** (decisión del usuario,
+     2026-11-18: "el precio de un artículo no le da en sí el título de
+     activo, se determina por la actividad del comercio y por lo
+     establecido en la sección de propiedad, planta y equipo"). Coincide
+     con la norma, que no fija ningún importe (17.4 pide beneficios futuros
+     probables y costo medible). Por eso **no hay umbral de monto** ni debe
+     agregarse uno, y el criterio de `clasificacion606` no menciona precios
+     ni montos: decide con la actividad del cliente y la Sección 17.
    - Sin probar con facturas reales (no hay API key).
 
-**Dudas que quedan abiertas tras estas decisiones:**
-- Las notas de crédito restan en los totales solo cuando el NCF es de tipo
-  04 (serie B). Las fuentes no dicen qué tipo de e-CF es la nota de crédito
-  electrónica, así que hoy una nota de crédito con e-NCF SUMA en vez de
-  restar, tanto en el 606 como en el reporte de ingresos. Con clientes que
-  facturan todo en electrónico esto importa: preguntarle al usuario qué
-  tipos de e-CF son notas de crédito y de débito.
+**Duda resuelta el 2026-11-18** con la Guía Informativa de NCF: la nota de
+crédito electrónica es la E34 (y la de débito la E33). Desde ese día una
+E34 resta en los totales del 606 y del reporte de ingresos, igual que una
+B04. Antes sumaba.
 
 ## Primera muestra real (PDF de un cliente, recibido el 2026-11-15)
 
@@ -585,29 +647,142 @@ ventanas) lee 27 de las 58, no 23.
 Candidatos sin decidir (confirmar con el usuario antes de hacerlos):
 respaldo/exportación de los datos del navegador; estado "descartada" en la
 interfaz (el tipo ya lo contempla); recordar la categoría por proveedor a
-partir de lo que corrija el contador; umbral de monto para activo por
-cliente.
+partir de lo que corrija el contador.
 
-## Preguntas abiertas al usuario (consolidadas el 2026-11-17)
+## Preguntas abiertas al usuario (actualizadas el 2026-11-18)
 
 Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
 
-1. **Qué tipos de e-CF son nota de crédito y nota de débito.** Hoy solo
-   resta en los totales el tipo 04 de serie B; una nota de crédito
-   electrónica SUMA. Importa porque los clientes facturan en electrónico.
-2. **Monto mínimo para tratar una compra duradera como activo.** La norma
-   no lo fija; hoy no hay umbral.
-3. **Aprobación en bloque de las facturas sin observaciones** (decisión
-   propia, derivada de "Objetivo del sistema"): confirmar que está bien o
-   si alguien debe mirar todas.
-4. **Excel exportable aunque el reporte esté incompleto** (decisión
+1. **¿Que la IA lea la fecha de vencimiento de la secuencia** impresa en
+   los comprobantes B (NG 06-2018, art. 7) y avise si la factura es
+   posterior? Requiere un campo nuevo. Sin decidir.
+1b. **Confirmar que la DGII responde a los servidores de Vercel** (solo se
+   probó desde el entorno de desarrollo). Resuelto el resto: la serie B no
+   tiene QR y pasa; un e-CF sin QR legible lo verifica una persona.
+2. **Excel exportable aunque el reporte esté incompleto** (decisión
    propia; el archivo lo advierte en el nombre y en el Resumen).
-5. **Segunda remisión por retenciones en el 606** (NCF que se vuelve a
+3. **Segunda remisión por retenciones en el 606** (NCF que se vuelve a
    enviar el mes en que se paga): no modelada.
-6. **Pasar un TXT del 606 por la Herramienta de Pre-validación de la
+4. **Pasar un TXT del 606 por la Herramienta de Pre-validación de la
    DGII** (aplicación de Windows): solo lo puede hacer el usuario.
-7. **Plan de Vercel**: el proyecto está en el plan Hobby, que hasta donde
+5. **Plan de Vercel**: el proyecto está en el plan Hobby, que hasta donde
    se sabe es para uso no comercial. Confirmar antes de vender.
+
+6. **Avisos que van a Cielo Cloud Nómina**: el recargo por mora y las
+   retenciones del art. 309 cambiaron con la Ley 30-26; la escala de ISR de
+   asalariados cambia en 2027. Decirle al usuario que Nómina también hay
+   que actualizarla.
+
+Resueltas el 2026-11-18: los avisos de comprobante (serie B, consumo) no
+frenan la aprobación en bloque ("deja pasar al sistema los comprobantes
+serie B"); la tasa de ITBIS es 18% (usuario); la Ley 30-26 se recibió en
+Word y se leyó.
+Resueltas antes, el mismo día: no hay monto mínimo para activo (decide la
+actividad y la Sección 17); la aprobación en bloque queda aprobada; qué
+e-CF son nota de crédito y de débito (Guía de NCF: E34 y E33).
+
+## Fuentes normativas
+
+El usuario va a ir entregando normas y leyes fiscales para estructurar el
+sistema (acordado el 2026-11-18). Método, el mismo que se usó con la NIIF
+y con los formatos de la DGII: leer el texto completo, citar en el código
+el artículo o párrafo de donde sale cada regla, parafrasear (no copiar
+textos con derechos de autor al repo), y marcar `⚠️ SIN VERIFICAR` lo que
+no salga de una fuente entregada.
+
+**Recibidas:**
+- Herramientas de envío 606 (versión 2025) y 607 (versión 2023.1.1) e
+  instructivos de la DGII (2026-11-15) → `docs/dgii/formatos-606-607.md`.
+- NIIF para las PYMES, tercera edición, febrero 2025 (enlace del usuario,
+  2026-11-15) → criterios de costo, activo y gasto.
+- **Primer lote de leyes (2026-11-18)**, leído completo salvo donde se dice:
+  - Guía Informativa de NCF (DGII, marzo 2026): tipos B y E, quién emite
+    cada uno, consumo no sustenta ITBIS ni costos, pagos al exterior solo
+    servicios → `docs/dgii/formatos-606-607.md`, "Tipos de comprobante".
+  - Ley 32-23 de Facturación Electrónica (G.O. 11107, 17-05-2023).
+  - Decreto 587-24, reglamento de la Ley 32-23 (escaneado; leído con OCR,
+    con atención a los arts. 4-10, 17-19, 38-43 y 51-59).
+  - Páginas de la DGII "Marco legal de comprobantes fiscales" y "Tipo y
+    estructura de los e-CF" (leídas en la web).
+  - Código Tributario, Ley 11-92, texto consolidado (octubre 2025): leídos
+    los artículos de ITBIS (335-360), tasas de ISR (296-297) y deberes
+    formales (50). No se leyó entero.
+  - Ley 30-26: no se pudo descargar de la DGII; el usuario la envió en el
+    segundo lote.
+
+**Vigencia — lo que se detectó como NO vigente o superado** (2026-11-18):
+- Código Tributario art. 341 (ITBIS 16%, Ley 288-04): superado por el art.
+  345 (Ley 253-12). El propio texto consolidado conserva ambos.
+- Art. 297 (ISR 28%): la parte capital está superada por su párrafo II
+  (27% desde 2015). Arts. 296 y 345: tablas con años 2013-2016 ya
+  cumplidos; rige la última columna.
+- Series A/P/Q de 19 posiciones: eliminadas en 2018 (la macro del 606 las
+  acepta solo para períodos viejos).
+- Comprobantes serie B: el calendario de la Ley 32-23 (art. 37) venció
+  para el último grupo hacia mayo de 2026, con prórroga máxima de 6 meses
+  (Decreto 587-24, art. 8) → hacia noviembre de 2026. Desde entonces la
+  DGII da por vencidos los B de quien no implementó (art. 55), y un B de un
+  emisor electrónico solo sustenta costos y crédito si estaba en
+  contingencia notificada (art. 42). Registro Único de Ingresos (B12)
+  termina: pasa a factura de consumo electrónica (art. 38).
+- Formato 607: el usuario lo da por descontinuado (sin fuente; ver
+  "Decisiones del usuario").
+- Por verificar: la Guía cita el Aviso 24-2019 y el marco legal lista el
+  Decreto 254-06 y las NG 06-2018, 05-2019, 01-2020 y 06-2021, que pueden
+  estar modificados por la Ley 32-23 y su reglamento. No se recibieron.
+
+**Aplicado al código el 2026-11-18** (`src/lib/dgii-formatos.ts`, con la
+cita en cada regla): tipo de un e-NCF = las 2 posiciones después de la E;
+E34 resta como nota de crédito; E43 y E47 exigen el RNC del cliente como
+13 y 17; avisos (no bloquean) de factura de consumo en compras, de pagos al
+exterior con bienes y de NCF no electrónico desde el 17-05-2026
+(`FIN_CALENDARIO_ECF`, día exacto ⚠️ sin verificar); el reporte de ingresos
+admite E44-E46 y rechaza E41/E43/E47; la IA y el QR toman como compra los
+comprobantes que emite el propio comprador (11/41, 13/43, 17/47). En
+`dgii-fiscal.ts`: IT-1 día 20, ISR jurídicas 27% y tasa reducida 16% pasan
+a verificados.
+
+- **Segundo lote (2026-11-18)** → `docs/dgii/marco-legal.md`:
+  - **Ley 30-26** (Word escaneado, leído completo con ruido de OCR).
+  - **Decreto 293-11**, Reglamento del ITBIS (escaneado; OCR propio, leídos
+    los arts. 17-30 y su derogatoria).
+  - Decreto de 2001 que modificaba el Reglamento 140-98: **derogado** por
+    el art. 30 del Decreto 293-11.
+  - **Norma General 06-2018** sobre comprobantes fiscales (leída entera).
+    NO es la de remisión de informaciones, como se dijo antes por error:
+    esa es la NG 06-2014.
+  - El usuario confirmó: ITBIS 18%; la facturación electrónica ya es
+    obligatoria, pero los comprobantes serie B se siguen dejando pasar.
+- **Cuarto lote (2026-11-18)** → `docs/dgii/marco-legal.md`: NG 07-2018
+  (remisión de informaciones, **vigente**; confirma el 606 que ya genera el
+  sistema), NG 10-18 (umbral de RD$250,000 del consumo en el 607; coincide
+  con el código), NG 05-2019 (comprobantes especiales), instructivo y
+  formulario del IT-1 2020 (estructura para el paso 6; sus penalidades
+  quedaron superadas por la Ley 30-26). Decisiones del usuario: verificar
+  el estado en la DGII automáticamente (construido) y **no aceptar NCF de
+  19 posiciones** (error en compras, ventas y NCF modificado). Aplicado de
+  la NG 05-2019: comprobante de exportación en compras = error (lo sustenta
+  la DUA, art. 10); comprobante de compras con ITBIS sin retener = aviso
+  del 100% (art. 7).
+- **Tercer lote (2026-11-18)** → `docs/dgii/marco-legal.md`: Decreto 254-06
+  (reglamento de comprobantes, vigente), NG 06-2014 (remisión de
+  informaciones: **sustituida** por la NG 07-2018 y la NG 10-18, según la
+  NG 01-2020), NG 06-2021 (solo cambia un plazo de respuesta de la DGII),
+  NG 01-2020 (facturación electrónica) y otra copia de la Guía de NCF.
+  Aplicado: dos instrucciones a la IA (artículos exentos con "E";
+  comprobante de compras 11/41 emitido por el comprador).
+
+**Pedidas al usuario para lo que sigue** (sin recibir; el usuario dijo
+que envía "lo otro" en otro lote):
+- Aviso 24-2019 (tipos de e-CF).
+- Ley 690-16 (tasas de ITBIS de 9% y 8% que aparecen en el IT-1) y, si
+  existe, una versión del formulario IT-1 posterior a la de 2020.
+- Avisos de la DGII con las listas de obligados a e-CF y sus prórrogas.
+- Formulario e instructivo del IR-17 y la norma de retenciones vigente
+  (de ISR y de ITBIS).
+- Escala de ISR de personas físicas ajustada de 2026.
+- Reglamento de aplicación del ISR, para la proyección de ISR.
+- Número y fecha de la Gaceta Oficial de la Ley 30-26 (vigencia exacta).
 
 ## Despliegue
 
@@ -618,6 +793,14 @@ Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
   `/api/ocr` responde 503 "El OCR no está configurado en el servidor",
   porque **todavía no hay `ANTHROPIC_API_KEY`**. La lectura de QR y todo lo
   demás funciona sin ella.
+- La verificación en la DGII solo necesita `OCR_CODIGO_ACCESO` en Vercel
+  (no la API key); sin él responde 503 y las facturas quedan "sin verificar".
+- **2026-11-18: el usuario configuró `OCR_CODIGO_ACCESO` en Vercel** ("puse
+  ocr en vercel"). **Todavía no tiene clave de Anthropic**, así que la IA
+  sigue sin funcionar en producción (503) y las facturas solo se llenan con
+  lo del QR y lo de la DGII. Con el código ya puesto, la verificación en la
+  DGII debería funcionar en producción en cuanto llegue a `main` (falta
+  comprobar que la DGII responde a los servidores de Vercel).
 - Para activar la IA: en Vercel, Settings → Environment Variables, agregar
   `ANTHROPIC_API_KEY` (key propia del producto, nunca personal) y
   `OCR_CODIGO_ACCESO` (frase larga elegida por el usuario), ambas en
@@ -642,7 +825,9 @@ Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
   repositorio público. El PDF de muestra del usuario no está aquí.
 - Historial: PR #1 (MVP completo) y PR #2 (criterios NIIF verificados)
   fusionados el 2026-11-15; PR #3 (captura por lotes + IA automática) el
-  2026-11-17.
+  2026-11-17; PR #4 (cuatro lotes de normas fiscales aplicados, Ley 30-26 en
+  el motor fiscal, verificación automática en la DGII, serie A rechazada,
+  verificación humana de e-CF sin QR legible) el 2026-11-18.
 
 ## Nombre del producto
 
@@ -657,13 +842,15 @@ otro (ej. "Cielo Cloud Impuestos", "Cielo Cloud 606").
 - Rama de desarrollo de las sesiones de noviembre 2026:
   `claude/new-session-697xwv`; el trabajo llega a `main` por pull request.
 
-## Estado real del repo (actualizado el 2026-11-17)
+## Estado real del repo (actualizado el 2026-11-18)
 
 Este archivo se escribió en la sesión de Cielo Cloud Nómina describiendo un
 scaffold que vivía solo en aquel sandbox; el código no vino con él. En la
 sesión del 2026-11-15 se recreó el scaffold en este repo y, tras la
 decisión de arquitectura del MVP, se construyeron los pasos 1 a 4 del
-roadmap (el 4 se completó el 2026-11-17).
+roadmap (el 4 se completó el 2026-11-17). El 2026-11-18 se aplicaron cuatro
+lotes de normas fiscales (`docs/dgii/marco-legal.md`) y se construyó la
+verificación automática en la DGII.
 
 ### Qué hay en el árbol
 
@@ -673,7 +860,7 @@ roadmap (el 4 se completó el 2026-11-17).
   edición, borrado), `/lote` (captura por lotes: PDF o varias fotos), `/reportes` (genera y descarga el TXT del 606 o 607
   de un cliente y un mes y lo exporta a Excel; y el reporte de ingresos en
   Excel), `/configuracion` (código de acceso al OCR).
-- **Servidor**: solo `src/app/api/ocr/route.ts`.
+- **Servidor**: `src/app/api/ocr/route.ts` y `src/app/api/verificar-dgii/route.ts`.
 - **Datos** (`src/lib/datos`): `repositorio.ts` (interfaz),
   `repositorio-local.ts` (`localStorage`, claves `cielo-fiscal:clientes:v1`
   y `cielo-fiscal:documentos:v1`; imágenes en IndexedDB, base
@@ -683,6 +870,7 @@ roadmap (el 4 se completó el 2026-11-17).
   revisada y entrar a un reporte, duplicados, validación de cliente),
   `excel-reporte.ts` (arma las hojas del Excel del 606 y de ingresos),
   `qr-ecf.ts` (interpreta el QR de un comprobante electrónico),
+  `verificacion-dgii.ts` y `verificacion-cliente.ts` (estado en la DGII),
   `ocr-interpretar.ts` (de la lectura del modelo a los campos: compra o
   venta, contraparte, dudas), `lote/leer-paginas.ts` (páginas y QR),
   `lote/borrador.ts` (combina QR + IA y calcula observaciones),
@@ -692,7 +880,8 @@ roadmap (el 4 se completó el 2026-11-17).
   el archivo y llama a la ruta), `config-local.ts`.
 - **Scripts**: `scripts/copiar-estaticos.mjs`.
 - **Documentación**: `docs/dgii/formatos-606-607.md` (especificación del
-  606 y 607 extraída de las fuentes de la DGII).
+  606 y 607 extraída de las fuentes de la DGII) y `docs/dgii/marco-legal.md`
+  (leyes y normas recibidas, qué está vigente y qué se aplicó).
 - **Interfaz** (`src/components`): `layout/` (Sidebar portado de Nómina sin
   selector de empresa ni logout, Header, BottomNav, Pagina), `ui/`
   (Toast, Badge, EmptyState, ThemeToggle y StatCard copiados de Nómina;
@@ -764,9 +953,11 @@ roadmap (el 4 se completó el 2026-11-17).
   sea, nada de lo que se publica lo trae. Los patrones que procesa son los
   de la configuración del proyecto, no datos de usuarios. Revisar cuando
   salga picomatch 4.0.8 o superior.
-- `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
-  `/api/ocr` dinámica).
-- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan — fechas
+- `npx tsc --noEmit` limpio; `npm run build` limpio (páginas estáticas +
+  `/api/ocr` y, desde el 2026-11-18, `/api/verificar-dgii` dinámicas).
+- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (180
+  de 180 desde el 2026-11-18, con las reglas de comprobantes, la Ley 30-26
+  y la verificación en la DGII) — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
   comparados carácter por carácter, dígito verificador, duplicados.
@@ -813,6 +1004,25 @@ roadmap (el 4 se completó el 2026-11-17).
   QR y los montos que no cuadran quedan en observación; 21 listas y 32 con
   observaciones; al aprobar quedan 21 revisadas y entran al 606; con 503
   se detiene tras 3 llamadas. Regresión: 15/15, 9/9 y 16/16.
+- Verificación en la DGII (2026-11-18), navegador real contra `next start`
+  con la DGII real y la IA simulada, PDF de 15 páginas de la muestra:
+  **18 de 18** — se ve el paso 2 de 3; las 5 páginas con QR se consultan (4
+  reales "Aceptado" + 1 forzada a "Rechazado"); la rechazada queda con
+  observación en el NCF, con aviso en el resumen y marca roja en Facturas;
+  se guardan `qrUrl` y la verificación; la razón social y el ITBIS de la
+  DGII llenan la factura (en una la DGII no tenía ITBIS y se conservó el de
+  la IA); "Verificar en la DGII" en Facturas vuelve a consultar las 5 de
+  verdad; una factura suelta (foto con QR) se verifica sola y su NCF queda
+  el del QR. Después, con la regla de verificación humana: **26 de 26** —
+  además, las e-CF sin QR legible dicen "verifícala a mano" y no quedan
+  listas; la serie B sin QR sale "Lista"; "Aprobar las N sin observaciones"
+  cuenta solo las serie B; en Facturas las e-CF sin QR llevan "Verificar en
+  la DGII" y no entran en "Aprobar las N"; una factura suelta electrónica sin
+  QR deja el NCF en ámbar con el aviso. La ruta contra el servidor real: 200 con estado para QR reales
+  y "no_encontrado" para uno inventado; 400 para otra dirección o sin JSON;
+  401 sin código o con código incorrecto. Regresión: 16/16, 9/9 y 15/15.
+  El recorrido de 58 páginas (`e2e7.js`) no se volvió a correr: espera el
+  texto "Paso 2 de 2", que ahora es "Paso 3 de 3".
 - Dato de control del dígito verificador: el algoritmo de la macro da
   correcto el RNC `401007551`.
 - Ruta OCR contra el servidor real: sin código o código incorrecto → 401;
@@ -862,11 +1072,12 @@ roadmap (el 4 se completó el 2026-11-17).
 
 - Copiados del código de `tyui`: tramos de ISR de personas físicas, tasa
   27% del Impuesto Sustitutivo, día 10 del IR-17.
-- Tomado de este documento, sin respaldo en el código de `tyui` ni
-  re-verificación: ISR de personas jurídicas 27%.
-- `⚠️ SIN VERIFICAR` en el código: ITBIS general 18%, día 20 para el
-  IT-1, y que las fechas límite no se corren por fin de semana o feriado. El recargo "10% + 4% + 1.10%" del IR-17 que menciona la lección
-  2 NO se codificó: no aparece en el código de `tyui` y este documento no
-  dice cómo se aplica cada porcentaje.
+- Verificados el 2026-11-18 (Código Tributario, Ley 30-26, Decreto 293-11
+  y el usuario): ITBIS general 18%, tasa reducida 16%, día 20 del IT-1, ISR
+  de personas jurídicas 27% y 30% transitorio, escala de personas físicas
+  2027, recargo por mora 3% mensual con tope de 100%.
+- `⚠️ SIN VERIFICAR` en el código: que las fechas límite no se corren por
+  fin de semana o feriado, y el día exacto del fin del calendario de e-CF.
+  El viejo recargo "10% + 4% + 1.10%" nunca se codificó y ya no rige.
 - Del motor fiscal solo se usa en pantalla la fecha límite del 606/607.
   Nada calcula impuestos todavía.

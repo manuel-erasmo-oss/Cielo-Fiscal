@@ -1,4 +1,5 @@
 import { CAMPOS_EXTRAIDOS, CAMPOS_VACIOS } from '@/lib/documentos'
+import { loEmiteElComprador, vaConRncDelCliente } from '@/lib/dgii-formatos'
 import type { ResultadoOCR } from '@/lib/ocr-tipos'
 import { parseFechaLocal, redondear2, soloDigitos } from '@/lib/utils'
 import type { CampoExtraido, TipoDocumento } from '@/types'
@@ -130,11 +131,16 @@ export function interpretarLectura(crudo: LecturaModelo, ctx: ContextoLectura): 
 
   // ¿Compra o venta? Lo dice quién es el cliente en la factura: si la emitió,
   // es una venta suya; si aparece como comprador, es una compra suya.
+  // Excepción: los comprobantes de compras (11/41), gastos menores (13/43) y
+  // pagos al exterior (17/47) los emite el propio comprador (Guía de NCF de
+  // la DGII), así que con el cliente como emisor siguen siendo compras.
   let tipo = ctx.tipoPorDefecto
   let coincideCliente: boolean | null = null
+  let autoemitido = false
   if (ctx.rncCliente) {
     if (leido.rncEmisor === ctx.rncCliente) {
-      tipo = 'venta'
+      autoemitido = loEmiteElComprador(leido.ncf)
+      tipo = autoemitido ? 'compra' : 'venta'
       coincideCliente = true
     } else if (leido.rncComprador === ctx.rncCliente) {
       tipo = 'compra'
@@ -146,13 +152,19 @@ export function interpretarLectura(crudo: LecturaModelo, ctx: ContextoLectura): 
   }
 
   const esCompra = tipo === 'compra'
-  const rncContraparte = esCompra ? leido.rncEmisor : leido.rncComprador
+  // Dónde está la contraparte en la factura: el emisor en una compra normal,
+  // el comprador en una venta y en un comprobante de compras autoemitido
+  // (allí figura el vendedor). En gastos menores y pagos al exterior el 606
+  // lleva el RNC del propio cliente (ver `vaConRncDelCliente`).
+  const conRncPropio = autoemitido && vaConRncDelCliente(leido.ncf)
+  const lado: 'Emisor' | 'Comprador' = esCompra && !autoemitido ? 'Emisor' : 'Comprador'
+  const rncContraparte = conRncPropio ? ctx.rncCliente : leido[`rnc${lado}`]
   const dudosos = new Set<CampoExtraido>()
   const marcar = (campoModelo: CampoModelo, campo: CampoExtraido) => {
     if (dudososModelo.has(campoModelo)) dudosos.add(campo)
   }
-  marcar(esCompra ? 'rncEmisor' : 'rncComprador', 'rncCedulaContraparte')
-  marcar(esCompra ? 'nombreEmisor' : 'nombreComprador', 'nombreContraparte')
+  if (!conRncPropio) marcar(`rnc${lado}`, 'rncCedulaContraparte')
+  marcar(`nombre${lado}`, 'nombreContraparte')
   for (const campo of ['ncf', 'ncfModificado', 'fechaComprobante', 'itbisFacturado', 'impuestoSelectivoConsumo', 'otrosImpuestos', 'propinaLegal', 'montoTotal'] as const) {
     marcar(campo, campo)
   }
@@ -161,7 +173,7 @@ export function interpretarLectura(crudo: LecturaModelo, ctx: ContextoLectura): 
 
   const comunes = {
     rncCedulaContraparte: rncContraparte,
-    nombreContraparte: esCompra ? leido.nombreEmisor : leido.nombreComprador,
+    nombreContraparte: leido[`nombre${lado}`],
     ncf: leido.ncf,
     ncfModificado: leido.ncfModificado,
     fechaComprobante: leido.fechaComprobante,

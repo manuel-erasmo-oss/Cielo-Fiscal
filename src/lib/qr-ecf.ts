@@ -1,4 +1,5 @@
 import { parseFechaLocal, soloDigitos } from '@/lib/utils'
+import { loEmiteElComprador } from '@/lib/dgii-formatos'
 
 // Código QR de un comprobante fiscal electrónico (e-CF).
 //
@@ -84,8 +85,11 @@ export function leerQrEcf(texto: string): DatosQrEcf | null {
 //   (típico de una factura de consumo): no se puede saber por el QR.
 export type PertenenciaQr = 'compra' | 'venta' | 'ajena' | 'indeterminada'
 
+// Los e-CF de compras (41), gastos menores (43) y pagos al exterior (47) los
+// emite el propio comprador (Guía de NCF de la DGII): con el cliente como
+// emisor son compras suyas.
 export function pertenenciaSegunQr(qr: DatosQrEcf, rncCliente: string): PertenenciaQr {
-  if (qr.rncEmisor === rncCliente) return 'venta'
+  if (qr.rncEmisor === rncCliente) return loEmiteElComprador(qr.encf) ? 'compra' : 'venta'
   if (qr.rncComprador === rncCliente) return 'compra'
   return qr.rncComprador ? 'ajena' : 'indeterminada'
 }

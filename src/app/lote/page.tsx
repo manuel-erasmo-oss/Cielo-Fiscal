@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { AlertTriangle, CheckCheck, CircleCheck, CircleStop, FileUp, Info, LoaderCircle, QrCode, Sparkles, Users } from 'lucide-react'
+import { AlertTriangle, CheckCheck, CircleCheck, CircleStop, FileUp, Info, LoaderCircle, QrCode, ShieldCheck, Sparkles, Users } from 'lucide-react'
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -12,6 +12,7 @@ import { leerCodigoOCR } from '@/lib/config-local'
 import { useDatos } from '@/lib/datos/datos-context'
 import { ETIQUETA_CAMPO } from '@/lib/documentos'
 import {
+  aplicarVerificacion,
   documentoDesdePagina,
   fusionarConLectura,
   interpretarPagina,
@@ -22,6 +23,9 @@ import {
 } from '@/lib/lote/borrador'
 import { LoteError, MAXIMO_PAGINAS_LOTE, leerPaginas, type PaginaLeida } from '@/lib/lote/leer-paginas'
 import { OCRError, extraerFactura } from '@/lib/ocr-cliente'
+import { VerificacionError, verificarEnDGII } from '@/lib/verificacion-cliente'
+import { esECF } from '@/lib/dgii-formatos'
+import { ETIQUETA_ESTADO_DGII } from '@/lib/verificacion-dgii'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD } from '@/lib/utils'
 import type { CampoExtraido, DocumentoFiscal, TipoDocumento } from '@/types'
 
@@ -41,9 +45,11 @@ interface PaginaLote extends PaginaLeida {
   incluir: boolean
   // La lectura con IA de esta página falló (se puede reintentar).
   errorIA?: string
+  // La consulta a la DGII de esta página falló (se puede reintentar).
+  errorDGII?: string
 }
 
-type Fase = 'inicio' | 'leyendo' | 'leyendo_ia' | 'resultado' | 'guardado'
+type Fase = 'inicio' | 'leyendo' | 'verificando' | 'leyendo_ia' | 'resultado' | 'guardado'
 
 // Páginas que se leen con IA a la vez: acelera el lote sin saturar el servidor.
 const LECTURAS_SIMULTANEAS = 3
@@ -60,6 +66,8 @@ const ETIQUETA_ESTADO: Record<EstadoPagina, { texto: string; variante: 'success'
 const esIncluible = (p: PaginaLote) => p.borrador.estado !== 'ajena' && p.borrador.estado !== 'duplicada'
 // Las que no pasan por la IA: no aportan nada y costarían igual.
 const leerConIA = (p: PaginaLote) => esIncluible(p) && !p.borrador.leidaConIA
+// Las que tienen un QR de e-CF y todavía no se consultaron en la DGII.
+const verificarDGII = (p: PaginaLote) => esIncluible(p) && !!p.borrador.qrUrl && !p.borrador.dgii
 
 function LoteContenido() {
   const params = useSearchParams()
@@ -79,6 +87,9 @@ function LoteContenido() {
   const [guardados, setGuardados] = useState<DocumentoFiscal[]>([])
   const [aprobadas, setAprobadas] = useState(0)
   const [hayCodigo, setHayCodigo] = useState(true)
+  const [aVerificar, setAVerificar] = useState(0)
+  const [verificadas, setVerificadas] = useState(0)
+  const [avisoDGII, setAvisoDGII] = useState<string | null>(null)
   const inputArchivos = useRef<HTMLInputElement>(null)
 
   const cliente = clientes.find(c => c.id === clienteId) ?? clientes[0]
@@ -107,6 +118,9 @@ function LoteContenido() {
     setALeerIA(0)
     setError(null)
     setAvisoIA(null)
+    setAvisoDGII(null)
+    setVerificadas(0)
+    setAVerificar(0)
     setGuardados([])
     setAprobadas(0)
     setFase('inicio')
@@ -126,7 +140,49 @@ function LoteContenido() {
     return { cliente, tipoPorDefecto, existentes }
   }
 
-  // Paso 2: la IA lee las páginas indicadas, varias a la vez.
+  // Paso 2: consulta en la DGII el estado de los e-CF con QR (gratis). Una
+  // factura rechazada o que la DGII no encuentra queda con observación y no se
+  // aprueba en bloque (Decreto 254-06, art. 27; NG 01-2020, art. 8).
+  async function verificarLasPaginas(lista: PaginaLote[]) {
+    const pendientes = lista.filter(verificarDGII)
+    if (pendientes.length === 0) return lista
+    if (!leerCodigoOCR()) {
+      setAvisoDGII('No se verificaron las facturas en la DGII: falta el código de acceso. Escríbelo en Configuración.')
+      return lista
+    }
+    setFase('verificando')
+    setAvisoDGII(null)
+    setAVerificar(pendientes.length)
+    setVerificadas(0)
+
+    let actual = lista
+    const actualizar = (numero: number, cambio: (p: PaginaLote) => PaginaLote) => {
+      actual = actual.map(p => (p.numero === numero ? cambio(p) : p))
+      if (vivo.current) setPaginas(actual)
+    }
+    const cola = [...pendientes]
+    let abortar: string | null = null
+    async function trabajador() {
+      while (cola.length > 0 && !abortar && vivo.current) {
+        const pagina = cola.shift()!
+        try {
+          const respuesta = await verificarEnDGII(pagina.borrador.qrUrl!)
+          const ahora = new Date().toISOString()
+          actualizar(pagina.numero, p => ({ ...p, errorDGII: undefined, borrador: aplicarVerificacion(p.borrador, respuesta, ahora) }))
+        } catch (e) {
+          const err = e instanceof VerificacionError ? e : new VerificacionError('No se pudo verificar en la DGII.')
+          if (err.detenerTodo) abortar = `No se verificaron las facturas en la DGII: ${err.message}`
+          else actualizar(pagina.numero, p => ({ ...p, errorDGII: err.message }))
+        }
+        if (vivo.current) setVerificadas(n => n + 1)
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(LECTURAS_SIMULTANEAS, pendientes.length) }, trabajador))
+    if (abortar && vivo.current) setAvisoDGII(abortar)
+    return actual
+  }
+
+  // Paso 3: la IA lee las páginas indicadas, varias a la vez.
   async function leerConIALasPaginas(lista: PaginaLote[]) {
     const pendientes = lista.filter(leerConIA)
     if (pendientes.length === 0) return lista
@@ -209,8 +265,15 @@ function LoteContenido() {
     }
     if (!vivo.current) return
 
-    // Paso 2: la IA llena el resto.
-    await leerConIALasPaginas(leidas)
+    // Paso 2: estado en la DGII. Paso 3: la IA llena el resto.
+    const verificadasDGII = await verificarLasPaginas(leidas)
+    if (!vivo.current) return
+    await leerConIALasPaginas(verificadasDGII)
+    if (vivo.current) setFase('resultado')
+  }
+
+  async function reintentarVerificacion() {
+    await verificarLasPaginas(paginas)
     if (vivo.current) setFase('resultado')
   }
 
@@ -230,6 +293,9 @@ function LoteContenido() {
       conQr: paginas.filter(p => p.borrador.conQr).length,
       leidasIA: paginas.filter(p => p.borrador.leidaConIA).length,
       sinLeerIA: paginas.filter(leerConIA).length,
+      sinVerificar: paginas.filter(verificarDGII).length,
+      verificadas: paginas.filter(p => p.borrador.dgii).length,
+      invalidasDGII: paginas.filter(p => p.borrador.dgii && ['rechazado', 'no_encontrado'].includes(p.borrador.dgii.verificacion.estado)).length,
       noFactura: por('no_factura'),
       ajenas: por('ajena'),
       duplicadas: por('duplicada'),
@@ -277,7 +343,7 @@ function LoteContenido() {
     }
   }
 
-  const leyendo = fase === 'leyendo' || fase === 'leyendo_ia'
+  const leyendo = fase === 'leyendo' || fase === 'verificando' || fase === 'leyendo_ia'
 
   return (
     <Pagina title="Subir lote" subtitle="Un PDF con muchas facturas, o varias fotos">
@@ -294,6 +360,13 @@ function LoteContenido() {
         <div role="alert" className="flex items-start gap-3 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-5 py-4 text-sm text-rose-700 dark:text-rose-300">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>{error}</p>
+        </div>
+      )}
+
+      {avisoDGII && (fase === 'resultado' || fase === 'leyendo_ia') && (
+        <div role="alert" className="flex items-start gap-3 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-5 py-4 text-sm text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{avisoDGII}</p>
         </div>
       )}
 
@@ -378,14 +451,21 @@ function LoteContenido() {
             {fase === 'leyendo' ? (
               <>
                 <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                  Paso 1 de 2 · {total > 0 ? `Separando páginas y leyendo códigos QR: ${Math.min(paginas.length + 1, total)} de ${total}…` : 'Abriendo los archivos…'}
+                  Paso 1 de 3 · {total > 0 ? `Separando páginas y leyendo códigos QR: ${Math.min(paginas.length + 1, total)} de ${total}…` : 'Abriendo los archivos…'}
                 </p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Códigos QR leídos hasta ahora: {conteo.conQr}.</p>
+              </>
+            ) : fase === 'verificando' ? (
+              <>
+                <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                  Paso 2 de 3 · Verificando el estado en la DGII: {verificadas} de {aVerificar}
+                </p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Con el código QR de cada factura electrónica. No tiene costo.</p>
               </>
             ) : (
               <>
                 <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                  Paso 2 de 2 · La IA está leyendo las facturas: {leidasIA} de {aLeerIA}
+                  Paso 3 de 3 · La IA está leyendo las facturas: {leidasIA} de {aLeerIA}
                 </p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Puede tardar varios minutos. No cierres esta pantalla.</p>
               </>
@@ -393,7 +473,7 @@ function LoteContenido() {
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-[#1a1d2e]">
               <div
                 className="h-full rounded-full bg-[#1B2980] dark:bg-indigo-500 transition-[width]"
-                style={{ width: `${fase === 'leyendo' ? (total ? (paginas.length / total) * 100 : 0) : (aLeerIA ? (leidasIA / aLeerIA) * 100 : 0)}%` }}
+                style={{ width: `${fase === 'leyendo' ? (total ? (paginas.length / total) * 100 : 0) : fase === 'verificando' ? (aVerificar ? (verificadas / aVerificar) * 100 : 0) : (aLeerIA ? (leidasIA / aLeerIA) * 100 : 0)}%` }}
               />
             </div>
           </div>
@@ -415,7 +495,7 @@ function LoteContenido() {
                 {paginas.length} página(s) de {cliente.razonSocial}
               </h2>
               <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                {conteo.leidasIA} leídas por la IA · {conteo.conQr} con QR
+                {conteo.leidasIA} leídas por la IA · {conteo.conQr} con QR · {conteo.verificadas} verificadas en la DGII
                 {conteo.noFactura > 0 && ` · ${conteo.noFactura} no son facturas`}
                 {conteo.duplicadas > 0 && ` · ${conteo.duplicadas} duplicada(s)`}
                 {conteo.ajenas > 0 && ` · ${conteo.ajenas} de otro contribuyente`}
@@ -423,6 +503,12 @@ function LoteContenido() {
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={reiniciar} className={BTN_SECONDARY}>Empezar de nuevo</button>
+              {conteo.sinVerificar > 0 && (
+                <button type="button" onClick={() => void reintentarVerificacion()} className={BTN_SECONDARY}>
+                  <ShieldCheck className="h-4 w-4" />
+                  Verificar en la DGII las {conteo.sinVerificar} que faltan
+                </button>
+              )}
               {conteo.sinLeerIA > 0 && (
                 <button type="button" onClick={() => void reintentarFallidas()} className={BTN_SECONDARY}>
                   <Sparkles className="h-4 w-4" />
@@ -448,6 +534,12 @@ function LoteContenido() {
               </p>
             </div>
           </div>
+          {conteo.invalidasDGII > 0 && (
+            <p className="flex items-start gap-2 text-xs text-rose-700 dark:text-rose-300">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{conteo.invalidasDGII} factura(s) rechazada(s) por la DGII o que no existen allí. No se pueden aprobar ni entrar al 606.</span>
+            </p>
+          )}
           {conteo.ajenas > 0 && (
             <p className="flex items-start gap-2 text-xs text-rose-700 dark:text-rose-300">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -509,6 +601,20 @@ function LoteContenido() {
                     <p className="text-[11px] text-rose-600 dark:text-rose-400">{p.borrador.nota}</p>
                   )}
                   {p.errorIA && <p className="text-[11px] text-rose-600 dark:text-rose-400">La IA no pudo leerla: {p.errorIA}</p>}
+                  {p.borrador.dgii && (
+                    <p className={cn('flex items-center gap-1 text-[11px] font-semibold',
+                      ['aceptado', 'aceptado_condicional'].includes(p.borrador.dgii.verificacion.estado)
+                        ? 'text-emerald-700 dark:text-emerald-400'
+                        : ['rechazado', 'no_encontrado'].includes(p.borrador.dgii.verificacion.estado)
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-amber-700 dark:text-amber-400')}>
+                      <ShieldCheck className="h-3 w-3" /> {ETIQUETA_ESTADO_DGII[p.borrador.dgii.verificacion.estado]}
+                    </p>
+                  )}
+                  {p.errorDGII && <p className="text-[11px] text-amber-700 dark:text-amber-400">No se pudo verificar en la DGII: {p.errorDGII}. Verifícala a mano.</p>}
+                  {p.incluir && !p.borrador.qrUrl && esECF(c.ncf) && (
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400">No se pudo leer el código QR: verifícala a mano en la DGII.</p>
+                  )}
                   {fase === 'resultado' && esIncluible(p) && (
                     <label className="mt-auto flex cursor-pointer items-center gap-2 pt-1 text-xs font-medium text-zinc-700 dark:text-zinc-300">
                       <input type="checkbox" checked={p.incluir} onChange={() => alternar(p.numero)} className="h-4 w-4 rounded accent-[#1B2980]" />

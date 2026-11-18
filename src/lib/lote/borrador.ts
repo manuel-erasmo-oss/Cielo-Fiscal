@@ -1,7 +1,9 @@
 import { CAMPOS_EXTRAIDOS, CAMPOS_VACIOS, buscarDuplicado, normalizarNcf, problemasDeRevision, type CamposDocumento } from '@/lib/documentos'
 import type { ResultadoOCR } from '@/lib/ocr-tipos'
+import { vaConRncDelCliente } from '@/lib/dgii-formatos'
 import { leerQrEcf, pertenenciaSegunQr } from '@/lib/qr-ecf'
-import { CONTADOR_LOCAL, type CampoExtraido, type ClienteFiscal, type DocumentoFiscal, type TipoDocumento } from '@/types'
+import { esUrlConsultaDGII, requiereVerificacionHumana, type RespuestaDGII } from '@/lib/verificacion-dgii'
+import { CONTADOR_LOCAL, type CampoExtraido, type ClienteFiscal, type DocumentoFiscal, type TipoDocumento, type VerificacionDGII } from '@/types'
 
 // Captura por lotes, lógica pura: qué factura sale de cada página a partir de
 // su código QR y de la lectura con IA. Sin navegador ni almacenamiento, para
@@ -37,6 +39,18 @@ export interface BorradorPagina {
   // Explicación para la persona cuando la página no entra por defecto o
   // necesita atención.
   nota?: string
+  // Dirección de consulta de la DGII que trae el QR, si es un e-CF.
+  qrUrl?: string
+  // Lo que respondió la DGII al consultarla (ver `aplicarVerificacion`).
+  dgii?: DatosDGIIPagina
+}
+
+export interface DatosDGIIPagina {
+  verificacion: VerificacionDGII
+  // Datos que la DGII tiene registrados: mandan sobre la lectura de la IA,
+  // igual que los del QR.
+  itbis: number | null
+  razonSocialContraparte: string | null
 }
 
 export interface ContextoLote {
@@ -58,7 +72,11 @@ export function interpretarPagina(textoQr: string | null, ctx: ContextoLote): Bo
   // Si el QR no trae comprador, el emisor no es el cliente, así que el
   // cliente solo puede ser quien compró.
   const tipo: TipoDocumento = pertenencia === 'venta' ? 'venta' : 'compra'
-  const contraparte = tipo === 'venta' ? qr.rncComprador : qr.rncEmisor
+  // En un e-CF de compras (41) autoemitido el vendedor figura como
+  // comprador; en gastos menores (43) y pagos al exterior (47) el 606 lleva
+  // el RNC del propio cliente, que aquí es el emisor.
+  const autoemitido = tipo === 'compra' && qr.rncEmisor === ctx.cliente.rncCedula
+  const contraparte = tipo === 'venta' || (autoemitido && !vaConRncDelCliente(qr.encf)) ? qr.rncComprador : qr.rncEmisor
   const campos: CamposDocumento = {
     ...CAMPOS_VACIOS,
     rncCedulaContraparte: contraparte,
@@ -75,8 +93,9 @@ export function interpretarPagina(textoQr: string | null, ctx: ContextoLote): Bo
     { id: '', clienteId: ctx.cliente.id, tipo, ncf: campos.ncf, rncCedulaContraparte: campos.rncCedulaContraparte },
     ctx.existentes as readonly DocumentoFiscal[],
   )
-  if (repetida) return { ...base, estado: 'duplicada', tipo, campos, conQr: true, nota: NOTA_DUPLICADA }
-  return { ...base, estado: 'qr', tipo, campos, conQr: true }
+  const qrUrl = esUrlConsultaDGII(textoQr!) ? textoQr! : undefined
+  if (repetida) return { ...base, estado: 'duplicada', tipo, campos, conQr: true, qrUrl, nota: NOTA_DUPLICADA }
+  return { ...base, estado: 'qr', tipo, campos, conQr: true, qrUrl }
 }
 
 // Campos de montos que quedan en duda cuando las partes no suman el total.
@@ -147,13 +166,57 @@ export function fusionarConLectura(borrador: BorradorPagina, lectura: ResultadoO
   return { ...leida, campos, dudosos: CAMPOS_EXTRAIDOS.filter(c => dudosos.has(c)) }
 }
 
+// Guarda en la página lo que respondió la DGII. Solo se toman la razón social
+// de la contraparte (la de quien tenga su RNC) y el total de ITBIS.
+export function aplicarVerificacion(borrador: BorradorPagina, respuesta: RespuestaDGII, ahora: string): BorradorPagina {
+  const d = respuesta.datos
+  const contraparte = borrador.campos.rncCedulaContraparte
+  const razonSocialContraparte = !d || !contraparte ? null
+    : d.rncEmisor === contraparte ? d.razonSocialEmisor
+      : d.rncComprador === contraparte ? d.razonSocialComprador : null
+  return {
+    ...borrador,
+    dgii: {
+      verificacion: { estado: respuesta.estado, texto: respuesta.texto, consultadoEn: ahora },
+      itbis: d?.totalItbis ?? null,
+      razonSocialContraparte,
+    },
+  }
+}
+
+// Campos y dudas de la página con lo de la DGII encima: su ITBIS manda (y deja
+// de estar en duda) y su razón social llena el nombre si la IA no lo leyó.
+// Si con ese ITBIS los montos no suman el total, quedan en duda.
+export function conDatosDGII(borrador: BorradorPagina): { campos: CamposDocumento; dudosos: CampoExtraido[] } {
+  const dgii = borrador.dgii
+  if (!dgii || (dgii.itbis === null && !dgii.razonSocialContraparte)) return { campos: borrador.campos, dudosos: borrador.dudosos }
+  const campos: CamposDocumento = {
+    ...borrador.campos,
+    itbisFacturado: dgii.itbis ?? borrador.campos.itbisFacturado,
+    nombreContraparte: borrador.campos.nombreContraparte ?? dgii.razonSocialContraparte,
+  }
+  const dudosos = new Set(borrador.dudosos)
+  if (dgii.itbis !== null) {
+    dudosos.delete('itbisFacturado')
+    if (cuadra(borrador.tipo, campos) === false) montosDe(borrador.tipo).filter(c => c !== 'itbisFacturado').forEach(c => dudosos.add(c))
+  }
+  if (!borrador.campos.nombreContraparte && dgii.razonSocialContraparte) dudosos.delete('nombreContraparte')
+  return { campos, dudosos: CAMPOS_EXTRAIDOS.filter(c => dudosos.has(c)) }
+}
+
 // Lo que impide dar la página por buena: campos que el formato exige y
-// faltan, más los que quedaron en duda. Vacío = lista para aprobar.
+// faltan, los que quedaron en duda y un comprobante que la DGII rechazó o no
+// encuentra. Vacío = lista para aprobar.
 export function observaciones(borrador: BorradorPagina, rncCliente: string): CampoExtraido[] {
-  const pendientes = new Set<CampoExtraido>(borrador.dudosos)
-  for (const p of problemasDeRevision(borrador.tipo, borrador.campos, rncCliente)) {
+  const { campos, dudosos } = conDatosDGII(borrador)
+  const pendientes = new Set<CampoExtraido>(dudosos)
+  const verificacionDGII = borrador.dgii?.verificacion
+  for (const p of problemasDeRevision(borrador.tipo, { ...campos, qrUrl: borrador.qrUrl, verificacionDGII }, rncCliente)) {
     if (p.nivel === 'error' && p.campo) pendientes.add(p.campo)
   }
+  // e-CF sin verificar en la DGII (QR ilegible o consulta fallida): como un
+  // dato borroso, lo tiene que verificar una persona.
+  if (requiereVerificacionHumana({ ncf: campos.ncf, verificacionDGII })) pendientes.add('ncf')
   return CAMPOS_EXTRAIDOS.filter(c => pendientes.has(c))
 }
 
@@ -167,7 +230,9 @@ export function documentoDesdePagina(
   ahora: string,
 ): DocumentoFiscal {
   return {
-    ...borrador.campos,
+    ...conDatosDGII(borrador).campos,
+    qrUrl: borrador.qrUrl,
+    verificacionDGII: borrador.dgii?.verificacion,
     id,
     contadorUid: CONTADOR_LOCAL,
     clienteId: cliente.id,

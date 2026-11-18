@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CAMPOS_VACIOS } from '@/lib/documentos'
 import type { ResultadoOCR } from '@/lib/ocr-tipos'
-import { documentoDesdePagina, fusionarConLectura, interpretarPagina, observaciones, type ContextoLote } from './borrador'
+import { aplicarVerificacion, conDatosDGII, documentoDesdePagina, fusionarConLectura, interpretarPagina, observaciones, type ContextoLote } from './borrador'
 
 const CLIENTE = { id: 'c1', rncCedula: '401007551' }
 const qr = (o: { emisor?: string; comprador?: string | null; encf?: string; total?: string } = {}) =>
@@ -22,6 +22,18 @@ describe('interpretarPagina', () => {
     const b = interpretarPagina(qr({ emisor: '401007551', comprador: '101123451' }), ctx())
     expect(b).toMatchObject({ estado: 'qr', tipo: 'venta' })
     expect(b.campos).toMatchObject({ rncCedulaContraparte: '101123451', tipoIdentificacion: '1' })
+  })
+
+  it('QR de un e-CF de compras (E41) emitido por el cliente: compra, contraparte = el vendedor', () => {
+    const b = interpretarPagina(qr({ emisor: '401007551', comprador: '00112345673', encf: 'E410000000001' }), ctx({ tipoPorDefecto: 'venta' }))
+    expect(b).toMatchObject({ estado: 'qr', tipo: 'compra' })
+    expect(b.campos.rncCedulaContraparte).toBe('00112345673')
+  })
+
+  it('QR de gastos menores (E43) emitido por el cliente: compra con el RNC del cliente', () => {
+    const b = interpretarPagina(qr({ emisor: '401007551', comprador: null, encf: 'E430000000001' }), ctx({ tipoPorDefecto: 'venta' }))
+    expect(b).toMatchObject({ estado: 'qr', tipo: 'compra' })
+    expect(b.campos.rncCedulaContraparte).toBe('401007551')
   })
 
   it('QR sin comprador y de otro emisor: se toma como compra', () => {
@@ -57,7 +69,8 @@ describe('documentoDesdePagina', () => {
       id: 'd1', clienteId: 'c1', tipo: 'compra', origen: 'qr', estadoRevision: 'pendiente_revision',
       archivoNombre: 'julio.pdf', archivoPagina: 9, archivoMimeType: 'image/jpeg', ncf: 'E310000007629', confianzaOCR: 1,
     })
-    expect(doc.camposIncompletos).toEqual(['itbisFacturado', 'tipoBienesServicios', 'montoServicios'])
+    // 'ncf': factura electrónica todavía sin verificar en la DGII.
+    expect(doc.camposIncompletos).toEqual(['ncf', 'itbisFacturado', 'tipoBienesServicios', 'montoServicios'])
     expect(doc.origen).toBe('qr')
   })
 
@@ -79,11 +92,13 @@ describe('fusionarConLectura', () => {
     ...cambios,
   })
 
-  it('página con QR + IA: completa montos y categoría; queda lista', () => {
+  it('página con QR + IA: completa montos y categoría; queda lista al verificarse en la DGII', () => {
     const b = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura(), ctx())
     expect(b).toMatchObject({ estado: 'qr', tipo: 'compra', leidaConIA: true, dudosos: [] })
     expect(b.campos).toMatchObject({ ncf: 'E310000007629', montoBienes: 2068, itbisFacturado: 372.24, tipoBienesServicios: '09', nombreContraparte: 'Ferretería El Sol SRL' })
-    expect(observaciones(b, CLIENTE.rncCedula)).toEqual([])
+    expect(observaciones(b, CLIENTE.rncCedula)).toEqual(['ncf'])
+    const aceptada = aplicarVerificacion(b, { estado: 'aceptado', texto: 'Aceptado', datos: null }, '2026-11-18T12:00:00.000Z')
+    expect(observaciones(aceptada, CLIENTE.rncCedula)).toEqual([])
   })
 
   it('lo del QR manda sobre lo que leyó la IA, y deja de estar en duda', () => {
@@ -109,7 +124,8 @@ describe('fusionarConLectura', () => {
   it('página sin QR: la IA aporta todo, incluido si es compra o venta', () => {
     const b = fusionarConLectura(interpretarPagina(null, ctx()), lectura({ tipo: 'venta' }, { montoFacturado: 2068, montoBienes: null, montoServicios: null }), ctx())
     expect(b).toMatchObject({ estado: 'sin_qr', tipo: 'venta', leidaConIA: true })
-    expect(observaciones(b, CLIENTE.rncCedula)).toEqual([])
+    // e-CF cuyo QR no se leyó: lo verifica una persona (decisión del usuario).
+    expect(observaciones(b, CLIENTE.rncCedula)).toEqual(['ncf'])
   })
 
   it('página sin QR que no es factura: se marca y no trae datos', () => {
@@ -126,6 +142,76 @@ describe('fusionarConLectura', () => {
   it('una página leída con IA se guarda con origen ocr y sus observaciones', () => {
     const b = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ camposDudosos: ['tipoBienesServicios'] }), ctx())
     const doc = documentoDesdePagina('d9', b, CLIENTE, { nombre: 'julio.pdf', pagina: 9 }, '2026-08-01T10:00:00.000Z')
-    expect(doc).toMatchObject({ origen: 'ocr', confianzaOCR: 0.9, estadoRevision: 'pendiente_revision', camposIncompletos: ['tipoBienesServicios'] })
+    expect(doc).toMatchObject({ origen: 'ocr', confianzaOCR: 0.9, estadoRevision: 'pendiente_revision', camposIncompletos: ['ncf', 'tipoBienesServicios'] })
+  })
+})
+
+describe('verificación en la DGII', () => {
+  const lectura = (campos: Partial<ResultadoOCR['extraccion']> = {}, dudosos: ResultadoOCR['camposDudosos'] = []): ResultadoOCR => ({
+    esComprobante: true, tipo: 'compra', coincideCliente: true, confianzaOCR: 0.9, camposDudosos: dudosos,
+    extraccion: {
+      ...CAMPOS_VACIOS, rncCedulaContraparte: '101123451', nombreContraparte: null, ncf: 'E310000007629',
+      fechaComprobante: '2026-07-01', montoServicios: 0, montoBienes: 2068, itbisFacturado: 300, montoTotal: 2440.24,
+      tipoBienesServicios: '09', ...campos,
+    },
+  })
+  const respuesta = (estado: 'aceptado' | 'rechazado' | 'no_encontrado', itbis: number | null = 372.24) => ({
+    estado, texto: estado,
+    datos: estado === 'no_encontrado' ? null : {
+      rncEmisor: '101123451', razonSocialEmisor: 'FERRETERIA EL SOL SRL', rncComprador: '401007551', razonSocialComprador: 'CLIENTE SRL',
+      encf: 'E310000007629', totalItbis: itbis, montoTotal: 2440.24,
+    },
+  })
+  const AHORA = '2026-11-18T12:00:00.000Z'
+
+  it('la página con QR de un e-CF guarda su dirección de consulta', () => {
+    expect(interpretarPagina(qr(), ctx()).qrUrl).toMatch(/^https:\/\/ecf\.dgii\.gov\.do\//)
+  })
+
+  it('aceptada: el ITBIS de la DGII deja de estar en duda y la razón social llena el nombre', () => {
+    const leida = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ itbisFacturado: 372.24 }, ['itbisFacturado']), ctx())
+    expect(observaciones(leida, CLIENTE.rncCedula)).toEqual(['ncf', 'itbisFacturado'])
+    const b = aplicarVerificacion(leida, respuesta('aceptado'), AHORA)
+    expect(observaciones(b, CLIENTE.rncCedula)).toEqual([])
+    const doc = documentoDesdePagina('d1', b, CLIENTE, { nombre: 'lote.pdf', pagina: 1 }, AHORA)
+    expect(doc).toMatchObject({
+      itbisFacturado: 372.24, nombreContraparte: 'FERRETERIA EL SOL SRL',
+      verificacionDGII: { estado: 'aceptado', consultadoEn: AHORA },
+    })
+    expect(doc.qrUrl).toMatch(/ConsultaTimbre/)
+  })
+
+  it('el ITBIS de la DGII reemplaza el de la IA; si la IA no cuadraba, el reparto de montos sigue en duda', () => {
+    const leida = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura(), ctx())
+    const b = aplicarVerificacion(leida, respuesta('aceptado'), AHORA)
+    expect(conDatosDGII(b).campos.itbisFacturado).toBe(372.24)
+    expect(conDatosDGII(b).dudosos).toEqual(['montoServicios', 'montoBienes'])
+  })
+
+  it('si con el ITBIS de la DGII los montos no suman el total, los montos de la IA quedan en duda', () => {
+    const leida = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ montoBienes: 1000 }), ctx())
+    const b = aplicarVerificacion(leida, respuesta('aceptado'), AHORA)
+    expect(conDatosDGII(b).dudosos).toEqual(['montoServicios', 'montoBienes'])
+  })
+
+  it('rechazada o no encontrada: queda en observación por el NCF y no se aprueba en bloque', () => {
+    const leida = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ itbisFacturado: 372.24 }), ctx())
+    expect(observaciones(leida, CLIENTE.rncCedula)).toEqual(['ncf'])
+    for (const estado of ['rechazado', 'no_encontrado'] as const) {
+      const b = aplicarVerificacion(leida, respuesta(estado), AHORA)
+      expect(observaciones(b, CLIENTE.rncCedula), estado).toEqual(['ncf'])
+      expect(documentoDesdePagina('d', b, CLIENTE, { nombre: 'l.pdf', pagina: 1 }, AHORA).camposIncompletos, estado).toEqual(['ncf'])
+    }
+  })
+
+  it('serie B sin QR: no hay nada que verificar y no queda observación por eso (decisión del usuario)', () => {
+    const b = fusionarConLectura(interpretarPagina(null, ctx()), lectura({ ncf: 'B0100000123', itbisFacturado: 372.24 }), ctx())
+    expect(observaciones(b, CLIENTE.rncCedula)).toEqual([])
+  })
+
+  it('en proceso en la DGII: lo verifica una persona', () => {
+    const leida = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ itbisFacturado: 372.24 }), ctx())
+    const b = aplicarVerificacion(leida, { estado: 'en_proceso', texto: 'En Proceso', datos: null }, AHORA)
+    expect(observaciones(b, CLIENTE.rncCedula)).toEqual(['ncf'])
   })
 })

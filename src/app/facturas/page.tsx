@@ -3,7 +3,7 @@
 import { Suspense, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { CheckCheck, Files, Pencil, Plus, ReceiptText, Trash2, Users } from 'lucide-react'
+import { CheckCheck, Files, Pencil, Plus, ReceiptText, ShieldCheck, Trash2, Users } from 'lucide-react'
 import { FacturaModal } from '@/components/facturas/FacturaModal'
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
 import { Badge } from '@/components/ui/Badge'
@@ -14,6 +14,8 @@ import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS, TH_CLASS } from '@
 import { useDatos } from '@/lib/datos/datos-context'
 import { montoFacturadoDe, periodoDe, puedeMarcarseRevisada } from '@/lib/documentos'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD, redondear2 } from '@/lib/utils'
+import { VerificacionError, verificarEnDGII } from '@/lib/verificacion-cliente'
+import { ETIQUETA_ESTADO_DGII, problemaVerificacion, requiereVerificacionHumana } from '@/lib/verificacion-dgii'
 import type { DocumentoFiscal, EstadoRevision, TipoDocumento } from '@/types'
 
 type Aviso = { mensaje: string; tipo: 'success' | 'error' }
@@ -35,6 +37,7 @@ function FacturasContenido() {
   const [porEliminar, setPorEliminar] = useState<DocumentoFiscal | null>(null)
   const [aviso, setAviso] = useState<Aviso | null>(null)
   const [confirmarAprobar, setConfirmarAprobar] = useState(false)
+  const [progresoDGII, setProgresoDGII] = useState<{ hechas: number; total: number } | null>(null)
 
   const nombreCliente = useMemo(() => new Map(clientes.map(c => [c.id, c.razonSocial])), [clientes])
   // Un id de cliente en la URL que ya no existe equivale a "todos".
@@ -70,10 +73,58 @@ function FacturasContenido() {
     () => filtrados.filter(d =>
       d.estadoRevision === 'pendiente_revision' &&
       d.camposIncompletos.length === 0 &&
+      !requiereVerificacionHumana(d) &&
       puedeMarcarseRevisada(d.tipo, d, rncDe.get(d.clienteId) ?? ''),
     ),
     [filtrados, rncDe],
   )
+
+  // Facturas de la lista con código QR de e-CF: se pueden (re)verificar en la
+  // DGII. El estado puede cambiar (por ejemplo, de "en proceso" a aceptado).
+  const verificables = useMemo(() => filtrados.filter(d => d.qrUrl), [filtrados])
+
+  async function verificarEnLaDGII() {
+    const cola = [...verificables]
+    const actualizadas: DocumentoFiscal[] = []
+    let fallidas = 0
+    let detener: string | null = null
+    setProgresoDGII({ hechas: 0, total: cola.length })
+    async function trabajador() {
+      while (cola.length > 0 && !detener) {
+        const d = cola.shift()!
+        try {
+          const r = await verificarEnDGII(d.qrUrl!)
+          const ahora = new Date().toISOString()
+          const verificacionDGII = { estado: r.estado, texto: r.texto, consultadoEn: ahora }
+          // Aceptada: el NCF (que viene del QR) ya no necesita que una persona lo verifique.
+          const camposIncompletos = !requiereVerificacionHumana({ ncf: d.ncf, verificacionDGII }) && problemaVerificacion({ ...d, verificacionDGII }) === null
+            ? d.camposIncompletos.filter(c => c !== 'ncf')
+            : d.camposIncompletos
+          actualizadas.push({ ...d, verificacionDGII, camposIncompletos, actualizadoEn: ahora })
+        } catch (e) {
+          if (e instanceof VerificacionError && e.detenerTodo) detener = e.message
+          else fallidas++
+        }
+        setProgresoDGII(p => (p ? { ...p, hechas: p.hechas + 1 } : p))
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(3, cola.length) }, trabajador))
+    setProgresoDGII(null)
+    try {
+      if (actualizadas.length > 0) await guardarDocumentos(actualizadas)
+    } catch (err) {
+      setAviso({ mensaje: err instanceof Error ? err.message : 'No se pudo guardar la verificación.', tipo: 'error' })
+      return
+    }
+    const malas = actualizadas.filter(d => d.verificacionDGII && ['rechazado', 'no_encontrado'].includes(d.verificacionDGII.estado)).length
+    if (detener) setAviso({ mensaje: `No se pudo verificar: ${detener}`, tipo: 'error' })
+    else setAviso({
+      mensaje: `${actualizadas.length} verificada(s) en la DGII` +
+        (malas > 0 ? ` · ${malas} rechazada(s) o inexistente(s)` : '') +
+        (fallidas > 0 ? ` · ${fallidas} sin respuesta` : ''),
+      tipo: malas > 0 || fallidas > 0 ? 'error' : 'success',
+    })
+  }
 
   async function aprobarSinObservaciones() {
     setConfirmarAprobar(false)
@@ -176,6 +227,20 @@ function FacturasContenido() {
             </div>
           </div>
 
+          {verificables.length > 0 && (
+            <div className={cn(CARD_CLASS, 'flex flex-wrap items-center gap-3 px-5 py-3')}>
+              <p className="min-w-[240px] flex-1 text-sm text-zinc-700 dark:text-zinc-300">
+                {progresoDGII
+                  ? <>Verificando en la DGII: {progresoDGII.hechas} de {progresoDGII.total}…</>
+                  : <><strong>{verificables.length}</strong> factura(s) electrónica(s) de esta lista tienen código QR y se pueden consultar en la DGII.</>}
+              </p>
+              <button onClick={() => void verificarEnLaDGII()} disabled={!!progresoDGII} className={BTN_SECONDARY}>
+                <ShieldCheck className="h-4 w-4" />
+                Verificar en la DGII
+              </button>
+            </div>
+          )}
+
           {aprobables.length > 0 && (
             <div className={cn(CARD_CLASS, 'flex flex-wrap items-center gap-3 px-5 py-3')}>
               <p className="min-w-[240px] flex-1 text-sm text-zinc-700 dark:text-zinc-300">
@@ -242,6 +307,19 @@ function FacturasContenido() {
                           {d.estadoRevision === 'revisado'
                             ? <Badge variant="success">Revisada</Badge>
                             : <Badge variant="warning">Por revisar</Badge>}
+                          {d.verificacionDGII && ['rechazado', 'no_encontrado'].includes(d.verificacionDGII.estado) && (
+                            <span className="ml-1.5"><Badge variant="danger">{ETIQUETA_ESTADO_DGII[d.verificacionDGII.estado]}</Badge></span>
+                          )}
+                          {d.estadoRevision !== 'revisado' && requiereVerificacionHumana(d) && (
+                            <span className="ml-1.5" title="No se pudo verificar en la DGII: verifícala a mano antes de aprobarla.">
+                              <Badge variant="warning">Verificar en la DGII</Badge>
+                            </span>
+                          )}
+                          {d.verificacionDGII && ['aceptado', 'aceptado_condicional'].includes(d.verificacionDGII.estado) && (
+                            <span title={`${ETIQUETA_ESTADO_DGII[d.verificacionDGII.estado]} · ${new Date(d.verificacionDGII.consultadoEn).toLocaleString('es-DO')}`}>
+                              <ShieldCheck aria-label={ETIQUETA_ESTADO_DGII[d.verificacionDGII.estado]} className="ml-1.5 inline h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-3.5 text-right whitespace-nowrap">
                           <button

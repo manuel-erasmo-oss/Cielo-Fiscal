@@ -7,6 +7,8 @@ import {
   fechaLimiteIT1,
   fechaLimiteMesSiguiente,
   proyectarISR,
+  recargoMora,
+  tasaISRPersonaJuridica,
 } from './dgii-fiscal'
 
 describe('fechas límite', () => {
@@ -56,6 +58,30 @@ describe('ISR', () => {
     expect(calcularISRAnualPersonaFisica(624_329)).toBeCloseTo(31_216.35, 2)
     expect(calcularISRAnualPersonaFisica(867_123)).toBeCloseTo(79_774.8, 2)
     expect(proyectarISR('fisica', 1_000_000)).toBe(112_995.25)
+  })
+
+  it('persona física desde 2027 (Ley 30-26): cinco tramos con los montos fijos de la ley', () => {
+    expect(calcularISRAnualPersonaFisica(480_000, 2027)).toBe(0)
+    expect(calcularISRAnualPersonaFisica(685_000, 2027)).toBeCloseTo(30_750, 2)
+    expect(calcularISRAnualPersonaFisica(910_000, 2027)).toBeCloseTo(75_750, 2)
+    expect(calcularISRAnualPersonaFisica(4_800_000, 2027)).toBeCloseTo(1_048_250, 2)
+    expect(calcularISRAnualPersonaFisica(5_800_000, 2027)).toBeCloseTo(1_048_250 + 270_000, 2)
+    // Hasta 2026 sigue la escala anterior.
+    expect(calcularISRAnualPersonaFisica(416_220, 2026)).toBe(0)
+  })
+
+  it('persona jurídica: 30% transitorio solo 2026-2028 con ingresos desde RD$1,000 millones', () => {
+    expect(tasaISRPersonaJuridica(2026, 1_000_000_000)).toBe(0.30)
+    expect(tasaISRPersonaJuridica(2028, 2_000_000_000)).toBe(0.30)
+    expect(tasaISRPersonaJuridica(2029, 2_000_000_000)).toBe(0.27)
+    expect(tasaISRPersonaJuridica(2026, 999_999_999)).toBe(0.27)
+  })
+
+  it('recargo por mora (Ley 30-26): 3% por mes o fracción, tope 100%', () => {
+    expect(recargoMora(10_000, 1)).toBe(300)
+    expect(recargoMora(10_000, 2.1)).toBe(900)
+    expect(recargoMora(10_000, 40)).toBe(10_000)
+    expect(recargoMora(10_000, 0)).toBe(0)
   })
 
   it('persona jurídica: 27% y nunca negativo', () => {
