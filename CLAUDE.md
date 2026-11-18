@@ -895,6 +895,10 @@ que envía "lo otro" en otro lote):
   hace falta el código de acceso, que solo tiene el usuario. Prueba: en
   Configuración escribir el código, subir una factura electrónica con QR en
   "Nueva factura" y ver si dice "Aceptada en la DGII".
+- **Comprobado en producción el 2026-11-18, tras fusionar el PR #6**: `/`
+  muestra "Tus empresas"; `/empresa/<id>`, sus Facturas, Subir lote y
+  Reportes, y `/configuracion` responden 200; `/facturas` y `/clientes`
+  redirigen (307) a `/`.
 - Para activar la IA: en Vercel, Settings → Environment Variables, agregar
   `ANTHROPIC_API_KEY` (key propia del producto, nunca personal) y
   `OCR_CODIGO_ACCESO` (frase larga elegida por el usuario), ambas en
