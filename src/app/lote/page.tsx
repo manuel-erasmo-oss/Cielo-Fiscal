@@ -24,6 +24,7 @@ import {
 import { LoteError, MAXIMO_PAGINAS_LOTE, leerPaginas, type PaginaLeida } from '@/lib/lote/leer-paginas'
 import { OCRError, extraerFactura } from '@/lib/ocr-cliente'
 import { VerificacionError, verificarEnDGII } from '@/lib/verificacion-cliente'
+import { esECF } from '@/lib/dgii-formatos'
 import { ETIQUETA_ESTADO_DGII } from '@/lib/verificacion-dgii'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD } from '@/lib/utils'
 import type { CampoExtraido, DocumentoFiscal, TipoDocumento } from '@/types'
@@ -610,7 +611,10 @@ function LoteContenido() {
                       <ShieldCheck className="h-3 w-3" /> {ETIQUETA_ESTADO_DGII[p.borrador.dgii.verificacion.estado]}
                     </p>
                   )}
-                  {p.errorDGII && <p className="text-[11px] text-amber-700 dark:text-amber-400">No se pudo verificar en la DGII: {p.errorDGII}</p>}
+                  {p.errorDGII && <p className="text-[11px] text-amber-700 dark:text-amber-400">No se pudo verificar en la DGII: {p.errorDGII}. Verifícala a mano.</p>}
+                  {p.incluir && !p.borrador.qrUrl && esECF(c.ncf) && (
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400">No se pudo leer el código QR: verifícala a mano en la DGII.</p>
+                  )}
                   {fase === 'resultado' && esIncluible(p) && (
                     <label className="mt-auto flex cursor-pointer items-center gap-2 pt-1 text-xs font-medium text-zinc-700 dark:text-zinc-300">
                       <input type="checkbox" checked={p.incluir} onChange={() => alternar(p.numero)} className="h-4 w-4 rounded accent-[#1B2980]" />

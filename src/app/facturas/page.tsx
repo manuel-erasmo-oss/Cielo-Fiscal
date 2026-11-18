@@ -15,7 +15,7 @@ import { useDatos } from '@/lib/datos/datos-context'
 import { montoFacturadoDe, periodoDe, puedeMarcarseRevisada } from '@/lib/documentos'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD, redondear2 } from '@/lib/utils'
 import { VerificacionError, verificarEnDGII } from '@/lib/verificacion-cliente'
-import { ETIQUETA_ESTADO_DGII } from '@/lib/verificacion-dgii'
+import { ETIQUETA_ESTADO_DGII, problemaVerificacion, requiereVerificacionHumana } from '@/lib/verificacion-dgii'
 import type { DocumentoFiscal, EstadoRevision, TipoDocumento } from '@/types'
 
 type Aviso = { mensaje: string; tipo: 'success' | 'error' }
@@ -73,6 +73,7 @@ function FacturasContenido() {
     () => filtrados.filter(d =>
       d.estadoRevision === 'pendiente_revision' &&
       d.camposIncompletos.length === 0 &&
+      !requiereVerificacionHumana(d) &&
       puedeMarcarseRevisada(d.tipo, d, rncDe.get(d.clienteId) ?? ''),
     ),
     [filtrados, rncDe],
@@ -94,7 +95,12 @@ function FacturasContenido() {
         try {
           const r = await verificarEnDGII(d.qrUrl!)
           const ahora = new Date().toISOString()
-          actualizadas.push({ ...d, verificacionDGII: { estado: r.estado, texto: r.texto, consultadoEn: ahora }, actualizadoEn: ahora })
+          const verificacionDGII = { estado: r.estado, texto: r.texto, consultadoEn: ahora }
+          // Aceptada: el NCF (que viene del QR) ya no necesita que una persona lo verifique.
+          const camposIncompletos = !requiereVerificacionHumana({ ncf: d.ncf, verificacionDGII }) && problemaVerificacion({ ...d, verificacionDGII }) === null
+            ? d.camposIncompletos.filter(c => c !== 'ncf')
+            : d.camposIncompletos
+          actualizadas.push({ ...d, verificacionDGII, camposIncompletos, actualizadoEn: ahora })
         } catch (e) {
           if (e instanceof VerificacionError && e.detenerTodo) detener = e.message
           else fallidas++
@@ -303,6 +309,11 @@ function FacturasContenido() {
                             : <Badge variant="warning">Por revisar</Badge>}
                           {d.verificacionDGII && ['rechazado', 'no_encontrado'].includes(d.verificacionDGII.estado) && (
                             <span className="ml-1.5"><Badge variant="danger">{ETIQUETA_ESTADO_DGII[d.verificacionDGII.estado]}</Badge></span>
+                          )}
+                          {d.estadoRevision !== 'revisado' && requiereVerificacionHumana(d) && (
+                            <span className="ml-1.5" title="No se pudo verificar en la DGII: verifícala a mano antes de aprobarla.">
+                              <Badge variant="warning">Verificar en la DGII</Badge>
+                            </span>
                           )}
                           {d.verificacionDGII && ['aceptado', 'aceptado_condicional'].includes(d.verificacionDGII.estado) && (
                             <span title={`${ETIQUETA_ESTADO_DGII[d.verificacionDGII.estado]} · ${new Date(d.verificacionDGII.consultadoEn).toLocaleString('es-DO')}`}>

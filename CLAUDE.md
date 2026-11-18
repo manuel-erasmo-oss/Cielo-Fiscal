@@ -307,9 +307,20 @@ Consecuencias de diseño (implementadas):
   Facturas con "Verificar en la DGII" (vuelve a consultar todas las de la
   lista que tienen QR).
 - Reglas: rechazada o "no encontrada" = error (no se aprueba en bloque, no
-  se marca revisada, el 606 no se descarga). En proceso o estado desconocido
-  = aviso. Sin verificar (serie B, e-CF sin QR legible) = aviso. NCF de la
-  factura distinto del e-NCF del QR = error. **Lo de la DGII manda** como lo
+  se marca revisada, el 606 no se descarga). NCF de la factura distinto del
+  e-NCF del QR = error.
+- **Factura electrónica sin verificar** (QR borroso o ilegible, consulta
+  fallida) **o en proceso / estado desconocido = verificación humana**
+  (decisión del usuario, 2026-11-18: "si una factura electrónica tiene el QR
+  borroso que pase lo mismo, si la info está borrosa se pone la alerta para
+  que esa en particular sea verificada humanamente"). Se trata como un dato
+  borroso: el NCF queda en observación (`requiereVerificacionHumana`), en
+  ámbar en el formulario, con la marca "Verificar en la DGII" en Facturas, y
+  no entra en la aprobación en bloque. No es un error: una persona la
+  verifica en la DGII y la marca revisada. Si después se verifica y sale
+  aceptada, la observación del NCF se quita sola.
+- **Serie B: no tiene QR** (lo señaló el usuario), así que no hay nada que
+  verificar desde el sistema y pasa sin esa alerta. **Lo de la DGII manda** como lo
   del QR: su ITBIS reemplaza el de la IA y su razón social llena el nombre.
   En una factura suelta también mandan los datos del QR (RNC, e-NCF, fecha,
   total), igual que en los lotes.
@@ -320,8 +331,7 @@ Consecuencias de diseño (implementadas):
   tabla con "Estado: Aceptado" (3 facturas reales, y otras 4 en el
   recorrido de navegador); sin código de seguridad, sin fecha de firma o con
   el monto alterado responde "No fue encontrada".
-- **Límites**: la consulta de NCF serie B (`dgii.gov.do`) responde 403 desde
-  el entorno de desarrollo: no construida. Tampoco se ha comprobado que la
+- **Límites**: no se ha comprobado que la
   DGII responda a los servidores de Vercel (en producción hace falta además
   `OCR_CODIGO_ACCESO` configurado; la API key de Anthropic no). Los estados
   distintos de "Aceptado" salen de la NG 01-2020, no se han visto en una
@@ -646,10 +656,9 @@ Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
 1. **¿Que la IA lea la fecha de vencimiento de la secuencia** impresa en
    los comprobantes B (NG 06-2018, art. 7) y avise si la factura es
    posterior? Requiere un campo nuevo. Sin decidir.
-1b. **Verificar los comprobantes serie B y los e-CF sin QR**: la consulta
-   de NCF de la DGII responde 403 desde el entorno de desarrollo. Opciones:
-   probarla desde Vercel, o que la persona los verifique a mano (hoy quedan
-   con un aviso). Confirmar también que la DGII responde a Vercel.
+1b. **Confirmar que la DGII responde a los servidores de Vercel** (solo se
+   probó desde el entorno de desarrollo). Resuelto el resto: la serie B no
+   tiene QR y pasa; un e-CF sin QR legible lo verifica una persona.
 2. **Excel exportable aunque el reporte esté incompleto** (decisión
    propia; el archivo lo advierte en el nombre y en el Resumen).
 3. **Segunda remisión por retenciones en el 606** (NCF que se vuelve a
@@ -936,8 +945,8 @@ roadmap (el 4 se completó el 2026-11-17).
   salga picomatch 4.0.8 o superior.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
   `/api/ocr` dinámica).
-- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (177
-  de 177 desde el 2026-11-18, con las reglas de comprobantes, la Ley 30-26
+- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (180
+  de 180 desde el 2026-11-18, con las reglas de comprobantes, la Ley 30-26
   y la verificación en la DGII) — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
@@ -994,7 +1003,12 @@ roadmap (el 4 se completó el 2026-11-17).
   DGII llenan la factura (en una la DGII no tenía ITBIS y se conservó el de
   la IA); "Verificar en la DGII" en Facturas vuelve a consultar las 5 de
   verdad; una factura suelta (foto con QR) se verifica sola y su NCF queda
-  el del QR. La ruta contra el servidor real: 200 con estado para QR reales
+  el del QR. Después, con la regla de verificación humana: **26 de 26** —
+  además, las e-CF sin QR legible dicen "verifícala a mano" y no quedan
+  listas; la serie B sin QR sale "Lista"; "Aprobar las N sin observaciones"
+  cuenta solo las serie B; en Facturas las e-CF sin QR llevan "Verificar en
+  la DGII" y no entran en "Aprobar las N"; una factura suelta electrónica sin
+  QR deja el NCF en ámbar con el aviso. La ruta contra el servidor real: 200 con estado para QR reales
   y "no_encontrado" para uno inventado; 400 para otra dirección o sin JSON;
   401 sin código o con código incorrecto. Regresión: 16/16, 9/9 y 15/15.
   El recorrido de 58 páginas (`e2e7.js`) no se volvió a correr: espera el

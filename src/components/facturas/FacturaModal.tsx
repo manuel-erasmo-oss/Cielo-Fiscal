@@ -13,6 +13,7 @@ import {
   COBROS_607,
   TIPO_RETENCION_ISR_606,
   clasificacionContable,
+  esECF,
   type OpcionCatalogo,
   type Problema,
 } from '@/lib/dgii-formatos'
@@ -32,7 +33,7 @@ import { interpretarPagina } from '@/lib/lote/borrador'
 import { leerPaginas } from '@/lib/lote/leer-paginas'
 import { OCRError, esArchivoSoportado, extraerFactura } from '@/lib/ocr-cliente'
 import { verificarEnDGII } from '@/lib/verificacion-cliente'
-import { ETIQUETA_ESTADO_DGII, esUrlConsultaDGII } from '@/lib/verificacion-dgii'
+import { ETIQUETA_ESTADO_DGII, esUrlConsultaDGII, requiereVerificacionHumana } from '@/lib/verificacion-dgii'
 import { MIME_PDF } from '@/lib/ocr-tipos'
 import { BTN_PRIMARY, cn, formatRD, parseFechaLocal, redondear2, soloDigitos } from '@/lib/utils'
 import {
@@ -285,6 +286,9 @@ export function FacturaModal({
           for (const c of ['rncCedulaContraparte', 'ncf', 'fechaComprobante', 'montoTotal'] as const) if (q[c] !== null) dudas.delete(c)
         }
       }
+      // e-CF cuyo QR no se pudo leer: como un dato borroso, el NCF queda
+      // marcado para que una persona verifique la factura en la DGII.
+      if (!url && esECF(extraccion.ncf)) dudas.add('ncf')
       setValores(aValores(extraccion))
       setDudosos(dudas)
       if (url) {
@@ -381,6 +385,7 @@ export function FacturaModal({
     const ahora = new Date().toISOString()
     const pendientes = new Set<CampoExtraido>(dudosos)
     for (const b of bloqueos) if (b.campo) pendientes.add(b.campo)
+    if (requiereVerificacionHumana({ ncf: finales.ncf, verificacionDGII: verificacion })) pendientes.add('ncf')
     setGuardando(true)
     setErrorGuardar(null)
     try {

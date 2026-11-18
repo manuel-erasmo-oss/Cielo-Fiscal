@@ -69,7 +69,8 @@ describe('documentoDesdePagina', () => {
       id: 'd1', clienteId: 'c1', tipo: 'compra', origen: 'qr', estadoRevision: 'pendiente_revision',
       archivoNombre: 'julio.pdf', archivoPagina: 9, archivoMimeType: 'image/jpeg', ncf: 'E310000007629', confianzaOCR: 1,
     })
-    expect(doc.camposIncompletos).toEqual(['itbisFacturado', 'tipoBienesServicios', 'montoServicios'])
+    // 'ncf': factura electrónica todavía sin verificar en la DGII.
+    expect(doc.camposIncompletos).toEqual(['ncf', 'itbisFacturado', 'tipoBienesServicios', 'montoServicios'])
     expect(doc.origen).toBe('qr')
   })
 
@@ -91,11 +92,13 @@ describe('fusionarConLectura', () => {
     ...cambios,
   })
 
-  it('página con QR + IA: completa montos y categoría; queda lista', () => {
+  it('página con QR + IA: completa montos y categoría; queda lista al verificarse en la DGII', () => {
     const b = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura(), ctx())
     expect(b).toMatchObject({ estado: 'qr', tipo: 'compra', leidaConIA: true, dudosos: [] })
     expect(b.campos).toMatchObject({ ncf: 'E310000007629', montoBienes: 2068, itbisFacturado: 372.24, tipoBienesServicios: '09', nombreContraparte: 'Ferretería El Sol SRL' })
-    expect(observaciones(b, CLIENTE.rncCedula)).toEqual([])
+    expect(observaciones(b, CLIENTE.rncCedula)).toEqual(['ncf'])
+    const aceptada = aplicarVerificacion(b, { estado: 'aceptado', texto: 'Aceptado', datos: null }, '2026-11-18T12:00:00.000Z')
+    expect(observaciones(aceptada, CLIENTE.rncCedula)).toEqual([])
   })
 
   it('lo del QR manda sobre lo que leyó la IA, y deja de estar en duda', () => {
@@ -121,7 +124,8 @@ describe('fusionarConLectura', () => {
   it('página sin QR: la IA aporta todo, incluido si es compra o venta', () => {
     const b = fusionarConLectura(interpretarPagina(null, ctx()), lectura({ tipo: 'venta' }, { montoFacturado: 2068, montoBienes: null, montoServicios: null }), ctx())
     expect(b).toMatchObject({ estado: 'sin_qr', tipo: 'venta', leidaConIA: true })
-    expect(observaciones(b, CLIENTE.rncCedula)).toEqual([])
+    // e-CF cuyo QR no se leyó: lo verifica una persona (decisión del usuario).
+    expect(observaciones(b, CLIENTE.rncCedula)).toEqual(['ncf'])
   })
 
   it('página sin QR que no es factura: se marca y no trae datos', () => {
@@ -138,7 +142,7 @@ describe('fusionarConLectura', () => {
   it('una página leída con IA se guarda con origen ocr y sus observaciones', () => {
     const b = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ camposDudosos: ['tipoBienesServicios'] }), ctx())
     const doc = documentoDesdePagina('d9', b, CLIENTE, { nombre: 'julio.pdf', pagina: 9 }, '2026-08-01T10:00:00.000Z')
-    expect(doc).toMatchObject({ origen: 'ocr', confianzaOCR: 0.9, estadoRevision: 'pendiente_revision', camposIncompletos: ['tipoBienesServicios'] })
+    expect(doc).toMatchObject({ origen: 'ocr', confianzaOCR: 0.9, estadoRevision: 'pendiente_revision', camposIncompletos: ['ncf', 'tipoBienesServicios'] })
   })
 })
 
@@ -166,7 +170,7 @@ describe('verificación en la DGII', () => {
 
   it('aceptada: el ITBIS de la DGII deja de estar en duda y la razón social llena el nombre', () => {
     const leida = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ itbisFacturado: 372.24 }, ['itbisFacturado']), ctx())
-    expect(observaciones(leida, CLIENTE.rncCedula)).toEqual(['itbisFacturado'])
+    expect(observaciones(leida, CLIENTE.rncCedula)).toEqual(['ncf', 'itbisFacturado'])
     const b = aplicarVerificacion(leida, respuesta('aceptado'), AHORA)
     expect(observaciones(b, CLIENTE.rncCedula)).toEqual([])
     const doc = documentoDesdePagina('d1', b, CLIENTE, { nombre: 'lote.pdf', pagina: 1 }, AHORA)
@@ -192,11 +196,22 @@ describe('verificación en la DGII', () => {
 
   it('rechazada o no encontrada: queda en observación por el NCF y no se aprueba en bloque', () => {
     const leida = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ itbisFacturado: 372.24 }), ctx())
-    expect(observaciones(leida, CLIENTE.rncCedula)).toEqual([])
+    expect(observaciones(leida, CLIENTE.rncCedula)).toEqual(['ncf'])
     for (const estado of ['rechazado', 'no_encontrado'] as const) {
       const b = aplicarVerificacion(leida, respuesta(estado), AHORA)
       expect(observaciones(b, CLIENTE.rncCedula), estado).toEqual(['ncf'])
       expect(documentoDesdePagina('d', b, CLIENTE, { nombre: 'l.pdf', pagina: 1 }, AHORA).camposIncompletos, estado).toEqual(['ncf'])
     }
+  })
+
+  it('serie B sin QR: no hay nada que verificar y no queda observación por eso (decisión del usuario)', () => {
+    const b = fusionarConLectura(interpretarPagina(null, ctx()), lectura({ ncf: 'B0100000123', itbisFacturado: 372.24 }), ctx())
+    expect(observaciones(b, CLIENTE.rncCedula)).toEqual([])
+  })
+
+  it('en proceso en la DGII: lo verifica una persona', () => {
+    const leida = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ itbisFacturado: 372.24 }), ctx())
+    const b = aplicarVerificacion(leida, { estado: 'en_proceso', texto: 'En Proceso', datos: null }, AHORA)
+    expect(observaciones(b, CLIENTE.rncCedula)).toEqual(['ncf'])
   })
 })

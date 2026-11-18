@@ -274,13 +274,15 @@ no vale).
   busca el QR en el archivo y se verifica sola; en Facturas, "Verificar en
   la DGII" vuelve a consultar las que tienen QR.
 - **Reglas**: rechazada o no encontrada = error (no se aprueba, no se puede
-  marcar revisada, el 606 no se descarga). En proceso o estado desconocido =
-  aviso. Sin verificar = aviso. Si el NCF de la factura no es el del QR
-  verificado = error. El ITBIS de la DGII manda sobre la IA y su razón
-  social llena el nombre si falta.
-- **Límites**: solo e-CF con QR legible. Los comprobantes serie B y los e-CF
-  sin QR no se pueden verificar todavía: la consulta de NCF de la DGII
-  (`dgii.gov.do/.../consultas/ncf.aspx`) responde 403 desde el entorno de
-  desarrollo. No se ha comprobado que la DGII responda a los servidores de
+  marcar revisada, el 606 no se descarga). Si el NCF de la factura no es el
+  del QR verificado = error. El ITBIS de la DGII manda sobre la IA y su
+  razón social llena el nombre si falta.
+- **Verificación humana** (decisión del usuario): una factura electrónica
+  cuyo QR no se pudo leer (o cuya consulta falló, o que la DGII tiene en
+  proceso) se trata como un dato borroso: queda en observación para que una
+  persona la verifique en la DGII y no se aprueba en bloque.
+- **Serie B**: no tiene código QR; no hay nada que verificar desde el
+  sistema y pasa sin alerta.
+- **Límites**: no se ha comprobado que la DGII responda a los servidores de
   Vercel. Los nombres de los estados distintos de "Aceptado" vienen de la
   NG 01-2020, no de respuestas vistas.

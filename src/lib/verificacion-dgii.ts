@@ -132,9 +132,17 @@ export function encfDeQr(url: string): string | null {
 }
 
 // Qué significa el estado para la factura. Rechazado y no encontrado son
-// errores: no se puede marcar como revisada ni entrar a un reporte. Sin
-// verificar es solo un aviso (las facturas serie B y las electrónicas sin QR
-// legible todavía no se pueden consultar desde el sistema).
+// errores: no se puede marcar como revisada ni entrar a un reporte.
+//
+// Factura electrónica que no se pudo verificar (QR borroso o ilegible, o la
+// consulta falló) o que la DGII tiene en proceso: decisión del usuario
+// (2026-11-18), igual que un dato borroso: queda con observación para que
+// una persona la verifique en la DGII, y por eso no se aprueba en bloque
+// (ver `requiereVerificacionHumana`). No es un error: una persona puede
+// marcarla revisada después de verificarla.
+//
+// Serie B: no trae código QR, así que no hay nada que verificar desde el
+// sistema; pasa sin alerta (el usuario pidió dejar pasar la serie B).
 export function problemaVerificacion(doc: { ncf: string | null; qrUrl?: string; verificacionDGII?: VerificacionDGII }): Problema | null {
   // La verificación es la del comprobante del QR: si el NCF de la factura es
   // otro (se corrigió a mano o la lectura se equivocó), no la cubre.
@@ -144,12 +152,10 @@ export function problemaVerificacion(doc: { ncf: string | null; qrUrl?: string; 
   }
   const v = doc.verificacionDGII
   if (!v) {
-    if (!doc.ncf) return null
+    if (!esECF(doc.ncf)) return null
     return {
       campo: 'ncf', nivel: 'aviso',
-      mensaje: esECF(doc.ncf)
-        ? 'Sin verificar en la DGII: se necesita el código QR legible de la factura. Verifícala en la consulta de la DGII.'
-        : 'Sin verificar en la DGII: el sistema todavía no consulta los comprobantes serie B. Verifícala en la consulta de la DGII.',
+      mensaje: 'Sin verificar en la DGII: no se pudo leer el código QR de esta factura electrónica. Verifícala a mano en la consulta de la DGII antes de aprobarla.',
     }
   }
   switch (v.estado) {
@@ -161,10 +167,19 @@ export function problemaVerificacion(doc: { ncf: string | null; qrUrl?: string; 
     case 'no_encontrado':
       return { campo: 'ncf', nivel: 'error', mensaje: 'La DGII no encuentra este comprobante con los datos de su código QR. Puede no haberse enviado a la DGII o estar alterado.' }
     case 'en_proceso':
-      return { campo: 'ncf', nivel: 'aviso', mensaje: 'La DGII todavía está validando este comprobante. Vuelve a verificarlo más tarde.' }
+      return { campo: 'ncf', nivel: 'aviso', mensaje: 'La DGII todavía está validando este comprobante. Vuelve a verificarlo más tarde o verifícalo a mano antes de aprobarlo.' }
     default:
       return { campo: 'ncf', nivel: 'aviso', mensaje: `La DGII respondió un estado que el sistema no conoce: "${v.texto}". Revísalo.` }
   }
+}
+
+// e-CF que una persona tiene que verificar en la DGII antes de aprobarlo: sin
+// verificación, en proceso o con un estado desconocido. Cuenta como
+// observación (campo NCF) y la factura no entra en la aprobación en bloque.
+export function requiereVerificacionHumana(doc: { ncf: string | null; verificacionDGII?: VerificacionDGII }): boolean {
+  if (!esECF(doc.ncf)) return false
+  const e = doc.verificacionDGII?.estado
+  return e === undefined || e === 'en_proceso' || e === 'otro'
 }
 
 export const ETIQUETA_ESTADO_DGII: Record<EstadoDGII, string> = {

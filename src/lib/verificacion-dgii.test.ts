@@ -7,6 +7,7 @@ import {
   interpretarRespuestaDGII,
   normalizarEstado,
   problemaVerificacion,
+  requiereVerificacionHumana,
 } from './verificacion-dgii'
 
 // Misma estructura que la página real de la DGII (medida el 2026-11-18), con
@@ -104,10 +105,20 @@ describe('problemaVerificacion', () => {
     expect(p?.mensaje).toMatch(/E310000007629/)
   })
 
-  it('sin verificar: aviso (e-CF sin QR o serie B); sin NCF: nada', () => {
+  it('sin verificar: aviso para e-CF (QR ilegible); serie B y sin NCF: nada', () => {
     expect(problemaVerificacion({ ncf: 'E310000000001' })).toMatchObject({ nivel: 'aviso', campo: 'ncf' })
-    expect(problemaVerificacion({ ncf: 'B0100000001' })?.mensaje).toMatch(/serie B/)
+    expect(problemaVerificacion({ ncf: 'E310000000001' })?.mensaje).toMatch(/a mano/)
+    expect(problemaVerificacion({ ncf: 'B0100000001' })).toBeNull()
     expect(problemaVerificacion({ ncf: null })).toBeNull()
+  })
+
+  it('requiere verificación humana: e-CF sin verificar, en proceso o desconocido; no la serie B', () => {
+    expect(requiereVerificacionHumana({ ncf: 'E310000000001' })).toBe(true)
+    expect(requiereVerificacionHumana({ ncf: 'E310000000001', verificacionDGII: v('En Proceso') })).toBe(true)
+    expect(requiereVerificacionHumana({ ncf: 'E310000000001', verificacionDGII: v('Anulado') })).toBe(true)
+    expect(requiereVerificacionHumana({ ncf: 'E310000000001', verificacionDGII: v('Aceptado') })).toBe(false)
+    expect(requiereVerificacionHumana({ ncf: 'E310000000001', verificacionDGII: v('Rechazado') })).toBe(false) // es error, no revisión
+    expect(requiereVerificacionHumana({ ncf: 'B0100000001' })).toBe(false)
   })
 
   it('una factura rechazada no puede marcarse revisada ni entrar a un reporte', () => {

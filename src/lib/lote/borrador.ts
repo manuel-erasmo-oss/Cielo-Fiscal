@@ -2,7 +2,7 @@ import { CAMPOS_EXTRAIDOS, CAMPOS_VACIOS, buscarDuplicado, normalizarNcf, proble
 import type { ResultadoOCR } from '@/lib/ocr-tipos'
 import { vaConRncDelCliente } from '@/lib/dgii-formatos'
 import { leerQrEcf, pertenenciaSegunQr } from '@/lib/qr-ecf'
-import { esUrlConsultaDGII, type RespuestaDGII } from '@/lib/verificacion-dgii'
+import { esUrlConsultaDGII, requiereVerificacionHumana, type RespuestaDGII } from '@/lib/verificacion-dgii'
 import { CONTADOR_LOCAL, type CampoExtraido, type ClienteFiscal, type DocumentoFiscal, type TipoDocumento, type VerificacionDGII } from '@/types'
 
 // Captura por lotes, lógica pura: qué factura sale de cada página a partir de
@@ -210,9 +210,13 @@ export function conDatosDGII(borrador: BorradorPagina): { campos: CamposDocument
 export function observaciones(borrador: BorradorPagina, rncCliente: string): CampoExtraido[] {
   const { campos, dudosos } = conDatosDGII(borrador)
   const pendientes = new Set<CampoExtraido>(dudosos)
-  for (const p of problemasDeRevision(borrador.tipo, { ...campos, qrUrl: borrador.qrUrl, verificacionDGII: borrador.dgii?.verificacion }, rncCliente)) {
+  const verificacionDGII = borrador.dgii?.verificacion
+  for (const p of problemasDeRevision(borrador.tipo, { ...campos, qrUrl: borrador.qrUrl, verificacionDGII }, rncCliente)) {
     if (p.nivel === 'error' && p.campo) pendientes.add(p.campo)
   }
+  // e-CF sin verificar en la DGII (QR ilegible o consulta fallida): como un
+  // dato borroso, lo tiene que verificar una persona.
+  if (requiereVerificacionHumana({ ncf: campos.ncf, verificacionDGII })) pendientes.add('ncf')
   return CAMPOS_EXTRAIDOS.filter(c => pendientes.has(c))
 }
 
