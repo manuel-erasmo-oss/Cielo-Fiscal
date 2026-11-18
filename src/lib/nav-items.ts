@@ -20,7 +20,7 @@ export const NAV_GLOBAL: NavItem[] = [
 // construyan — no se listan pantallas vacías.
 export function navEmpresa(empresaId: string): NavItem[] {
   return [
-    { href: rutaEmpresa(empresaId), icon: LayoutDashboard, label: 'Resumen', exacto: true },
+    { href: rutaEmpresa(empresaId), icon: LayoutDashboard, label: 'Tablero', exacto: true },
     { href: rutaEmpresa(empresaId, 'facturas'), icon: ReceiptText, label: 'Facturas' },
     { href: rutaEmpresa(empresaId, 'lote'), icon: Files, label: 'Subir lote' },
     { href: rutaEmpresa(empresaId, 'reportes'), icon: FileText, label: 'Reportes' },

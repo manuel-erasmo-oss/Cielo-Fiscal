@@ -1,20 +1,40 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, CalendarClock, CheckCircle2, CircleAlert, FileSpreadsheet, Files, PenLine, ReceiptText, ShieldAlert, ShieldX } from 'lucide-react'
+import {
+  ArrowDownRight, ArrowRight, ArrowUpRight, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert,
+  FileSpreadsheet, Files, Minus, PenLine, ReceiptText, ShieldAlert, ShieldX, Table2, Upload,
+} from 'lucide-react'
+import { BarraComposicion, BarraEstado, BarrasProveedores, COLOR_ESTADO, GraficoMensual, Leyenda, VARIABLES_GRAFICOS } from '@/components/dashboard/Graficos'
 import { Pagina } from '@/components/layout/Pagina'
 import { Monograma } from '@/components/ui/Monograma'
-import { fechaLimite606607 } from '@/lib/dgii-fiscal'
 import { rutaEmpresa, useEmpresaActiva } from '@/lib/datos/empresa-context'
-import { ETIQUETA_CAMPO, montoFacturadoDe } from '@/lib/documentos'
-import { cn, formatCedula, formatDate, formatPeriodo, formatRD, hoyLocalISO, parseFechaLocal } from '@/lib/utils'
+import {
+  composicionCompras, periodo606EnCurso, periodosDisponibles, principalesProveedores, proximosVencimientos,
+  resumenPeriodo, serieMensual, sumarMeses, variacion, type Periodo,
+} from '@/lib/dashboard'
+import { ETIQUETA_CAMPO, montoFacturadoDe, periodoDe } from '@/lib/documentos'
+import { cn, formatCedula, formatDate, formatPeriodo, formatRD, hoyLocalISO } from '@/lib/utils'
 import { requiereVerificacionHumana } from '@/lib/verificacion-dgii'
 import type { DocumentoFiscal } from '@/types'
 
-// Resumen de la empresa en la que se entró: solo sus números. Diseño premium
-// del 2026-11-18 con la paleta y la tipografía de la marca.
+// Tablero de la empresa (pedido por el usuario el 2026-11-18: "en vez del
+// resumen ... un dashboard profesional que se vea todo premium"). Todo sale
+// de las facturas de esta empresa; los cálculos están en src/lib/dashboard.ts.
+// Un solo filtro, el período, arriba de todo lo que afecta.
 
-const DIA_MS = 86_400_000
+const CARD = 'rounded-2xl border border-zinc-200/80 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-[#252840] dark:bg-[#141722] dark:shadow-none'
+const ETIQUETA = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400'
+
+// "Octubre de 2026": mayúscula solo al principio (la clase `capitalize`
+// daría "Octubre De 2026").
+const periodoLargo = (p: Periodo) => {
+  const t = formatPeriodo(Number(p.slice(0, 4)), Number(p.slice(5, 7)))
+  return t.charAt(0).toUpperCase() + t.slice(1)
+}
+// Dentro de una frase: "octubre de 2026".
+const periodoTexto = (p: Periodo) => formatPeriodo(Number(p.slice(0, 4)), Number(p.slice(5, 7)))
 
 // Por qué una factura pendiente necesita atención, de lo más grave a lo menos.
 function motivo(d: DocumentoFiscal): { texto: string; tono: 'rojo' | 'naranja' | 'ambar'; orden: number } {
@@ -33,176 +53,333 @@ const TONO_MOTIVO = {
   ambar: 'bg-amber-50 text-amber-800 ring-amber-600/15 dark:bg-amber-950/40 dark:text-amber-300',
 }
 
-export default function ResumenEmpresaPage() {
+export default function TableroEmpresaPage() {
   const { empresa, documentos } = useEmpresaActiva()
+  const hoyISO = hoyLocalISO()
+  const vencimientos = useMemo(() => proximosVencimientos(hoyISO), [hoyISO])
+  const enCurso = periodo606EnCurso(hoyISO)
+  const periodos = useMemo(() => periodosDisponibles(documentos, enCurso), [documentos, enCurso])
+  // Por defecto, el período del 606 en curso si ya tiene facturas; si no, el
+  // último que tenga.
+  const [elegido, setElegido] = useState<Periodo | null>(null)
+  const periodo = elegido ?? (documentos.some(d => periodoDe(d) === enCurso) ? enCurso : periodos.find(p => p !== enCurso) ?? enCurso)
+
+  const r = useMemo(() => resumenPeriodo(documentos, periodo), [documentos, periodo])
+  const ant = useMemo(() => resumenPeriodo(documentos, sumarMeses(periodo, -1)), [documentos, periodo])
+  const serie = useMemo(() => serieMensual(documentos, periodo, 6), [documentos, periodo])
+  const composicion = useMemo(() => composicionCompras(documentos, periodo), [documentos, periodo])
+  const proveedores = useMemo(() => principalesProveedores(documentos, periodo, 5), [documentos, periodo])
+  const [tabla, setTabla] = useState(false)
 
   const pendientes = documentos.filter(d => d.estadoRevision === 'pendiente_revision')
-  const porVerificar = pendientes.filter(d => requiereVerificacionHumana(d)).length
-  const revisadas = documentos.filter(d => d.estadoRevision === 'revisado').length
   const atencion = pendientes
     .map(d => ({ d, m: motivo(d) }))
     .sort((a, b) => a.m.orden - b.m.orden || b.d.creadoEn.localeCompare(a.d.creadoEn))
-    .slice(0, 6)
+    .slice(0, 5)
 
-  // Próximo vencimiento del 606: el del mes pasado vence el día 15 de este
-  // mes; si ese día ya pasó, el próximo es el de este mes (vence el 15 del
-  // mes que viene). Fechas siempre locales (lección 1 de CLAUDE.md).
-  const hoyISO = hoyLocalISO()
-  const hoy = parseFechaLocal(hoyISO)
-  const anterior = hoy.getMonth() === 0 ? { anio: hoy.getFullYear() - 1, mes: 12 } : { anio: hoy.getFullYear(), mes: hoy.getMonth() }
-  const actual = { anio: hoy.getFullYear(), mes: hoy.getMonth() + 1 }
-  const mesAnterior = hoyISO <= fechaLimite606607(anterior.anio, anterior.mes) ? anterior : actual
-  const vence606 = fechaLimite606607(mesAnterior.anio, mesAnterior.mes)
-  const faltan = Math.round((parseFechaLocal(vence606).getTime() - hoy.getTime()) / DIA_MS)
-  // Avance del ciclo (≈ un mes entre vencimientos) para la barra.
-  const avance = Math.min(100, Math.max(4, ((31 - Math.min(faltan, 31)) / 31) * 100))
+  const idx = periodos.indexOf(periodo)
+  const e = r.estado
+  const todoRevisado = e.total > 0 && e.revisadas === e.total
 
   return (
-    <Pagina title="Resumen" subtitle={empresa.nombreComercial ?? empresa.razonSocial}>
-      {/* ── Identidad + vencimiento ──────────────────────────────────── */}
-      <section className="animate-content-in grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-[#252840] dark:bg-[#141722] dark:shadow-none">
-          <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#1B2980] via-[#2f3fa8] to-[#00E676]" />
-          <div className="flex items-start gap-4">
-            <Monograma nombre={empresa.razonSocial} clave={empresa.id} tamano="lg" />
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400 dark:text-zinc-500">Ficha de la empresa</p>
-              <h2 className="mt-1 truncate text-xl font-semibold tracking-[-0.02em] text-zinc-900 dark:text-zinc-50">{empresa.razonSocial}</h2>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                <span className="rounded-md bg-zinc-100 px-2 py-1 font-medium tabular-nums text-zinc-700 dark:bg-[#1a1d2e] dark:text-zinc-300">
-                  {empresa.tipoPersona === 'juridica' ? 'RNC' : 'Cédula'} {formatCedula(empresa.rncCedula)}
-                </span>
-                <span className="rounded-md bg-[#eef0fb] px-2 py-1 font-medium text-[#1B2980] dark:bg-indigo-950/50 dark:text-indigo-300">
-                  {empresa.tipoPersona === 'juridica' ? 'Persona jurídica' : 'Persona física'}
-                </span>
-              </div>
-              {empresa.actividad && (
-                <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-                  <span className="text-zinc-400 dark:text-zinc-500">Actividad · </span>{empresa.actividad}
+    <Pagina title="Tablero" subtitle={empresa.nombreComercial ?? empresa.razonSocial}>
+      <div className={cn('space-y-5', VARIABLES_GRAFICOS)}>
+        {/* ── Encabezado de marca: empresa, accesos y vencimientos ───────── */}
+        <section className="animate-content-in relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#151f66] via-[#1B2980] to-[#2f3fa8] text-white shadow-[0_18px_40px_-18px_rgba(27,41,128,0.55)]">
+          <svg aria-hidden="true" viewBox="0 0 32 32" fill="none" className="pointer-events-none absolute -right-12 -top-16 h-72 w-72 opacity-[0.08]">
+            <circle cx="16" cy="16" r="9" strokeWidth="5.5" strokeDasharray="47.12 9.43" strokeLinecap="round" transform="rotate(30 16 16)" stroke="white" />
+            <circle cx="16" cy="16" r="2.8" fill="white" />
+          </svg>
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '22px 22px' }} />
+
+          <div className="relative flex flex-wrap items-start justify-between gap-4 px-5 pt-5 sm:gap-5 sm:px-8 sm:pt-6">
+            <div className="flex min-w-0 items-center gap-4">
+              <Monograma nombre={empresa.razonSocial} clave={empresa.id} tamano="lg" />
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-200/90">Tablero de la empresa</p>
+                <h2 className="mt-1 truncate text-xl font-semibold tracking-[-0.02em] sm:text-2xl">{empresa.razonSocial}</h2>
+                <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-indigo-100/80">
+                  <span className="tabular-nums">{empresa.tipoPersona === 'juridica' ? 'RNC' : 'Cédula'} {formatCedula(empresa.rncCedula)}</span>
+                  <span aria-hidden="true" className="text-indigo-300/50">·</span>
+                  <span>{empresa.tipoPersona === 'juridica' ? 'Persona jurídica' : 'Persona física'}</span>
+                  {empresa.actividad && <><span aria-hidden="true" className="hidden text-indigo-300/50 sm:inline">·</span><span className="hidden max-w-xs truncate sm:inline">{empresa.actividad}</span></>}
                 </p>
-              )}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link href={rutaEmpresa(empresa.id, 'lote')} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#1B2980] shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg">
+                <Upload className="h-4 w-4" /> Subir lote
+              </Link>
+              <Link href={rutaEmpresa(empresa.id, 'facturas')} className="hidden items-center gap-2 rounded-xl bg-white/10 sm:inline-flex px-4 py-2.5 text-sm font-semibold text-white ring-1 ring-inset ring-white/20 transition-colors hover:bg-white/15">
+                <PenLine className="h-4 w-4" /> Facturas
+              </Link>
+              <Link href={rutaEmpresa(empresa.id, 'reportes')} className="hidden items-center gap-2 rounded-xl bg-white/10 sm:inline-flex px-4 py-2.5 text-sm font-semibold text-white ring-1 ring-inset ring-white/20 transition-colors hover:bg-white/15">
+                <FileSpreadsheet className="h-4 w-4" /> Reportes
+              </Link>
             </div>
           </div>
-        </div>
 
-        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-[#252840] dark:bg-[#141722] dark:shadow-none">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400 dark:text-zinc-500">
-            <CalendarClock className="h-3.5 w-3.5" /> Próximo vencimiento
-          </div>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Formato 606 de <span className="font-medium text-zinc-900 dark:text-zinc-100">{formatPeriodo(mesAnterior.anio, mesAnterior.mes)}</span>
-          </p>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className={cn('text-4xl font-semibold tabular-nums tracking-[-0.03em]', faltan <= 3 ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-900 dark:text-zinc-50')}>
-              {faltan}
-            </span>
-            <span className="text-sm text-zinc-500 dark:text-zinc-400">{faltan === 1 ? 'día' : 'días'} · vence el {formatDate(vence606)}</span>
-          </div>
-          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-[#1a1d2e]">
-            <div className={cn('h-full rounded-full', faltan <= 3 ? 'bg-rose-500' : 'bg-gradient-to-r from-[#1B2980] to-[#2f3fa8] dark:from-indigo-500 dark:to-indigo-400')} style={{ width: `${avance}%` }} />
-          </div>
-          <Link href={rutaEmpresa(empresa.id, 'reportes')} className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#1B2980] hover:underline dark:text-indigo-300">
-            Preparar el 606 <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-      </section>
-
-      {/* ── Indicadores ──────────────────────────────────────────────── */}
-      <section className="animate-content-in grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi etiqueta="Facturas registradas" valor={documentos.length} icono={ReceiptText} acento="bg-[#1B2980]" tinte="bg-[#eef0fb] text-[#1B2980] dark:bg-indigo-950/50 dark:text-indigo-300" />
-        <Kpi etiqueta="Por revisar" valor={pendientes.length} icono={CircleAlert} acento="bg-amber-500" tinte="bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" nota="No entran a reportes hasta revisarlas" />
-        <Kpi etiqueta="Por verificar en la DGII" valor={porVerificar} icono={ShieldAlert} acento="bg-orange-500" tinte="bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300" nota="Electrónicas sin QR legible" />
-        <Kpi etiqueta="Revisadas" valor={revisadas} icono={CheckCircle2} acento="bg-emerald-500" tinte="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" />
-      </section>
-
-      {/* ── Accesos directos ─────────────────────────────────────────── */}
-      <section className="animate-content-in grid gap-3 md:grid-cols-3">
-        <Acceso href={rutaEmpresa(empresa.id, 'lote')} icono={Files} titulo="Subir lote de facturas" texto="Un PDF con muchas facturas o varias fotos: el sistema lee y llena todo." destacado />
-        <Acceso href={rutaEmpresa(empresa.id, 'facturas')} icono={PenLine} titulo="Revisar facturas" texto={pendientes.length > 0 ? `${pendientes.length} esperan tu revisión.` : 'Todas al día. Registra o corrige facturas.'} />
-        <Acceso href={rutaEmpresa(empresa.id, 'reportes')} icono={FileSpreadsheet} titulo="Generar reportes" texto="606 para la DGII y reporte de ingresos, en TXT y Excel." />
-      </section>
-
-      {/* ── Requieren atención ───────────────────────────────────────── */}
-      <section className="animate-content-in overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-[#252840] dark:bg-[#141722] dark:shadow-none">
-        <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-3.5 dark:border-[#1d2035]">
-          <h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">Requieren tu atención</h3>
-          {pendientes.length > 0 && (
-            <Link href={rutaEmpresa(empresa.id, 'facturas')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1B2980] hover:underline dark:text-indigo-300">
-              Ver todas ({pendientes.length}) <ArrowRight className="h-3 w-3" />
-            </Link>
-          )}
-        </div>
-        {atencion.length === 0 ? (
-          <div className="flex items-center gap-3 px-5 py-6 text-sm text-zinc-500 dark:text-zinc-400">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
-              <CheckCircle2 className="h-4 w-4" />
-            </span>
-            {documentos.length === 0 ? 'Todavía no hay facturas. Sube el primer lote para empezar.' : 'Nada pendiente: todas las facturas están revisadas.'}
-          </div>
-        ) : (
-          <ul className="divide-y divide-zinc-100 dark:divide-[#1d2035]">
-            {atencion.map(({ d, m }) => (
-              <li key={d.id}>
-                <Link href={rutaEmpresa(empresa.id, 'facturas')} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-[#f7f8fd] dark:hover:bg-[#171a2a] sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{d.nombreContraparte ?? 'Sin nombre'}</p>
-                    <p className="truncate text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-                      {d.ncf ?? 'Sin NCF'}{d.fechaComprobante ? ` · ${formatDate(d.fechaComprobante)}` : ''}{d.tipo === 'venta' ? ' · Venta' : ''}
-                    </p>
-                  </div>
-                  <span className="hidden text-right text-sm tabular-nums text-zinc-700 dark:text-zinc-300 sm:block">
-                    {d.montoTotal !== null ? formatRD(d.montoTotal) : montoFacturadoDe(d) !== null ? formatRD(montoFacturadoDe(d)!) : '—'}
-                  </span>
-                  <span className={cn('inline-flex items-center gap-1 justify-self-end rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset', TONO_MOTIVO[m.tono])}>
-                    {m.tono === 'rojo' && <ShieldX className="h-3 w-3" />}{m.texto}
-                  </span>
-                </Link>
+          {/* En móvil, tres columnas compactas; desde sm, la versión completa. */}
+          <ul aria-label="Próximos vencimientos" className="relative mt-5 grid grid-cols-3 border-t border-white/10 sm:mt-6">
+            {vencimientos.map((v, i) => (
+              <li key={v.clave} className={cn('min-w-0 px-3 py-3 sm:flex sm:items-center sm:gap-3 sm:px-8 sm:py-4', i > 0 && 'border-l border-white/10')}>
+                <span className={cn('hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:flex', v.faltan <= 3 ? 'bg-rose-400/20 text-rose-100' : 'bg-white/10 text-indigo-100')}>
+                  <CalendarClock className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 sm:flex-1">
+                  <p className="truncate text-xs text-indigo-100/75"><span className="sm:hidden">{v.clave}</span><span className="hidden sm:inline">{v.nombre}</span></p>
+                  <p className="hidden truncate text-sm font-medium sm:block">{periodoLargo(v.periodo)}</p>
+                  <p className="truncate text-[11px] text-indigo-200/70 sm:text-xs"><span className="hidden sm:inline">Vence el </span>{formatDate(v.fecha)}</p>
+                </div>
+                <div className="mt-1 flex items-baseline gap-1 sm:mt-0 sm:block sm:text-right">
+                  <p className={cn('text-lg font-semibold leading-none sm:text-xl', v.faltan <= 3 && 'text-rose-200')}>{v.faltan}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-indigo-200/70 sm:mt-0.5">{v.faltan === 1 ? 'día' : 'días'}</p>
+                </div>
               </li>
             ))}
           </ul>
+        </section>
+
+        {documentos.length === 0 ? (
+          <section className={cn(CARD, 'animate-content-in flex flex-col items-center px-6 py-14 text-center')}>
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#eef0fb] text-[#1B2980] dark:bg-indigo-950/50 dark:text-indigo-300">
+              <Files className="h-6 w-6" strokeWidth={1.75} />
+            </span>
+            <h3 className="mt-4 text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">El tablero se llena con las facturas</h3>
+            <p className="mt-1.5 max-w-md text-sm text-zinc-500 dark:text-zinc-400">
+              Sube el primer lote: un PDF con muchas facturas o varias fotos. El sistema las lee, las verifica en la DGII y aquí verás compras, ventas, ITBIS y lo que falta para el 606.
+            </p>
+            <Link href={rutaEmpresa(empresa.id, 'lote')} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#1B2980] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#2f3fa8] dark:bg-indigo-600 dark:hover:bg-indigo-500">
+              <Upload className="h-4 w-4" /> Subir el primer lote
+            </Link>
+          </section>
+        ) : (
+          <>
+            {/* ── Filtro del período (afecta todo lo de abajo) ───────────── */}
+            <section className="animate-content-in flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-1 rounded-xl border border-zinc-200 bg-white p-1 shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-[#252840] dark:bg-[#141722]">
+                <button
+                  type="button" aria-label="Período anterior" disabled={idx >= periodos.length - 1}
+                  onClick={() => setElegido(periodos[idx + 1])}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-[#1a1d2e]"
+                ><ChevronLeft className="h-4 w-4" /></button>
+                <label className="sr-only" htmlFor="periodo-tablero">Período</label>
+                <select
+                  id="periodo-tablero" value={periodo} onChange={ev => setElegido(ev.target.value)}
+                  className="h-8 cursor-pointer rounded-lg border-0 bg-transparent px-2 text-sm font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#1B2980]/30 dark:text-zinc-100 dark:[color-scheme:dark]"
+                >
+                  {periodos.map(p => <option key={p} value={p}>{periodoLargo(p)}{p === enCurso ? ' · en curso' : ''}</option>)}
+                </select>
+                <button
+                  type="button" aria-label="Período siguiente" disabled={idx <= 0}
+                  onClick={() => setElegido(periodos[idx - 1])}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-[#1a1d2e]"
+                ><ChevronRight className="h-4 w-4" /></button>
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Montos sin impuestos · las notas de crédito restan · comparado con {periodoTexto(sumarMeses(periodo, -1))}
+              </p>
+            </section>
+
+            {/* ── Indicadores del período ────────────────────────────────── */}
+            <section className="animate-content-in grid grid-cols-2 gap-3 xl:grid-cols-4">
+              <Indicador etiqueta="Compras" valor={formatRD(r.compras.monto, 0)} detalle={`${r.compras.cantidad} ${r.compras.cantidad === 1 ? 'factura' : 'facturas'}`} cambio={variacion(r.compras.monto, ant.compras.monto)} marca="var(--c-compras)" />
+              <Indicador etiqueta="Ventas" valor={formatRD(r.ventas.monto, 0)} detalle={`${r.ventas.cantidad} ${r.ventas.cantidad === 1 ? 'factura' : 'facturas'}`} cambio={variacion(r.ventas.monto, ant.ventas.monto)} subirEsBueno marca="var(--c-ventas)" />
+              <Indicador etiqueta="ITBIS en compras" valor={formatRD(r.compras.itbis, 0)} detalle={`En ventas: ${formatRD(r.ventas.itbis, 0)}`} cambio={variacion(r.compras.itbis, ant.compras.itbis)} />
+              <Indicador
+                etiqueta="Diferencia de ITBIS"
+                valor={formatRD(Math.abs(r.diferenciaItbis), 0)}
+                detalle={r.diferenciaItbis > 0 ? 'A pagar · orientativo' : r.diferenciaItbis < 0 ? 'A favor · orientativo' : 'Orientativo'}
+                nota="Ventas menos compras. No es la IT-1: no aplica proporcionalidad, retenciones ni saldos a favor."
+              />
+            </section>
+
+            {/* ── Evolución + estado del período ─────────────────────────── */}
+            <section className="animate-content-in grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+              <div className={cn(CARD, 'min-w-0 p-5 sm:p-6')}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-[15px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">Compras y ventas</h3>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Últimos 6 meses hasta {periodoTexto(periodo)} · toca un mes para verlo</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Leyenda items={[{ nombre: 'Compras', color: 'var(--c-compras)' }, { nombre: 'Ventas', color: 'var(--c-ventas)' }]} />
+                    <button type="button" onClick={() => setTabla(t => !t)} aria-pressed={tabla} className={cn('inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors', tabla ? 'bg-[#eef0fb] text-[#1B2980] dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-[#1a1d2e]')}>
+                      <Table2 className="h-3.5 w-3.5" /> Tabla
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  {tabla ? (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                          <th className="py-2 font-semibold">Mes</th><th className="py-2 text-right font-semibold">Compras</th><th className="py-2 text-right font-semibold">Ventas</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100 dark:divide-[#1d2035]">
+                        {serie.map(p => (
+                          <tr key={p.periodo} className={p.periodo === periodo ? 'font-semibold' : ''}>
+                            <td className="py-2 text-zinc-700 dark:text-zinc-300">{periodoLargo(p.periodo)}</td>
+                            <td className="py-2 text-right tabular-nums text-zinc-900 dark:text-zinc-100">{formatRD(p.compras)}</td>
+                            <td className="py-2 text-right tabular-nums text-zinc-900 dark:text-zinc-100">{formatRD(p.ventas)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <GraficoMensual serie={serie} seleccionado={periodo} onSeleccionar={p => setElegido(p)} />
+                  )}
+                </div>
+              </div>
+
+              <div className={cn(CARD, 'flex flex-col p-5 sm:p-6')}>
+                <p className={ETIQUETA}>Listo para el 606</p>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className="text-5xl font-semibold tracking-[-0.04em] text-zinc-900 dark:text-zinc-50">{e.listo ?? 0}%</span>
+                  <span className="text-sm text-zinc-500 dark:text-zinc-400">{e.revisadas} de {e.total} revisadas</span>
+                </div>
+                <div className="mt-4">
+                  <BarraEstado partes={[
+                    { nombre: 'Revisadas', valor: e.revisadas, color: COLOR_ESTADO.bien },
+                    { nombre: 'Por revisar', valor: e.porRevisar, color: COLOR_ESTADO.aviso },
+                    { nombre: 'Verificar en la DGII', valor: e.porVerificar, color: COLOR_ESTADO.serio },
+                    { nombre: 'Rechazadas o inexistentes', valor: e.rechazadas, color: COLOR_ESTADO.critico },
+                  ]} />
+                </div>
+                <ul className="mt-4 space-y-2.5 text-sm">
+                  <FilaEstado icono={CheckCircle2} color={COLOR_ESTADO.bien} nombre="Revisadas" valor={e.revisadas} />
+                  <FilaEstado icono={CircleAlert} color={COLOR_ESTADO.aviso} nombre="Por revisar" valor={e.porRevisar} />
+                  <FilaEstado icono={ShieldAlert} color={COLOR_ESTADO.serio} nombre="Verificar en la DGII" valor={e.porVerificar} />
+                  <FilaEstado icono={ShieldX} color={COLOR_ESTADO.critico} nombre="Rechazadas o inexistentes" valor={e.rechazadas} />
+                </ul>
+                <div className="mt-auto pt-5">
+                  <Link
+                    href={rutaEmpresa(empresa.id, todoRevisado ? 'reportes' : 'facturas')}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#1B2980] to-[#2f3fa8] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_-12px_rgba(27,41,128,0.7)] transition-all hover:-translate-y-0.5"
+                  >
+                    {todoRevisado ? 'Preparar el 606' : e.total === 0 ? 'Ver facturas' : 'Revisar las pendientes'} <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </div>
+              </div>
+            </section>
+
+            {/* ── Composición + proveedores ──────────────────────────────── */}
+            <section className="animate-content-in grid gap-4 lg:grid-cols-2">
+              <div className={cn(CARD, 'min-w-0 p-5 sm:p-6')}>
+                <h3 className="text-[15px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">En qué se fueron las compras</h3>
+                <p className="mb-4 text-xs text-zinc-500 dark:text-zinc-400">Costo, gasto o activo según la NIIF para PYMES · {periodoLargo(periodo)}</p>
+                {r.compras.cantidad === 0 ? <Vacio texto="No hay compras en este período." /> : <BarraComposicion partes={composicion} />}
+              </div>
+              <div className={cn(CARD, 'min-w-0 p-5 sm:p-6')}>
+                <h3 className="text-[15px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">Principales proveedores</h3>
+                <p className="mb-4 text-xs text-zinc-500 dark:text-zinc-400">Por monto comprado · {periodoLargo(periodo)}</p>
+                {proveedores.length === 0 ? <Vacio texto="No hay compras en este período." /> : <BarrasProveedores proveedores={proveedores} />}
+              </div>
+            </section>
+
+            {/* ── Requieren atención ─────────────────────────────────────── */}
+            <section className={cn(CARD, 'animate-content-in overflow-hidden')}>
+              <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-5 py-4 dark:border-[#1d2035] sm:px-6">
+                <div>
+                  <h3 className="text-[15px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">Requieren tu atención</h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">De todos los meses, lo más grave primero</p>
+                </div>
+                {pendientes.length > 0 && (
+                  <Link href={rutaEmpresa(empresa.id, 'facturas')} className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-[#1B2980] hover:underline dark:text-indigo-300">
+                    Ver todas ({pendientes.length}) <ArrowRight className="h-3 w-3" />
+                  </Link>
+                )}
+              </div>
+              {atencion.length === 0 ? (
+                <div className="flex items-center gap-3 px-6 py-6 text-sm text-zinc-500 dark:text-zinc-400">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+                    <CheckCircle2 className="h-4 w-4" />
+                  </span>
+                  Nada pendiente: todas las facturas están revisadas.
+                </div>
+              ) : (
+                <ul className="divide-y divide-zinc-100 dark:divide-[#1d2035]">
+                  {atencion.map(({ d, m }) => (
+                    <li key={d.id}>
+                      <Link href={rutaEmpresa(empresa.id, 'facturas')} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-[#f7f8fd] dark:hover:bg-[#171a2a] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] sm:px-6">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-100 text-zinc-500 dark:bg-[#1a1d2e] dark:text-zinc-400">
+                          <ReceiptText className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{d.nombreContraparte ?? 'Sin nombre'}</p>
+                          <p className="truncate text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+                            {d.ncf ?? 'Sin NCF'}{d.fechaComprobante ? ` · ${formatDate(d.fechaComprobante)}` : ''}{d.tipo === 'venta' ? ' · Venta' : ''}
+                          </p>
+                        </div>
+                        <span className="hidden text-right text-sm tabular-nums text-zinc-700 dark:text-zinc-300 sm:block">
+                          {d.montoTotal !== null ? formatRD(d.montoTotal) : montoFacturadoDe(d) !== null ? formatRD(montoFacturadoDe(d)!) : '—'}
+                        </span>
+                        <span className={cn('inline-flex items-center gap-1 justify-self-end rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset', TONO_MOTIVO[m.tono])}>
+                          {m.tono === 'rojo' ? <ShieldX className="h-3 w-3" /> : m.tono === 'naranja' ? <ShieldAlert className="h-3 w-3" /> : <CircleAlert className="h-3 w-3" />}
+                          {m.texto}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </>
         )}
-      </section>
+      </div>
     </Pagina>
   )
 }
 
-function Kpi({ etiqueta, valor, icono: Icono, acento, tinte, nota }: {
-  etiqueta: string; valor: number; icono: typeof ReceiptText; acento: string; tinte: string; nota?: string
+function Indicador({ etiqueta, valor, detalle, cambio, subirEsBueno, marca, nota }: {
+  etiqueta: string
+  valor: string
+  detalle?: string
+  // Variación contra el mes anterior, en %.
+  cambio?: number | null
+  subirEsBueno?: boolean
+  // Color de la serie en los gráficos (identidad, no texto).
+  marca?: string
+  nota?: string
 }) {
+  const sinCambio = cambio === undefined || cambio === null || cambio === 0
+  const Flecha = sinCambio ? Minus : cambio! > 0 ? ArrowUpRight : ArrowDownRight
+  const tonoCambio = sinCambio || !subirEsBueno
+    ? 'text-zinc-600 bg-zinc-100 dark:text-zinc-300 dark:bg-[#1a1d2e]'
+    : cambio! > 0 ? 'text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40' : 'text-rose-700 bg-rose-50 dark:text-rose-300 dark:bg-rose-950/40'
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-[#252840] dark:bg-[#141722] dark:shadow-none">
-      <span aria-hidden="true" className={cn('absolute left-0 top-5 h-8 w-[3px] rounded-r-full', acento)} />
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-[11px] font-semibold uppercase leading-snug tracking-[0.12em] text-zinc-500 dark:text-zinc-400">{etiqueta}</p>
-        <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', tinte)}>
-          <Icono className="h-4 w-4" />
-        </span>
+    <div className={cn(CARD, 'min-w-0 p-4 sm:p-5')} title={nota}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex min-w-0 items-center gap-2 truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">
+          {marca && <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: marca }} />}
+          {etiqueta}
+        </p>
+        {cambio !== undefined && (
+          <span className={cn('inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums', tonoCambio)} title="Contra el mes anterior">
+            <Flecha className="h-3 w-3" />{cambio === null ? 'nuevo' : `${Math.abs(cambio).toLocaleString('es-DO')}%`}
+          </span>
+        )}
       </div>
-      <p className="mt-3 text-3xl font-semibold tabular-nums tracking-[-0.03em] text-zinc-900 dark:text-zinc-50">{valor}</p>
-      {nota && <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">{nota}</p>}
+      <p className="mt-2 truncate text-xl font-semibold tracking-[-0.02em] text-zinc-900 dark:text-zinc-50 sm:text-2xl">{valor}</p>
+      {detalle && <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">{detalle}</p>}
+      {nota && <p className="mt-2 hidden text-[11px] leading-snug text-zinc-400 dark:text-zinc-500 sm:block">{nota}</p>}
     </div>
   )
 }
 
-function Acceso({ href, icono: Icono, titulo, texto, destacado }: {
-  href: string; icono: typeof Files; titulo: string; texto: string; destacado?: boolean
-}) {
+function FilaEstado({ icono: Icono, color, nombre, valor }: { icono: typeof CheckCircle2; color: string; nombre: string; valor: number }) {
   return (
-    <Link
-      href={href}
-      className={cn(
-        'group relative flex flex-col rounded-2xl border p-5 transition-all hover:-translate-y-0.5',
-        destacado
-          ? 'border-transparent bg-gradient-to-br from-[#1B2980] to-[#2f3fa8] text-white shadow-[0_14px_30px_-14px_rgba(27,41,128,0.6)] hover:shadow-[0_18px_36px_-14px_rgba(27,41,128,0.7)]'
-          : 'border-zinc-200 bg-white shadow-sm hover:border-[#1B2980]/30 hover:shadow-md dark:border-[#252840] dark:bg-[#141722] dark:hover:border-indigo-500/40',
-      )}
-    >
-      <span className={cn('flex h-10 w-10 items-center justify-center rounded-xl', destacado ? 'bg-white/15' : 'bg-[#eef0fb] text-[#1B2980] dark:bg-indigo-950/50 dark:text-indigo-300')}>
-        <Icono className="h-5 w-5" />
+    <li className="flex items-center justify-between gap-3">
+      <span className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300">
+        <Icono className="h-4 w-4" style={{ color }} aria-hidden="true" />
+        {nombre}
       </span>
-      <p className={cn('mt-4 text-[15px] font-semibold tracking-tight', destacado ? 'text-white' : 'text-zinc-900 dark:text-zinc-100')}>{titulo}</p>
-      <p className={cn('mt-1 text-sm leading-relaxed', destacado ? 'text-indigo-100/85' : 'text-zinc-500 dark:text-zinc-400')}>{texto}</p>
-      <ArrowRight className={cn('absolute right-5 top-5 h-4 w-4 transition-transform group-hover:translate-x-0.5', destacado ? 'text-white/70' : 'text-zinc-300 dark:text-zinc-600')} />
-    </Link>
+      <span className={cn('tabular-nums', valor > 0 ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500')}>{valor}</span>
+    </li>
   )
+}
+
+function Vacio({ texto }: { texto: string }) {
+  return <p className="rounded-xl bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-500 dark:bg-[#171a29] dark:text-zinc-400">{texto}</p>
 }

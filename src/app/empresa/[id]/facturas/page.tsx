@@ -2,14 +2,14 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { CheckCheck, Files, Pencil, Plus, ReceiptText, ShieldCheck, Trash2 } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, CheckCheck, CheckCircle2, CircleAlert, Coins, Files, Pencil, Plus, ReceiptText, ShieldAlert, ShieldCheck, ShieldX, Sparkles, Trash2, Wallet, X } from 'lucide-react'
 import { FacturaModal } from '@/components/facturas/FacturaModal'
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
-import { Badge } from '@/components/ui/Badge'
+import { AccionSugerida, Cifra, Estado, Segmentos } from '@/components/ui/premium'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Toast } from '@/components/ui/Toast'
-import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS, TH_CLASS } from '@/components/ui/clases'
+import { BTN_SECONDARY, CARD_CLASS, TH_CLASS } from '@/components/ui/clases'
 import { rutaEmpresa, useEmpresaActiva } from '@/lib/datos/empresa-context'
 import { montoFacturadoDe, periodoDe, puedeMarcarseRevisada } from '@/lib/documentos'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD, redondear2 } from '@/lib/utils'
@@ -53,6 +53,17 @@ export default function FacturasPage() {
         return b.fechaComprobante.localeCompare(a.fechaComprobante)
       })
   }, [documentos, tipo, estado, periodo])
+
+  // Cuántas hay en cada estado con los demás filtros puestos (para el
+  // selector de estado).
+  const conteos = useMemo(() => {
+    const base = documentos.filter(d => (!tipo || d.tipo === tipo) && (!periodo || periodoDe(d) === periodo))
+    return {
+      todas: base.length,
+      pendientes: base.filter(d => d.estadoRevision === 'pendiente_revision').length,
+      revisadas: base.filter(d => d.estadoRevision === 'revisado').length,
+    }
+  }, [documentos, tipo, periodo])
 
   const totales = useMemo(() => ({
     monto: redondear2(filtrados.reduce((s, d) => s + (montoFacturadoDe(d) ?? 0), 0)),
@@ -177,55 +188,78 @@ export default function FacturasPage() {
 
       {clientes.length > 0 && (
         <>
-          {/* ── Filtros ────────────────────────────────────────────────── */}
-          <div className={cn(CARD_CLASS, 'grid gap-3 px-5 py-4 sm:grid-cols-3')}>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="filtro-tipo" className={LABEL_CLASS}>Tipo</label>
-              <select id="filtro-tipo" value={tipo} onChange={e => setTipo(e.target.value as TipoDocumento | '')} className={INPUT_CLASS}>
-                <option value="">Compras y ventas</option>
-                <option value="compra">Compras</option>
-                <option value="venta">Ventas</option>
-              </select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="filtro-periodo" className={LABEL_CLASS}>Mes</label>
-              <input id="filtro-periodo" type="month" value={periodo} onChange={e => setPeriodo(e.target.value)} className={INPUT_CLASS} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="filtro-estado" className={LABEL_CLASS}>Estado</label>
-              <select id="filtro-estado" value={estado} onChange={e => setEstado(e.target.value as EstadoRevision | '')} className={INPUT_CLASS}>
-                <option value="">Todos</option>
-                <option value="pendiente_revision">Por revisar</option>
-                <option value="revisado">Revisadas</option>
-              </select>
-            </div>
-          </div>
+          {/* ── Indicadores de la lista ─────────────────────────────────── */}
+          <section className="animate-content-in grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Cifra etiqueta="Facturas" valor={String(conteos.todas)} detalle={hayFiltros ? 'con estos filtros' : 'registradas'} icono={ReceiptText} tinte="bg-[#eef0fb] text-[#1B2980] dark:bg-indigo-950/50 dark:text-indigo-300" />
+            <Cifra etiqueta="Por revisar" valor={String(conteos.pendientes)} detalle={conteos.pendientes > 0 ? 'no entran a reportes' : 'todo al día'} icono={CircleAlert} tinte="bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" />
+            <Cifra etiqueta="Monto sin impuestos" valor={formatRD(totales.monto, 0)} detalle={`ITBIS ${formatRD(totales.itbis, 0)}`} icono={Coins} tinte="bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300" />
+            <Cifra etiqueta="Total facturado" valor={formatRD(totales.total, 0)} detalle="según lo impreso" icono={Wallet} tinte="bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300" />
+          </section>
 
-          {verificables.length > 0 && (
-            <div className={cn(CARD_CLASS, 'flex flex-wrap items-center gap-3 px-5 py-3')}>
-              <p className="min-w-[240px] flex-1 text-sm text-zinc-700 dark:text-zinc-300">
-                {progresoDGII
-                  ? <>Verificando en la DGII: {progresoDGII.hechas} de {progresoDGII.total}…</>
-                  : <><strong>{verificables.length}</strong> factura(s) electrónica(s) de esta lista tienen código QR y se pueden consultar en la DGII.</>}
-              </p>
-              <button onClick={() => void verificarEnLaDGII()} disabled={!!progresoDGII} className={BTN_SECONDARY}>
-                <ShieldCheck className="h-4 w-4" />
-                Verificar en la DGII
-              </button>
+          {/* ── Filtros (una sola fila) ─────────────────────────────────── */}
+          <section className="animate-content-in flex flex-wrap items-center gap-2.5">
+            <Segmentos
+              etiqueta="Estado"
+              valor={estado}
+              onCambio={v => setEstado(v as EstadoRevision | '')}
+              opciones={[
+                { valor: '', texto: 'Todas', cuenta: conteos.todas },
+                { valor: 'pendiente_revision', texto: 'Por revisar', cuenta: conteos.pendientes },
+                { valor: 'revisado', texto: 'Revisadas', cuenta: conteos.revisadas },
+              ]}
+            />
+            <Segmentos
+              etiqueta="Tipo"
+              valor={tipo}
+              onCambio={v => setTipo(v as TipoDocumento | '')}
+              opciones={[
+                { valor: '', texto: 'Compras y ventas' },
+                { valor: 'compra', texto: 'Compras' },
+                { valor: 'venta', texto: 'Ventas' },
+              ]}
+            />
+            <div className="flex items-center gap-2">
+              <label htmlFor="filtro-periodo" className="flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white pl-3 shadow-[0_1px_2px_rgba(16,24,40,0.04)] focus-within:ring-4 focus-within:ring-[#1B2980]/10 dark:border-[#252840] dark:bg-[#141722] dark:shadow-none">
+                <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Mes</span>
+                <input id="filtro-periodo" type="month" value={periodo} onChange={e => setPeriodo(e.target.value)} className="h-full rounded-r-xl bg-transparent pr-3 text-sm text-zinc-900 focus:outline-none dark:text-zinc-100 dark:[color-scheme:dark]" />
+              </label>
+              {hayFiltros && (
+                <button onClick={() => { setTipo(''); setEstado(''); setPeriodo('') }} className="inline-flex h-10 items-center gap-1 rounded-xl px-3 text-sm font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-[#1a1d2e] dark:hover:text-zinc-200">
+                  <X className="h-3.5 w-3.5" /> Quitar filtros
+                </button>
+              )}
             </div>
-          )}
+          </section>
 
+          {/* ── Acciones sugeridas ──────────────────────────────────────── */}
           {aprobables.length > 0 && (
-            <div className={cn(CARD_CLASS, 'flex flex-wrap items-center gap-3 px-5 py-3')}>
-              <p className="min-w-[240px] flex-1 text-sm text-zinc-700 dark:text-zinc-300">
-                <strong>{aprobables.length}</strong> factura(s) de esta lista no tienen observaciones: el sistema leyó
-                todos los datos, cuadran y no quedó ninguno en duda.
-              </p>
-              <button onClick={() => setConfirmarAprobar(true)} className={BTN_PRIMARY}>
-                <CheckCheck className="h-4 w-4" />
-                Aprobar las {aprobables.length}
-              </button>
-            </div>
+            <AccionSugerida
+              icono={Sparkles}
+              tono="marca"
+              texto={<><strong className="font-semibold">{aprobables.length} {aprobables.length === 1 ? 'factura está lista' : 'facturas están listas'}</strong> para aprobar: el sistema leyó todos los datos, cuadran y no quedó ninguno en duda.</>}
+              accion={
+                <button onClick={() => setConfirmarAprobar(true)} className={BTN_PRIMARY}>
+                  <CheckCheck className="h-4 w-4" />
+                  Aprobar las {aprobables.length}
+                </button>
+              }
+            />
+          )}
+          {verificables.length > 0 && (
+            <AccionSugerida
+              icono={ShieldCheck}
+              tono="neutro"
+              texto={progresoDGII
+                ? <>Verificando en la DGII: <strong className="font-semibold tabular-nums">{progresoDGII.hechas} de {progresoDGII.total}</strong>…</>
+                : <><strong className="font-semibold">{verificables.length}</strong> {verificables.length === 1 ? 'factura electrónica tiene' : 'facturas electrónicas tienen'} código QR y se {verificables.length === 1 ? 'puede' : 'pueden'} consultar en la DGII.</>}
+              progreso={progresoDGII ? progresoDGII.hechas / Math.max(1, progresoDGII.total) : undefined}
+              accion={
+                <button onClick={() => void verificarEnLaDGII()} disabled={!!progresoDGII} className={BTN_SECONDARY}>
+                  <ShieldCheck className="h-4 w-4" />
+                  Verificar en la DGII
+                </button>
+              }
+            />
           )}
 
           {/* ── Tabla ──────────────────────────────────────────────────── */}
@@ -239,15 +273,13 @@ export default function FacturasPage() {
               action={hayFiltros ? undefined : { label: 'Nueva factura', onClick: () => setEnEdicion(null) }}
             />
           ) : (
-            <div className={cn(CARD_CLASS, 'overflow-hidden')}>
+            <div className={cn(CARD_CLASS, 'animate-content-in overflow-hidden')}>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-zinc-100 dark:border-[#1d2035] bg-zinc-50 dark:bg-[#1a1d2e]">
-                      <th className={cn(TH_CLASS, 'text-left pl-5')}>Fecha</th>
-                      <th className={cn(TH_CLASS, 'px-3 text-left')}>Contraparte</th>
-                      <th className={cn(TH_CLASS, 'px-3 text-left')}>NCF</th>
-                      <th className={cn(TH_CLASS, 'px-3 text-left')}>Tipo</th>
+                    <tr className="border-b border-zinc-100 dark:border-[#1d2035]">
+                      <th className={cn(TH_CLASS, 'pl-5 text-left')}>Contraparte</th>
+                      <th className={cn(TH_CLASS, 'px-3 text-left')}>NCF y fecha</th>
                       <th className={cn(TH_CLASS, 'px-3 text-right')}>Monto</th>
                       <th className={cn(TH_CLASS, 'px-3 text-right')}>ITBIS</th>
                       <th className={cn(TH_CLASS, 'px-3 text-right')}>Total</th>
@@ -255,74 +287,86 @@ export default function FacturasPage() {
                       <th className={cn(TH_CLASS, 'px-3')}><span className="sr-only">Acciones</span></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-50 dark:divide-[#1d2035]">
+                  <tbody className="divide-y divide-zinc-100 dark:divide-[#1d2035]">
                     {filtrados.map(d => (
-                      <tr key={d.id} className="hover:bg-[#eef0fb]/30 dark:hover:bg-indigo-950/20 transition-colors">
-                        <td className="px-3 py-3.5 pl-5 text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
-                          {d.fechaComprobante ? formatDate(d.fechaComprobante) : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
-                        </td>
-                        <td className="px-3 py-3.5 min-w-[11rem]">
-                          <p className="font-medium text-zinc-800 dark:text-zinc-200">
-                            {d.nombreContraparte ?? <span className="font-normal text-zinc-400 dark:text-zinc-500">Sin nombre</span>}
-                          </p>
-                          <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                            {d.rncCedulaContraparte ? formatCedula(d.rncCedulaContraparte) : 'Sin RNC'}
-                          </p>
-                        </td>
-                        <td className="px-3 py-3.5 tabular-nums text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
-                          {d.ncf ?? <span className="text-zinc-300 dark:text-zinc-600">—</span>}
-                        </td>
-                        <td className="px-3 py-3.5 text-zinc-600 dark:text-zinc-400">{d.tipo === 'compra' ? 'Compra' : 'Venta'}</td>
-                        <td className="px-3 py-3.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300 whitespace-nowrap">{monto(montoFacturadoDe(d))}</td>
-                        <td className="px-3 py-3.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300 whitespace-nowrap">{monto(d.itbisFacturado)}</td>
-                        <td className="px-3 py-3.5 text-right tabular-nums font-semibold text-[#1B2980] dark:text-indigo-300 whitespace-nowrap">{monto(d.montoTotal)}</td>
-                        <td className="px-3 py-3.5 whitespace-nowrap">
-                          {d.estadoRevision === 'revisado'
-                            ? <Badge variant="success">Revisada</Badge>
-                            : <Badge variant="warning">Por revisar</Badge>}
-                          {d.verificacionDGII && ['rechazado', 'no_encontrado'].includes(d.verificacionDGII.estado) && (
-                            <span className="ml-1.5"><Badge variant="danger">{ETIQUETA_ESTADO_DGII[d.verificacionDGII.estado]}</Badge></span>
-                          )}
-                          {d.estadoRevision !== 'revisado' && requiereVerificacionHumana(d) && (
-                            <span className="ml-1.5" title="No se pudo verificar en la DGII: verifícala a mano antes de aprobarla.">
-                              <Badge variant="warning">Verificar en la DGII</Badge>
+                      <tr key={d.id} onClick={() => setEnEdicion(d)} className="group cursor-pointer transition-colors hover:bg-[#f7f8fd] dark:hover:bg-[#171a2a]">
+                        <td className="py-3 pl-5 pr-3 min-w-[14rem]">
+                          <div className="flex items-center gap-3">
+                            <span
+                              title={d.tipo === 'compra' ? 'Compra' : 'Venta'}
+                              className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', d.tipo === 'compra' ? 'bg-[#eef0fb] text-[#3446c4] dark:bg-indigo-950/50 dark:text-indigo-300' : 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300')}
+                            >
+                              {d.tipo === 'compra' ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
                             </span>
-                          )}
-                          {d.verificacionDGII && ['aceptado', 'aceptado_condicional'].includes(d.verificacionDGII.estado) && (
-                            <span title={`${ETIQUETA_ESTADO_DGII[d.verificacionDGII.estado]} · ${new Date(d.verificacionDGII.consultadoEn).toLocaleString('es-DO')}`}>
-                              <ShieldCheck aria-label={ETIQUETA_ESTADO_DGII[d.verificacionDGII.estado]} className="ml-1.5 inline h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                            </span>
-                          )}
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-zinc-900 dark:text-zinc-100">
+                                {d.nombreContraparte ?? <span className="font-normal text-zinc-400 dark:text-zinc-500">Sin nombre</span>}
+                              </p>
+                              <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                                {d.tipo === 'compra' ? 'Compra' : 'Venta'} · {d.rncCedulaContraparte ? formatCedula(d.rncCedulaContraparte) : 'Sin RNC'}
+                              </p>
+                            </div>
+                          </div>
                         </td>
-                        <td className="px-3 py-3.5 text-right whitespace-nowrap">
-                          <button
-                            onClick={() => setEnEdicion(d)}
-                            title="Editar factura"
-                            aria-label={`Editar factura ${d.ncf ?? 'sin NCF'}`}
-                            className="rounded-lg p-1.5 text-zinc-400 hover:text-[#1B2980] hover:bg-[#eef0fb] dark:hover:bg-indigo-950/30 dark:hover:text-indigo-400 transition-colors"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => setPorEliminar(d)}
-                            title="Eliminar factura"
-                            aria-label={`Eliminar factura ${d.ncf ?? 'sin NCF'}`}
-                            className="rounded-lg p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400 transition-colors"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                        <td className="whitespace-nowrap px-3 py-3">
+                          <p className="font-mono text-[13px] tabular-nums text-zinc-700 dark:text-zinc-300">
+                            {d.ncf ?? <span className="font-sans text-zinc-300 dark:text-zinc-600">Sin NCF</span>}
+                          </p>
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                            {d.fechaComprobante ? formatDate(d.fechaComprobante) : 'Sin fecha'}
+                          </p>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-300">{monto(montoFacturadoDe(d))}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-300">{monto(d.itbisFacturado)}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{monto(d.montoTotal)}</td>
+                        <td className="whitespace-nowrap px-3 py-3">
+                          {/* Un solo estado por factura, el más importante (la tabla no se ensancha). */}
+                          <div className="flex items-center gap-1.5">
+                            {d.verificacionDGII && ['rechazado', 'no_encontrado'].includes(d.verificacionDGII.estado)
+                              ? <Estado tono="critico" icono={ShieldX}>{ETIQUETA_ESTADO_DGII[d.verificacionDGII.estado]}</Estado>
+                              : d.estadoRevision === 'revisado'
+                                ? <Estado tono="bien" icono={CheckCircle2}>Revisada</Estado>
+                                : requiereVerificacionHumana(d)
+                                  ? <span title="No se pudo verificar en la DGII: verifícala a mano antes de aprobarla."><Estado tono="serio" icono={ShieldAlert}>Verificar en la DGII</Estado></span>
+                                  : <Estado tono="aviso" icono={CircleAlert}>Por revisar</Estado>}
+                            {d.verificacionDGII && ['aceptado', 'aceptado_condicional'].includes(d.verificacionDGII.estado) && (
+                              <span title={`${ETIQUETA_ESTADO_DGII[d.verificacionDGII.estado]} · ${new Date(d.verificacionDGII.consultadoEn).toLocaleString('es-DO')}`}>
+                                <ShieldCheck aria-label={ETIQUETA_ESTADO_DGII[d.verificacionDGII.estado]} className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 text-right">
+                          <div className="flex justify-end gap-0.5 opacity-70 transition-opacity group-hover:opacity-100">
+                            <button
+                              onClick={e => { e.stopPropagation(); setEnEdicion(d) }}
+                              title="Editar factura"
+                              aria-label={`Editar factura ${d.ncf ?? 'sin NCF'}`}
+                              className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-[#eef0fb] hover:text-[#1B2980] dark:hover:bg-indigo-950/30 dark:hover:text-indigo-400"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={e => { e.stopPropagation(); setPorEliminar(d) }}
+                              title="Eliminar factura"
+                              aria-label={`Eliminar factura ${d.ncf ?? 'sin NCF'}`}
+                              className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t-2 border-[#c7cef0] dark:border-[#252840] bg-[#eef0fb] dark:bg-[#1a1d2e]">
-                      <td colSpan={4} className="px-5 py-3 text-xs font-semibold uppercase tracking-widest text-[#1B2980] dark:text-indigo-400">
-                        Total — {filtrados.length} factura(s)
+                    <tr className="border-t border-zinc-200 bg-zinc-50/80 dark:border-[#252840] dark:bg-[#171a29]">
+                      <td colSpan={2} className="px-5 py-3 text-xs font-semibold uppercase tracking-[0.1em] text-zinc-500 dark:text-zinc-400">
+                        Total · {filtrados.length} {filtrados.length === 1 ? 'factura' : 'facturas'}
                       </td>
-                      <td className="px-3 py-3 text-right tabular-nums font-bold text-[#1B2980] dark:text-indigo-300 whitespace-nowrap">{formatRD(totales.monto)}</td>
-                      <td className="px-3 py-3 text-right tabular-nums font-bold text-[#1B2980] dark:text-indigo-300 whitespace-nowrap">{formatRD(totales.itbis)}</td>
-                      <td className="px-3 py-3 text-right tabular-nums font-bold text-[#1B2980] dark:text-indigo-300 whitespace-nowrap">{formatRD(totales.total)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{formatRD(totales.monto)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{formatRD(totales.itbis)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right font-bold tabular-nums text-[#1B2980] dark:text-indigo-300">{formatRD(totales.total)}</td>
                       <td colSpan={2} />
                     </tr>
                   </tfoot>
