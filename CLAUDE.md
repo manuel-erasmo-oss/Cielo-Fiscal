@@ -657,7 +657,9 @@ Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
    los comprobantes B (NG 06-2018, art. 7) y avise si la factura es
    posterior? Requiere un campo nuevo. Sin decidir.
 1b. **Confirmar que la DGII responde a los servidores de Vercel** (solo se
-   probó desde el entorno de desarrollo). Resuelto el resto: la serie B no
+   probó desde el entorno de desarrollo; en producción la ruta ya está
+   publicada y el código configurado). Lo prueba el usuario con una factura
+   con QR. Resuelto el resto: la serie B no
    tiene QR y pasa; un e-CF sin QR legible lo verifica una persona.
 2. **Excel exportable aunque el reporte esté incompleto** (decisión
    propia; el archivo lo advierte en el nombre y en el Resumen).
@@ -798,9 +800,15 @@ que envía "lo otro" en otro lote):
 - **2026-11-18: el usuario configuró `OCR_CODIGO_ACCESO` en Vercel** ("puse
   ocr en vercel"). **Todavía no tiene clave de Anthropic**, así que la IA
   sigue sin funcionar en producción (503) y las facturas solo se llenan con
-  lo del QR y lo de la DGII. Con el código ya puesto, la verificación en la
-  DGII debería funcionar en producción en cuanto llegue a `main` (falta
-  comprobar que la DGII responde a los servidores de Vercel).
+  lo del QR y lo de la DGII.
+- **Comprobado en producción el 2026-11-18, tras fusionar el PR #4**: las
+  seis pantallas responden 200; `POST /api/verificar-dgii` sin código
+  responde **401** (o sea, `OCR_CODIGO_ACCESO` sí está configurado: sin él
+  sería 503); `POST /api/ocr` responde 503 por falta de
+  `ANTHROPIC_API_KEY`. **Falta comprobar que la DGII le responde a Vercel**:
+  hace falta el código de acceso, que solo tiene el usuario. Prueba: en
+  Configuración escribir el código, subir una factura electrónica con QR en
+  "Nueva factura" y ver si dice "Aceptada en la DGII".
 - Para activar la IA: en Vercel, Settings → Environment Variables, agregar
   `ANTHROPIC_API_KEY` (key propia del producto, nunca personal) y
   `OCR_CODIGO_ACCESO` (frase larga elegida por el usuario), ambas en
