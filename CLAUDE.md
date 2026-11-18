@@ -271,9 +271,10 @@ Consecuencias de diseño (implementadas):
   un clic (al terminar el lote, y en Facturas con el botón "Aprobar las
   N"), con confirmación. Esto reemplaza la idea inicial de revisar todo
   una por una (lección 4): la revisión humana se concentra donde la
-  máquina no está segura. Decisión propia derivada de la frase del
-  usuario; lo que sigue exigiendo persona: retenciones (decisión del
-  usuario), y cualquier factura con observaciones.
+  máquina no está segura. **Confirmado por el usuario el 2026-11-18**
+  ("me parece bien que se aprueben en bloques"). Lo que sigue exigiendo
+  persona: retenciones (decisión del usuario), y cualquier factura con
+  observaciones.
 
 ## Captura por lotes (construida el 2026-11-15, IA automática el 2026-11-17)
 
@@ -498,11 +499,14 @@ lo que diga la macro de la DGII en cuanto a qué se le exige a la persona:
      uno revende es costo; lo mismo para uso propio es gasto). Por eso
      `ClienteFiscal` tiene ahora `actividad` (texto libre, opcional), que se
      envía al OCR. Sin ese dato el modelo decide solo con la factura.
-   - **La norma no fija un monto** a partir del cual una compra duradera es
-     activo (se buscó en el texto: los criterios de 17.4 son beneficios
-     futuros probables y costo medible, sin importe). Es política de cada
-     empresa. Hoy no se aplica ningún umbral; sigue pendiente preguntarle
-     al usuario si quiere uno por cliente.
+   - **El precio NO decide si algo es activo** (decisión del usuario,
+     2026-11-18: "el precio de un artículo no le da en sí el título de
+     activo, se determina por la actividad del comercio y por lo
+     establecido en la sección de propiedad, planta y equipo"). Coincide
+     con la norma, que no fija ningún importe (17.4 pide beneficios futuros
+     probables y costo medible). Por eso **no hay umbral de monto** ni debe
+     agregarse uno, y el criterio de `clasificacion606` no menciona precios
+     ni montos: decide con la actividad del cliente y la Sección 17.
    - Sin probar con facturas reales (no hay API key).
 
 **Dudas que quedan abiertas tras estas decisiones:**
@@ -585,29 +589,56 @@ ventanas) lee 27 de las 58, no 23.
 Candidatos sin decidir (confirmar con el usuario antes de hacerlos):
 respaldo/exportación de los datos del navegador; estado "descartada" en la
 interfaz (el tipo ya lo contempla); recordar la categoría por proveedor a
-partir de lo que corrija el contador; umbral de monto para activo por
-cliente.
+partir de lo que corrija el contador.
 
-## Preguntas abiertas al usuario (consolidadas el 2026-11-17)
+## Preguntas abiertas al usuario (actualizadas el 2026-11-18)
 
 Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
 
 1. **Qué tipos de e-CF son nota de crédito y nota de débito.** Hoy solo
    resta en los totales el tipo 04 de serie B; una nota de crédito
    electrónica SUMA. Importa porque los clientes facturan en electrónico.
-2. **Monto mínimo para tratar una compra duradera como activo.** La norma
-   no lo fija; hoy no hay umbral.
-3. **Aprobación en bloque de las facturas sin observaciones** (decisión
-   propia, derivada de "Objetivo del sistema"): confirmar que está bien o
-   si alguien debe mirar todas.
-4. **Excel exportable aunque el reporte esté incompleto** (decisión
+   **El usuario va a enviar la norma de comprobantes fiscales** (dicho el
+   2026-11-18): resolverlo con ese texto, no antes.
+2. **Excel exportable aunque el reporte esté incompleto** (decisión
    propia; el archivo lo advierte en el nombre y en el Resumen).
-5. **Segunda remisión por retenciones en el 606** (NCF que se vuelve a
+3. **Segunda remisión por retenciones en el 606** (NCF que se vuelve a
    enviar el mes en que se paga): no modelada.
-6. **Pasar un TXT del 606 por la Herramienta de Pre-validación de la
+4. **Pasar un TXT del 606 por la Herramienta de Pre-validación de la
    DGII** (aplicación de Windows): solo lo puede hacer el usuario.
-7. **Plan de Vercel**: el proyecto está en el plan Hobby, que hasta donde
+5. **Plan de Vercel**: el proyecto está en el plan Hobby, que hasta donde
    se sabe es para uso no comercial. Confirmar antes de vender.
+
+Resueltas el 2026-11-18: no hay monto mínimo para activo (decide la
+actividad y la Sección 17); la aprobación en bloque queda aprobada.
+
+## Fuentes normativas
+
+El usuario va a ir entregando normas y leyes fiscales para estructurar el
+sistema (acordado el 2026-11-18). Método, el mismo que se usó con la NIIF
+y con los formatos de la DGII: leer el texto completo, citar en el código
+el artículo o párrafo de donde sale cada regla, parafrasear (no copiar
+textos con derechos de autor al repo), y marcar `⚠️ SIN VERIFICAR` lo que
+no salga de una fuente entregada.
+
+**Recibidas:**
+- Herramientas de envío 606 (versión 2025) y 607 (versión 2023.1.1) e
+  instructivos de la DGII (2026-11-15) → `docs/dgii/formatos-606-607.md`.
+- NIIF para las PYMES, tercera edición, febrero 2025 (enlace del usuario,
+  2026-11-15) → criterios de costo, activo y gasto.
+
+**Anunciada por el usuario:** la norma de comprobantes fiscales (NCF y
+e-CF). Con ella: tipos de comprobante (en especial notas de crédito y
+débito electrónicas), validaciones del NCF y reglas de cada tipo en el 606.
+
+**Útiles para lo que sigue del roadmap** (pedidas, sin recibir):
+- Ley de facturación electrónica y sus normas de aplicación.
+- La norma vigente sobre remisión de informaciones (la que rige el 606).
+- Formulario IT-1 vigente, su anexo A e instructivo, y los artículos del
+  Código Tributario sobre ITBIS (tasas, exenciones, proporcionalidad, ITBIS
+  llevado al costo), con su reglamento de aplicación.
+- Formulario e instructivo del IR-17 y la norma de retenciones vigente.
+- Título del Código Tributario sobre ISR (para la proyección de ISR).
 
 ## Despliegue
 
