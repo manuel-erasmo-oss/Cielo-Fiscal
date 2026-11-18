@@ -3,17 +3,26 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { NAV_ITEMS, CONFIGURACION_ITEM } from '@/lib/nav-items'
+import { ArrowLeftRight, Building2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { cn, formatCedula } from '@/lib/utils'
+import { Monograma } from '@/components/ui/Monograma'
+import { useDatos } from '@/lib/datos/datos-context'
+import { CONFIGURACION_ITEM, NAV_GLOBAL, empresaDeRuta, estaActivo, navEmpresa } from '@/lib/nav-items'
 
 // Portado de `Sidebar.tsx` de Cielo Cloud Nómina (manuel-erasmo-oss/tyui):
-// mismo isotipo, mismo riel colapsable con flyout y mismos estilos. Se
-// quitaron el selector de empresa y el perfil/logout porque el MVP no tiene
-// cuentas todavía.
+// mismo isotipo, mismo riel colapsable con flyout y mismos estilos. Sin
+// perfil/logout porque el MVP no tiene cuentas todavía.
+//
+// Dentro de una empresa (/empresa/<id>/...) muestra arriba la empresa activa
+// con "Cambiar de empresa" y solo los módulos de esa empresa; fuera, solo
+// "Tus empresas". Así no se trabaja nunca sin saber en qué empresa se está.
 
 export function Sidebar() {
   const pathname  = usePathname()
+  const { clientes } = useDatos()
+  const empresaId = empresaDeRuta(pathname)
+  const empresa   = empresaId ? clientes.find(c => c.id === empresaId) ?? null : null
+  const items     = empresaId ? navEmpresa(empresaId) : NAV_GLOBAL
 
   const [collapsed, setCollapsed] = useState(false)
   const [mounted,   setMounted]   = useState(false)
@@ -35,8 +44,7 @@ export function Sidebar() {
       return !v
     })
 
-  const isActive = (href: string) =>
-    href === '/' ? pathname === '/' : pathname.startsWith(href)
+  const isActive = (href: string) => estaActivo({ ...CONFIGURACION_ITEM, href }, pathname)
 
   // Avoid hydration flash — render expanded until client mounts
   const c = mounted && collapsed
@@ -146,10 +154,42 @@ export function Sidebar() {
           </button>
         </div>
 
+        {/* ── Empresa activa ───────────────────────────────────────── */}
+        {empresaId && (
+          <div className={cn('shrink-0 border-b border-zinc-200 dark:border-[#252840]', wide ? 'px-4 py-3' : 'flex justify-center py-3')}>
+            {wide ? (
+              <>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400 dark:text-zinc-500">Empresa activa</p>
+                <div className="mt-2 flex items-center gap-2.5">
+                  {empresa && <Monograma nombre={empresa.razonSocial} clave={empresa.id} tamano="sm" className="h-8 w-8" />}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100" title={empresa?.razonSocial}>
+                      {empresa?.razonSocial ?? '…'}
+                    </p>
+                    {empresa && <p className="text-xs tabular-nums text-zinc-500 dark:text-zinc-400">{formatCedula(empresa.rncCedula)}</p>}
+                  </div>
+                </div>
+                <Link
+                  href="/"
+                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#1B2980] hover:underline dark:text-indigo-400"
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5" /> Cambiar de empresa
+                </Link>
+              </>
+            ) : (
+              <Link href="/" title={`${empresa?.razonSocial ?? 'Empresa'} · Cambiar de empresa`}>
+                {empresa
+                  ? <Monograma nombre={empresa.razonSocial} clave={empresa.id} tamano="sm" className="h-9 w-9" />
+                  : <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#eef0fb] text-[#1B2980] dark:bg-indigo-950/40 dark:text-indigo-400"><Building2 className="h-4 w-4" /></span>}
+              </Link>
+            )}
+          </div>
+        )}
+
         {/* ── Navigation ───────────────────────────────────────────── */}
         <nav className="flex-1 overflow-y-auto py-1">
-          {NAV_ITEMS.map((item) => {
-            const active = isActive(item.href)
+          {items.map((item) => {
+            const active = estaActivo(item, pathname)
             return (
               <Link
                 key={item.href}

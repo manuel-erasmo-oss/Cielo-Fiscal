@@ -2,22 +2,26 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { ArrowLeftRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { NAV_ITEMS, CONFIGURACION_ITEM } from '@/lib/nav-items'
+import { CONFIGURACION_ITEM, NAV_GLOBAL, empresaDeRuta, estaActivo, navEmpresa, type NavItem } from '@/lib/nav-items'
 
-const ITEMS = [...NAV_ITEMS, { ...CONFIGURACION_ITEM, label: 'Ajustes' }]
-
+// Móvil: dentro de una empresa, sus módulos más "Cambiar" (vuelve a Tus
+// empresas); fuera, Tus empresas y Ajustes.
 export function BottomNav() {
   const pathname = usePathname()
-  const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href))
+  const empresaId = empresaDeRuta(pathname)
+  const items: NavItem[] = empresaId
+    ? [...navEmpresa(empresaId), { href: '/', icon: ArrowLeftRight, label: 'Cambiar', exacto: true }]
+    : [...NAV_GLOBAL, { ...CONFIGURACION_ITEM, label: 'Ajustes' }]
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex h-16 items-center border-t border-zinc-200 dark:border-[#252840] bg-white dark:bg-[#141722] px-1">
-      {ITEMS.map(item => {
-        const active = isActive(item.href)
+      {items.map(item => {
+        const active = estaActivo(item, pathname)
         return (
           <Link
-            key={item.href}
+            key={item.href + item.label}
             href={item.href}
             className={cn(
               'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 transition-colors',

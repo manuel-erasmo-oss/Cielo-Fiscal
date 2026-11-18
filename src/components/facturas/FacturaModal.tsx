@@ -35,7 +35,7 @@ import { OCRError, esArchivoSoportado, extraerFactura } from '@/lib/ocr-cliente'
 import { verificarEnDGII } from '@/lib/verificacion-cliente'
 import { ETIQUETA_ESTADO_DGII, esUrlConsultaDGII, requiereVerificacionHumana } from '@/lib/verificacion-dgii'
 import { MIME_PDF } from '@/lib/ocr-tipos'
-import { BTN_PRIMARY, cn, formatRD, parseFechaLocal, redondear2, soloDigitos } from '@/lib/utils'
+import { BTN_PRIMARY, cn, formatCedula, formatRD, parseFechaLocal, redondear2, soloDigitos } from '@/lib/utils'
 import {
   CONTADOR_LOCAL,
   type CampoExtraido,
@@ -44,6 +44,17 @@ import {
   type TipoDocumento,
   type VerificacionDGII,
 } from '@/types'
+
+// Empresa de la factura, solo lectura: se trabaja dentro de una empresa a la
+// vez (separación de datos pedida por el usuario el 2026-11-18).
+function EmpresaFija({ cliente }: { cliente: ClienteFiscal | undefined }) {
+  return (
+    <div className="flex min-h-[38px] items-center rounded-lg border border-zinc-200 dark:border-[#252840] bg-zinc-50 dark:bg-[#1a1d2e] px-3 text-sm">
+      <span className="truncate font-medium text-zinc-800 dark:text-zinc-200">{cliente?.razonSocial ?? '—'}</span>
+      {cliente && <span className="ml-2 shrink-0 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">{formatCedula(cliente.rncCedula)}</span>}
+    </div>
+  )
+}
 
 interface FacturaModalProps {
   // null = factura nueva.
@@ -130,7 +141,9 @@ export function FacturaModal({
   onClose,
 }: FacturaModalProps) {
   const [paso, setPaso] = useState<Paso>(documento ? 'formulario' : 'origen')
-  const [clienteId, setClienteId] = useState(documento?.clienteId ?? clienteIdInicial ?? clientes[0]?.id ?? '')
+  // La empresa no se elige aquí: es la empresa en la que se entró (y una
+  // factura no se puede pasar a otra empresa).
+  const clienteId = documento?.clienteId ?? clienteIdInicial ?? clientes[0]?.id ?? ''
   const [tipo, setTipo] = useState<TipoDocumento>(documento?.tipo ?? 'compra')
   const [valores, setValores] = useState<Valores>(documento ? aValores(documento) : VACIO)
   const [origen, setOrigen] = useState<DocumentoFiscal['origen']>(documento?.origen ?? 'manual')
@@ -513,10 +526,8 @@ export function FacturaModal({
         <div className="space-y-4 px-5 py-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="factura-cliente" className={LABEL_CLASS}>Cliente</label>
-              <select id="factura-cliente" value={clienteId} onChange={e => setClienteId(e.target.value)} className={INPUT_CLASS}>
-                {clientes.map(c => <option key={c.id} value={c.id}>{c.razonSocial}</option>)}
-              </select>
+              <span className={LABEL_CLASS}>Empresa</span>
+              <EmpresaFija cliente={clientes.find(c => c.id === clienteId)} />
             </div>
             <div className="flex flex-col gap-1.5">
               <span className={LABEL_CLASS}>Tipo</span>
@@ -658,10 +669,8 @@ export function FacturaModal({
             {documento && (
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="factura-cliente-edit" className={LABEL_CLASS}>Cliente</label>
-                  <select id="factura-cliente-edit" value={clienteId} onChange={e => setClienteId(e.target.value)} className={INPUT_CLASS}>
-                    {clientes.map(c => <option key={c.id} value={c.id}>{c.razonSocial}</option>)}
-                  </select>
+                  <span className={LABEL_CLASS}>Empresa</span>
+                  <EmpresaFija cliente={clientes.find(c => c.id === clienteId)} />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor="factura-tipo-edit" className={LABEL_CLASS}>Tipo</label>
