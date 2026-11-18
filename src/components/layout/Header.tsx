@@ -14,22 +14,24 @@ interface HeaderProps {
 }
 
 export function Header({ title, subtitle, actions }: HeaderProps) {
-  // Dentro de una empresa, su nombre y RNC quedan siempre a la vista, para
-  // que nunca se trabaje en una empresa creyendo que es otra.
+  // Dentro de una empresa, su nombre y RNC quedan siempre a la vista (menú
+  // lateral en computadora, esta línea en móvil), para que nunca se trabaje
+  // en una empresa creyendo que es otra.
   const empresa = useEmpresaOpcional()?.empresa ?? null
   return (
     <header className="shrink-0 border-b border-zinc-200 dark:border-[#252840] bg-white dark:bg-[#141722]">
+      {/* En computadora la empresa activa y "Cambiar de empresa" están en el menú
+          lateral (una sola vez: pedido del usuario el 2026-11-18). En móvil no
+          hay menú lateral, así que aquí va una línea compacta, solo en móvil. */}
       {empresa && (
-        <div className="flex items-center gap-2.5 border-b border-[#1B2980]/10 bg-gradient-to-r from-[#eef0fb] via-[#f4f5fd] to-[#eef0fb] px-4 py-1.5 text-xs text-[#151f66] dark:border-indigo-900/40 dark:from-indigo-950/50 dark:via-indigo-950/30 dark:to-indigo-950/50 dark:text-indigo-200">
+        <Link href="/" className="flex items-center gap-2 border-b border-zinc-100 px-4 py-1.5 text-xs text-zinc-600 dark:border-[#1d2035] dark:text-zinc-300 md:hidden">
           <Monograma nombre={empresa.razonSocial} clave={empresa.id} tamano="sm" className="h-6 w-6 rounded-md text-[10px]" />
-          <span className="min-w-0 truncate">
-            <span className="opacity-70">Trabajando en</span> <strong className="font-semibold">{empresa.razonSocial}</strong>
-            <span className="ml-1.5 tabular-nums opacity-70">{formatCedula(empresa.rncCedula)}</span>
+          <span className="min-w-0 truncate font-semibold text-zinc-900 dark:text-zinc-100">{empresa.razonSocial}</span>
+          <span className="tabular-nums text-zinc-500 dark:text-zinc-400">{formatCedula(empresa.rncCedula)}</span>
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1 font-semibold text-[#1B2980] dark:text-indigo-300">
+            <ArrowLeftRight className="h-3.5 w-3.5" /> Cambiar
           </span>
-          <Link href="/" className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 font-semibold transition-colors hover:bg-white/70 dark:hover:bg-indigo-900/40">
-            <ArrowLeftRight className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Cambiar de empresa</span><span className="sm:hidden">Cambiar</span>
-          </Link>
-        </div>
+        </Link>
       )}
       <div className="flex h-14 items-center px-4">
         <div className="flex flex-1 items-center gap-3 min-w-0">

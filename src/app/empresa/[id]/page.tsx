@@ -3,14 +3,15 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
-  ArrowDownRight, ArrowRight, ArrowUpRight, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert,
+  ArrowDownRight, ArrowRight, ArrowUpRight, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert,
   Files, Minus, ReceiptText, ShieldAlert, ShieldX, Table2, Upload,
 } from 'lucide-react'
+import { CalendarioFiscal } from '@/components/dashboard/CalendarioFiscal'
 import { BarraComposicion, BarraEstado, BarrasProveedores, COLOR_ESTADO, GraficoMensual, Leyenda, VARIABLES_GRAFICOS } from '@/components/dashboard/Graficos'
 import { Pagina } from '@/components/layout/Pagina'
 import { rutaEmpresa, useEmpresaActiva } from '@/lib/datos/empresa-context'
 import {
-  composicionCompras, periodo606EnCurso, periodosDisponibles, principalesProveedores, proximosVencimientos,
+  composicionCompras, periodo606EnCurso, periodosDisponibles, principalesProveedores,
   resumenPeriodo, serieMensual, sumarMeses, variacion, type Periodo,
 } from '@/lib/dashboard'
 import { ETIQUETA_CAMPO, montoFacturadoDe, periodoDe } from '@/lib/documentos'
@@ -55,7 +56,6 @@ const TONO_MOTIVO = {
 export default function DashboardEmpresaPage() {
   const { empresa, documentos } = useEmpresaActiva()
   const hoyISO = hoyLocalISO()
-  const vencimientos = useMemo(() => proximosVencimientos(hoyISO), [hoyISO])
   const enCurso = periodo606EnCurso(hoyISO)
   const periodos = useMemo(() => periodosDisponibles(documentos, enCurso), [documentos, enCurso])
   // Por defecto, el período del 606 en curso si ya tiene facturas; si no, el
@@ -83,41 +83,8 @@ export default function DashboardEmpresaPage() {
   return (
     <Pagina title="Dashboard" subtitle="Resumen fiscal de la empresa">
       <div className={cn('space-y-5', VARIABLES_GRAFICOS)}>
-        {/* ── Encabezado de marca: vencimientos ───────────────────────────── */}
-        <section className="animate-content-in relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#151f66] via-[#1B2980] to-[#2f3fa8] text-white shadow-[0_18px_40px_-18px_rgba(27,41,128,0.55)]">
-          <svg aria-hidden="true" viewBox="0 0 32 32" fill="none" className="pointer-events-none absolute -right-12 -top-16 h-72 w-72 opacity-[0.08]">
-            <circle cx="16" cy="16" r="9" strokeWidth="5.5" strokeDasharray="47.12 9.43" strokeLinecap="round" transform="rotate(30 16 16)" stroke="white" />
-            <circle cx="16" cy="16" r="2.8" fill="white" />
-          </svg>
-          <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '22px 22px' }} />
-
-          {/* La empresa ya se ve en la franja de arriba y en el menú: aquí no se
-              repite (pedido por el usuario el 2026-11-18). Solo vencimientos. */}
-          <div className="relative flex items-center justify-between gap-3 px-5 pt-4 sm:px-8 sm:pt-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-200/90">Próximos vencimientos</p>
-            <p className="hidden text-xs text-indigo-200/70 sm:block">Fechas límite de la DGII</p>
-          </div>
-
-          {/* En móvil, tres columnas compactas; desde sm, la versión completa. */}
-          <ul aria-label="Próximos vencimientos" className="relative mt-3 grid grid-cols-3 border-t border-white/10 sm:mt-4">
-            {vencimientos.map((v, i) => (
-              <li key={v.clave} className={cn('min-w-0 px-3 py-3 sm:flex sm:items-center sm:gap-3 sm:px-8 sm:py-4', i > 0 && 'border-l border-white/10')}>
-                <span className={cn('hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:flex', v.faltan <= 3 ? 'bg-rose-400/20 text-rose-100' : 'bg-white/10 text-indigo-100')}>
-                  <CalendarClock className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 sm:flex-1">
-                  <p className="truncate text-xs text-indigo-100/75"><span className="sm:hidden">{v.clave}</span><span className="hidden sm:inline">{v.nombre}</span></p>
-                  <p className="hidden truncate text-sm font-medium sm:block">{periodoLargo(v.periodo)}</p>
-                  <p className="truncate text-[11px] text-indigo-200/70 sm:text-xs"><span className="hidden sm:inline">Vence el </span>{formatDate(v.fecha)}</p>
-                </div>
-                <div className="mt-1 flex items-baseline gap-1 sm:mt-0 sm:block sm:text-right">
-                  <p className={cn('text-lg font-semibold leading-none sm:text-xl', v.faltan <= 3 && 'text-rose-200')}>{v.faltan}</p>
-                  <p className="text-[10px] uppercase tracking-wider text-indigo-200/70 sm:mt-0.5">{v.faltan === 1 ? 'día' : 'días'}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+        {/* ── Calendario fiscal del mes (antes, franja de próximos vencimientos) ── */}
+        <CalendarioFiscal hoyISO={hoyISO} />
 
         {documentos.length === 0 ? (
           <section className={cn(CARD, 'animate-content-in flex flex-col items-center px-6 py-14 text-center')}>

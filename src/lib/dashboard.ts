@@ -208,6 +208,20 @@ export interface Vencimiento {
   faltan: number
 }
 
+// Obligaciones mensuales que el sistema conoce con fuente verificada (ver
+// dgii-fiscal.ts): IR-17 día 10, 606 día 15, IT-1 día 20 del mes siguiente
+// al período. Otras (IR-3, anticipos, TSS, declaraciones anuales) no se
+// listan hasta tener su fuente (lección 2 de CLAUDE.md).
+const OBLIGACIONES: { clave: Vencimiento['clave']; nombre: string; fecha: (anio: number, mes: number) => string }[] = [
+  { clave: 'IR-17', nombre: `Retenciones IR-17 (día ${DIA_LIMITE_IR17})`, fecha: fechaLimiteIR17 },
+  { clave: '606', nombre: 'Formato 606 (día 15)', fecha: fechaLimite606607 },
+  { clave: 'IT-1', nombre: `ITBIS IT-1 (día ${DIA_LIMITE_IT1})`, fecha: fechaLimiteIT1 },
+]
+
+function diasEntre(desdeISO: string, hastaISO: string): number {
+  return Math.round((parseFechaLocal(hastaISO).getTime() - parseFechaLocal(desdeISO).getTime()) / 86_400_000)
+}
+
 // Próximo vencimiento de cada obligación mensual: la del mes pasado vence
 // en el mes en curso; si ese día ya pasó, la próxima es la del mes en curso.
 // Fechas locales (lección 1 de CLAUDE.md). Ordenados por fecha.
@@ -215,21 +229,51 @@ export function proximosVencimientos(hoyISO: string): Vencimiento[] {
   const hoy = parseFechaLocal(hoyISO)
   const actual = periodoDeAnioMes(hoy.getFullYear(), hoy.getMonth() + 1)
   const anterior = sumarMeses(actual, -1)
-  const obligaciones: { clave: Vencimiento['clave']; nombre: string; fecha: (anio: number, mes: number) => string }[] = [
-    { clave: 'IR-17', nombre: `Retenciones IR-17 (día ${DIA_LIMITE_IR17})`, fecha: fechaLimiteIR17 },
-    { clave: '606', nombre: 'Formato 606 (día 15)', fecha: fechaLimite606607 },
-    { clave: 'IT-1', nombre: `ITBIS IT-1 (día ${DIA_LIMITE_IT1})`, fecha: fechaLimiteIT1 },
-  ]
-  return obligaciones
+  return OBLIGACIONES
     .map(o => {
       const a = anioMes(anterior)
       const periodo = hoyISO <= o.fecha(a.anio, a.mes) ? anterior : actual
       const { anio, mes } = anioMes(periodo)
       const fecha = o.fecha(anio, mes)
-      const faltan = Math.round((parseFechaLocal(fecha).getTime() - hoy.getTime()) / 86_400_000)
-      return { clave: o.clave, nombre: o.nombre, periodo, fecha, faltan }
+      return { clave: o.clave, nombre: o.nombre, periodo, fecha, faltan: diasEntre(hoyISO, fecha) }
     })
     .sort((a, b) => a.fecha.localeCompare(b.fecha))
+}
+
+// ─── Calendario fiscal ───────────────────────────────────────────────────────
+
+// Lo que vence en el mes `mes` (el del calendario): las obligaciones del
+// período anterior. `faltan` cuenta desde `hoyISO` (negativo = ya venció).
+// `finDeSemana`: la fecha nominal cae sábado o domingo; el sistema no la
+// corre al siguiente día laborable (⚠️ SIN VERIFICAR la regla oficial).
+export interface ObligacionDelMes extends Vencimiento {
+  finDeSemana: boolean
+}
+
+export function obligacionesDelMes(mes: Periodo, hoyISO: string): ObligacionDelMes[] {
+  const { anio, mes: m } = anioMes(sumarMeses(mes, -1))
+  return OBLIGACIONES
+    .map(o => {
+      const fecha = o.fecha(anio, m)
+      const dia = parseFechaLocal(fecha).getDay()
+      return { clave: o.clave, nombre: o.nombre, periodo: sumarMeses(mes, -1), fecha, faltan: diasEntre(hoyISO, fecha), finDeSemana: dia === 0 || dia === 6 }
+    })
+    .sort((a, b) => a.fecha.localeCompare(b.fecha))
+}
+
+// Semanas del mes para dibujar el calendario, de lunes a domingo: cada
+// semana trae 7 casillas con la fecha "YYYY-MM-DD" o null (fuera del mes).
+export function semanasDelMes(mes: Periodo): (string | null)[][] {
+  const { anio, mes: m } = anioMes(mes)
+  const diasEnMes = new Date(anio, m, 0).getDate()
+  // getDay(): 0 = domingo. Con lunes primero, el domingo es la columna 6.
+  const primera = (new Date(anio, m - 1, 1).getDay() + 6) % 7
+  const casillas: (string | null)[] = [
+    ...Array.from({ length: primera }, () => null),
+    ...Array.from({ length: diasEnMes }, (_, i) => `${mes}-${String(i + 1).padStart(2, '0')}`),
+  ]
+  while (casillas.length % 7 !== 0) casillas.push(null)
+  return Array.from({ length: casillas.length / 7 }, (_, i) => casillas.slice(i * 7, i * 7 + 7))
 }
 
 // Período del 606 que se está preparando: el del próximo vencimiento.

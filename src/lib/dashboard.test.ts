@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { CAMPOS_VACIOS } from './documentos'
 import {
-  composicionCompras, marcasEje, montoCompacto, periodo606EnCurso, periodosDisponibles,
-  principalesProveedores, proximosVencimientos, resumenPeriodo, serieMensual, sumarMeses,
+  composicionCompras, marcasEje, montoCompacto, obligacionesDelMes, periodo606EnCurso, periodosDisponibles,
+  principalesProveedores, proximosVencimientos, resumenPeriodo, semanasDelMes, serieMensual, sumarMeses,
   ultimosPeriodos, variacion,
 } from './dashboard'
 import type { DocumentoFiscal } from '@/types'
@@ -122,6 +122,30 @@ describe('vencimientos', () => {
     const v = proximosVencimientos('2027-01-10')
     expect(v.find(x => x.clave === 'IR-17')).toMatchObject({ periodo: '2026-12', fecha: '2027-01-10', faltan: 0 })
     expect(periodo606EnCurso('2027-01-10')).toBe('2026-12')
+  })
+})
+
+describe('calendario fiscal', () => {
+  it('noviembre 2026: IR-17, 606 e IT-1 de octubre, con días que faltan o pasaron', () => {
+    const o = obligacionesDelMes('2026-11', '2026-11-18')
+    expect(o.map(x => [x.clave, x.periodo, x.fecha, x.faltan, x.finDeSemana])).toEqual([
+      ['IR-17', '2026-10', '2026-11-10', -8, false],
+      ['606', '2026-10', '2026-11-15', -3, true], // domingo
+      ['IT-1', '2026-10', '2026-11-20', 2, false],
+    ])
+  })
+
+  it('enero mira al período de diciembre del año anterior', () => {
+    expect(obligacionesDelMes('2027-01', '2026-12-31').map(x => x.periodo)).toEqual(['2026-12', '2026-12', '2026-12'])
+  })
+
+  it('semanas de lunes a domingo: noviembre 2026 empieza en domingo', () => {
+    const s = semanasDelMes('2026-11')
+    expect(s[0]).toEqual([null, null, null, null, null, null, '2026-11-01'])
+    expect(s.length).toBe(6)
+    expect(s[5][0]).toBe('2026-11-30')
+    expect(s.flat().filter(Boolean).length).toBe(30)
+    expect(semanasDelMes('2027-02').flat().filter(Boolean).length).toBe(28)
   })
 })
 
