@@ -1009,6 +1009,12 @@ que envía "lo otro" en otro lote):
   `/configuracion` responden 200 y `/facturas` redirige (307). Las 12
   comprobaciones del tablero (`e2e10.js`) pasaron también contra el sitio
   publicado, con datos inventados sembrados en el navegador de la prueba.
+- **Comprobado en producción el 2026-11-18, tras fusionar el PR #10**:
+  publicado en ~75 s; las pantallas responden 200 y las 15 comprobaciones
+  del Dashboard (`e2e10.js`: menú Dashboard / Facturas / Reportes, sin
+  botones repetidos, empresa solo en la franja y el menú, vencimientos,
+  período, gráfico, tabla) pasaron contra el sitio publicado, con datos
+  inventados en el navegador de la prueba.
 - Para activar la IA: en Vercel, Settings → Environment Variables, agregar
   `ANTHROPIC_API_KEY` (key propia del producto, nunca personal) y
   `OCR_CODIGO_ACCESO` (frase larga elegida por el usuario), ambas en
@@ -1042,7 +1048,8 @@ que envía "lo otro" en otro lote):
   documentación) el mismo día; PR #8 (tablero de la empresa y estilo
   premium en Facturas, Subir lote y Reportes) y PR #9 (su comprobación en
   producción) el 2026-11-18; PR #10 ("Cada opción una sola vez", sin
-  repetir la empresa, "Tablero" pasa a "Dashboard") el mismo día.
+  repetir la empresa, "Tablero" pasa a "Dashboard") y PR #11 (su
+  comprobación en producción) el mismo día.
 
 ## Nombre del producto
 
