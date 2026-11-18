@@ -199,12 +199,21 @@ físicas (Ley 11-92, mismos 4 tramos que el motor de nómina), Impuesto
 Sustitutivo de Retribuciones Complementarias 27%, día límite IR-17 (10,
 confirmado contra la Guía No.14 DGII).
 
+**Verificado el 2026-11-18 contra el Código Tributario** (Ley 11-92, texto
+consolidado de la DGII actualizado en octubre 2025): ISR de personas
+jurídicas 27% desde 2015 (art. 297 párrafo II); IT-1 vence en los primeros
+20 días del mes (art. 353 c); tasa reducida de ITBIS 16% desde 2016 para
+una lista cerrada de bienes por código arancelario (art. 345 párrafo II, no
+modelada). Todo con la reserva de la Ley 30-26, que no se ha podido leer.
+El día de los formatos 606 y 607 **es el 15** (antes se asumía 20 y era
+incorrecto).
+
 **Pendiente de verificación oficial antes de producción**:
-- Tasa ITBIS reducida (16%) y catálogo exacto de bienes — solo se asume la
-  general 18% por ahora.
-- Día límite del IT-1 (`DIA_LIMITE_IT1 = 20` es un placeholder sin
-  confirmar). El de los formatos 606 y 607 **sí está verificado: día 15**
-  (antes se asumía 20 y era incorrecto).
+- Tasa general de ITBIS (18%): el texto consolidado no lo resuelve (art.
+  341 dice 16%, texto viejo; art. 345 dice 16% desde 2015 condicionado a
+  una meta de presión tributaria). Las facturas reales cobran 18%.
+- Montos de los tramos de ISR de personas físicas: el art. 296 trae la
+  escala base de 2012 y manda ajustarla por inflación cada año.
 
 **Ya verificado con fuente oficial (2026-11-15)**: layout de los archivos
 606 y 607 — ver la sección "Formatos 606 y 607" y
@@ -431,9 +440,8 @@ Lo esencial:
 3. El archivo generado **no se ha pasado por la Herramienta de
    Pre-validación de la DGII** (es una aplicación de Windows). Solo se
    verificó contra la lógica de la macro. Lo tiene que probar el usuario.
-4. Qué significa cada tipo de e-CF (31-34, 41-47) no está en las fuentes;
-   no se codificó nada que dependa de ello (por eso una nota de crédito
-   electrónica no resta en los totales, igual que en la macro).
+4. ~~Qué significa cada tipo de e-CF~~: resuelto el 2026-11-18 con la Guía
+   de NCF (ver "Fuentes normativas").
 5. **Snapshot al declarar (lección 3) todavía no existe**: el archivo se
    genera al vuelo desde las facturas y no se guarda. Antes de dar por
    terminado el 606/607 hay que agregar "marcar como declarado" con el
@@ -509,13 +517,10 @@ lo que diga la macro de la DGII en cuanto a qué se le exige a la persona:
      ni montos: decide con la actividad del cliente y la Sección 17.
    - Sin probar con facturas reales (no hay API key).
 
-**Dudas que quedan abiertas tras estas decisiones:**
-- Las notas de crédito restan en los totales solo cuando el NCF es de tipo
-  04 (serie B). Las fuentes no dicen qué tipo de e-CF es la nota de crédito
-  electrónica, así que hoy una nota de crédito con e-NCF SUMA en vez de
-  restar, tanto en el 606 como en el reporte de ingresos. Con clientes que
-  facturan todo en electrónico esto importa: preguntarle al usuario qué
-  tipos de e-CF son notas de crédito y de débito.
+**Duda resuelta el 2026-11-18** con la Guía Informativa de NCF: la nota de
+crédito electrónica es la E34 (y la de débito la E33). Desde ese día una
+E34 resta en los totales del 606 y del reporte de ingresos, igual que una
+B04. Antes sumaba.
 
 ## Primera muestra real (PDF de un cliente, recibido el 2026-11-15)
 
@@ -595,11 +600,11 @@ partir de lo que corrija el contador.
 
 Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
 
-1. **Qué tipos de e-CF son nota de crédito y nota de débito.** Hoy solo
-   resta en los totales el tipo 04 de serie B; una nota de crédito
-   electrónica SUMA. Importa porque los clientes facturan en electrónico.
-   **El usuario va a enviar la norma de comprobantes fiscales** (dicho el
-   2026-11-18): resolverlo con ese texto, no antes.
+1. **¿Los avisos de comprobante deben frenar la aprobación en bloque?**
+   Hoy una factura de consumo en compras, o una compra con NCF no
+   electrónico posterior a mayo de 2026, muestra un aviso pero se aprueba
+   en bloque igual (los avisos no son observaciones). Propuesta: que sí la
+   frenen, porque afectan el crédito de ITBIS y la deducción.
 2. **Excel exportable aunque el reporte esté incompleto** (decisión
    propia; el archivo lo advierte en el nombre y en el Resumen).
 3. **Segunda remisión por retenciones en el 606** (NCF que se vuelve a
@@ -609,8 +614,13 @@ Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
 5. **Plan de Vercel**: el proyecto está en el plan Hobby, que hasta donde
    se sabe es para uso no comercial. Confirmar antes de vender.
 
+6. **Ley 30-26 y Ley 11-92**: la DGII bloquea las descargas desde el
+   servidor de estas sesiones (403). La 11-92 se pudo leer por otra vía; la
+   30-26 no (pasa de 10 MB). Pedirle al usuario que la suba directamente.
+
 Resueltas el 2026-11-18: no hay monto mínimo para activo (decide la
-actividad y la Sección 17); la aprobación en bloque queda aprobada.
+actividad y la Sección 17); la aprobación en bloque queda aprobada; qué
+e-CF son nota de crédito y de débito (Guía de NCF: E34 y E33).
 
 ## Fuentes normativas
 
@@ -626,19 +636,69 @@ no salga de una fuente entregada.
   instructivos de la DGII (2026-11-15) → `docs/dgii/formatos-606-607.md`.
 - NIIF para las PYMES, tercera edición, febrero 2025 (enlace del usuario,
   2026-11-15) → criterios de costo, activo y gasto.
+- **Primer lote de leyes (2026-11-18)**, leído completo salvo donde se dice:
+  - Guía Informativa de NCF (DGII, marzo 2026): tipos B y E, quién emite
+    cada uno, consumo no sustenta ITBIS ni costos, pagos al exterior solo
+    servicios → `docs/dgii/formatos-606-607.md`, "Tipos de comprobante".
+  - Ley 32-23 de Facturación Electrónica (G.O. 11107, 17-05-2023).
+  - Decreto 587-24, reglamento de la Ley 32-23 (escaneado; leído con OCR,
+    con atención a los arts. 4-10, 17-19, 38-43 y 51-59).
+  - Páginas de la DGII "Marco legal de comprobantes fiscales" y "Tipo y
+    estructura de los e-CF" (leídas en la web).
+  - Código Tributario, Ley 11-92, texto consolidado (octubre 2025): leídos
+    los artículos de ITBIS (335-360), tasas de ISR (296-297) y deberes
+    formales (50). No se leyó entero.
+  - **Ley 30-26: NO leída** (la DGII bloquea la descarga desde aquí y el
+    archivo pasa del límite de la herramienta web). Hay que pedirla.
 
-**Anunciada por el usuario:** la norma de comprobantes fiscales (NCF y
-e-CF). Con ella: tipos de comprobante (en especial notas de crédito y
-débito electrónicas), validaciones del NCF y reglas de cada tipo en el 606.
+**Vigencia — lo que se detectó como NO vigente o superado** (2026-11-18):
+- Código Tributario art. 341 (ITBIS 16%, Ley 288-04): superado por el art.
+  345 (Ley 253-12). El propio texto consolidado conserva ambos.
+- Art. 297 (ISR 28%): la parte capital está superada por su párrafo II
+  (27% desde 2015). Arts. 296 y 345: tablas con años 2013-2016 ya
+  cumplidos; rige la última columna.
+- Series A/P/Q de 19 posiciones: eliminadas en 2018 (la macro del 606 las
+  acepta solo para períodos viejos).
+- Comprobantes serie B: el calendario de la Ley 32-23 (art. 37) venció
+  para el último grupo hacia mayo de 2026, con prórroga máxima de 6 meses
+  (Decreto 587-24, art. 8) → hacia noviembre de 2026. Desde entonces la
+  DGII da por vencidos los B de quien no implementó (art. 55), y un B de un
+  emisor electrónico solo sustenta costos y crédito si estaba en
+  contingencia notificada (art. 42). Registro Único de Ingresos (B12)
+  termina: pasa a factura de consumo electrónica (art. 38).
+- Formato 607: el usuario lo da por descontinuado (sin fuente; ver
+  "Decisiones del usuario").
+- Por verificar: la Guía cita el Aviso 24-2019 y el marco legal lista el
+  Decreto 254-06 y las NG 06-2018, 05-2019, 01-2020 y 06-2021, que pueden
+  estar modificados por la Ley 32-23 y su reglamento. No se recibieron.
 
-**Útiles para lo que sigue del roadmap** (pedidas, sin recibir):
-- Ley de facturación electrónica y sus normas de aplicación.
-- La norma vigente sobre remisión de informaciones (la que rige el 606).
-- Formulario IT-1 vigente, su anexo A e instructivo, y los artículos del
-  Código Tributario sobre ITBIS (tasas, exenciones, proporcionalidad, ITBIS
-  llevado al costo), con su reglamento de aplicación.
-- Formulario e instructivo del IR-17 y la norma de retenciones vigente.
-- Título del Código Tributario sobre ISR (para la proyección de ISR).
+**Aplicado al código el 2026-11-18** (`src/lib/dgii-formatos.ts`, con la
+cita en cada regla): tipo de un e-NCF = las 2 posiciones después de la E;
+E34 resta como nota de crédito; E43 y E47 exigen el RNC del cliente como
+13 y 17; avisos (no bloquean) de factura de consumo en compras, de pagos al
+exterior con bienes y de NCF no electrónico desde el 17-05-2026
+(`FIN_CALENDARIO_ECF`, día exacto ⚠️ sin verificar); el reporte de ingresos
+admite E44-E46 y rechaza E41/E43/E47; la IA y el QR toman como compra los
+comprobantes que emite el propio comprador (11/41, 13/43, 17/47). En
+`dgii-fiscal.ts`: IT-1 día 20, ISR jurídicas 27% y tasa reducida 16% pasan
+a verificados.
+
+**Pedidas al usuario para lo que sigue** (sin recibir):
+- Ley 30-26 (PDF subido directamente) — prioritaria: puede cambiar tasas o
+  plazos ya verificados.
+- Norma General 06-2018 (remisión de informaciones, la que rige el 606),
+  NG 05-2019, NG 01-2020, NG 06-2021, Aviso 24-2019 y Decreto 254-06
+  (reglamento de comprobantes), con sus modificaciones vigentes.
+- Avisos de la DGII con las listas de obligados a e-CF y sus prórrogas.
+- Reglamento de ITBIS (Decreto 293-11) y formulario IT-1 con su anexo A e
+  instructivo vigentes (proporcionalidad, ITBIS llevado al costo,
+  retenciones).
+- Formulario e instructivo del IR-17 y la norma de retenciones vigente
+  (NG 07-2007 y sus modificaciones, si sigue vigente).
+- Escala de ISR de personas físicas ajustada del año en curso.
+- Reglamento de ISR (Decreto 139-98) para la proyección de ISR.
+- Ojo: los números del Decreto 293-11, la NG 07-2007 y el Decreto 139-98
+  se escribieron de memoria para pedirlos; confirmar con el usuario.
 
 ## Despliegue
 
@@ -797,7 +857,8 @@ roadmap (el 4 se completó el 2026-11-17).
   salga picomatch 4.0.8 o superior.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
   `/api/ocr` dinámica).
-- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan — fechas
+- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (154
+  de 154 desde el 2026-11-18, con las reglas de comprobantes) — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
   comparados carácter por carácter, dígito verificador, duplicados.
@@ -893,10 +954,10 @@ roadmap (el 4 se completó el 2026-11-17).
 
 - Copiados del código de `tyui`: tramos de ISR de personas físicas, tasa
   27% del Impuesto Sustitutivo, día 10 del IR-17.
-- Tomado de este documento, sin respaldo en el código de `tyui` ni
-  re-verificación: ISR de personas jurídicas 27%.
-- `⚠️ SIN VERIFICAR` en el código: ITBIS general 18%, día 20 para el
-  IT-1, y que las fechas límite no se corren por fin de semana o feriado. El recargo "10% + 4% + 1.10%" del IR-17 que menciona la lección
+- Verificados con el Código Tributario el 2026-11-18: ISR de personas
+  jurídicas 27%, día 20 del IT-1, tasa reducida de ITBIS 16%.
+- `⚠️ SIN VERIFICAR` en el código: ITBIS general 18%, y que las fechas
+  límite no se corren por fin de semana o feriado. El recargo "10% + 4% + 1.10%" del IR-17 que menciona la lección
   2 NO se codificó: no aparece en el código de `tyui` y este documento no
   dice cómo se aplica cada porcentaje.
 - Del motor fiscal solo se usa en pantalla la fecha límite del 606/607.

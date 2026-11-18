@@ -14,6 +14,11 @@ import { fechaLocalISO, redondear2 } from '@/lib/utils'
 // `TRAMOS_ISR` en `src/lib/dominican-labor.ts` de manuel-erasmo-oss/tyui
 // (allí documentado como "DGII, Ley 11-92 art. 296 según modificaciones
 // vigentes"). Si la DGII indexa la escala, hay que actualizar ambos productos.
+// El art. 296 del Código (texto consolidado, octubre 2025) trae la escala
+// base de la Ley 253-12 (exento hasta RD$399,923; 15%, 20% y 25%) y manda
+// ajustarla cada año por la inflación (párrafo I). Las tasas coinciden; los
+// montos de aquí son una escala ya ajustada que ese texto no permite
+// comprobar: hace falta el aviso o la resolución de la DGII del año.
 export const TRAMOS_ISR_PERSONA_FISICA = [
   { hasta: 416_220.00, tasa: 0.00, fijo: 0 },
   { hasta: 624_329.00, tasa: 0.15, fijo: 0 },
@@ -37,9 +42,11 @@ export function calcularISRAnualPersonaFisica(rentaNetaImponibleAnual: number): 
 // de Cielo Cloud Nómina (allí: "guía oficial DGII").
 export const TASA_IMPUESTO_SUSTITUTIVO_RETRIBUCIONES = 0.27
 
-// ISR de personas jurídicas. El CLAUDE.md de este repo lo registra como
-// confirmado en la sesión de Cielo Cloud Nómina; no se re-verificó contra la
-// DGII al recrear este archivo.
+// ISR de personas jurídicas. Verificado (2026-11-18) contra el Código
+// Tributario, Ley 11-92, texto consolidado de la DGII (actualizado en octubre
+// 2025): art. 297, modificado por la Ley 253-12; su párrafo II baja la tasa
+// al 27% a partir del ejercicio fiscal 2015. Pendiente: confirmar que la Ley
+// 30-26 (no leída todavía) no la cambia.
 export const TASA_ISR_PERSONA_JURIDICA = 0.27
 
 // Día del mes siguiente en que vence el IR-17. En Cielo Cloud Nómina
@@ -48,17 +55,30 @@ export const TASA_ISR_PERSONA_JURIDICA = 0.27
 // Guía del Contribuyente No.14 de la DGII.
 export const DIA_LIMITE_IR17 = 10
 
+// Día del mes siguiente en que vence la declaración de ITBIS (IT-1).
+// Verificado (2026-11-18): Código Tributario, art. 353 c), "en el transcurso
+// de los primeros veinte (20) días de cada mes, aun cuando no exista
+// impuesto a pagar". El período fiscal es el mes calendario (art. 353 a).
+// El día de los formatos 606 y 607 (15) vive en dgii-formatos.ts:
+// `DIA_LIMITE_606_607`. Pendiente: confirmar que la Ley 30-26 no lo cambia.
+export const DIA_LIMITE_IT1 = 20
+
+// Tasa reducida de ITBIS. Código Tributario, art. 345 párrafo II (Ley
+// 253-12): 16% a partir de 2016 para una lista cerrada de bienes por código
+// arancelario (yogures, mantequilla, café, aceites comestibles, azúcar,
+// cacao y chocolate, entre otros). La lista no está modelada: la tasa la da
+// la factura. Pendiente: confirmar contra la Ley 30-26.
+export const TASA_ITBIS_REDUCIDA = 0.16
+
 // ─── ⚠️ SIN VERIFICAR ────────────────────────────────────────────────────────
 
-// ⚠️ SIN VERIFICAR — tasa general de ITBIS asumida. Falta confirmar contra la
-// DGII, junto con la tasa reducida y el catálogo de bienes que la llevan
-// (ninguno de los dos está modelado todavía).
+// ⚠️ SIN VERIFICAR — tasa general de ITBIS. El texto consolidado del Código
+// no lo resuelve solo: el art. 341 dice 16% (texto viejo de la Ley 288-04,
+// ya superado) y el art. 345 (Ley 253-12) dice 18% para 2013 y 2014 y 16%
+// desde 2015, pero su párrafo I condiciona esa rebaja a alcanzar una meta de
+// presión tributaria. Las facturas reales de la muestra cobran 18%. Falta
+// una fuente que diga cuál rige hoy (y leer la Ley 30-26).
 export const TASA_ITBIS_GENERAL = 0.18
-
-// ⚠️ SIN VERIFICAR — placeholder. Día del mes siguiente en que vence la
-// declaración de ITBIS (IT-1). El día de los formatos 606 y 607 SÍ está
-// verificado (día 15) y vive en dgii-formatos.ts: `DIA_LIMITE_606_607`.
-export const DIA_LIMITE_IT1 = 20
 
 // ─── Fechas límite ───────────────────────────────────────────────────────────
 

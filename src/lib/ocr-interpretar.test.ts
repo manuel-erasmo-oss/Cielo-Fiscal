@@ -31,6 +31,22 @@ describe('interpretarLectura', () => {
     expect(r.extraccion).toMatchObject({ rncCedulaContraparte: '101123451', nombreContraparte: 'Cliente SRL', tipoIdentificacion: '1', montoFacturado: 2068, montoBienes: null, tipoBienesServicios: null })
   })
 
+  it('comprobante de compras (E41) emitido por el cliente: es una compra y la contraparte es el vendedor', () => {
+    const r = interpretarLectura(lectura({
+      ncf: 'E410000000003', rncEmisor: CLIENTE, nombreEmisor: 'Comercial Quisqueya SRL', rncComprador: '00112345673', nombreComprador: 'Juan Pérez',
+    }), ctx(CLIENTE, 'venta'))
+    expect(r).toMatchObject({ tipo: 'compra', coincideCliente: true })
+    expect(r.extraccion).toMatchObject({ rncCedulaContraparte: '00112345673', nombreContraparte: 'Juan Pérez', montoBienes: 2068, montoFacturado: null })
+  })
+
+  it('gastos menores (B13/E43) emitidos por el cliente: compra con el RNC del propio cliente', () => {
+    for (const ncf of ['B1300000004', 'E430000000004']) {
+      const r = interpretarLectura(lectura({ ncf, rncEmisor: CLIENTE, rncComprador: null, nombreComprador: null }), ctx(CLIENTE, 'venta'))
+      expect(r, ncf).toMatchObject({ tipo: 'compra', coincideCliente: true })
+      expect(r.extraccion.rncCedulaContraparte, ncf).toBe(CLIENTE)
+    }
+  })
+
   it('ninguno de los dos RNC es el del cliente: usa el tipo por defecto y deja la contraparte en duda', () => {
     const r = interpretarLectura(lectura({ rncComprador: '130000001' }), ctx(CLIENTE, 'compra'))
     expect(r).toMatchObject({ tipo: 'compra', coincideCliente: false })

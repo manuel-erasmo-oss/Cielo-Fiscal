@@ -24,6 +24,18 @@ describe('interpretarPagina', () => {
     expect(b.campos).toMatchObject({ rncCedulaContraparte: '101123451', tipoIdentificacion: '1' })
   })
 
+  it('QR de un e-CF de compras (E41) emitido por el cliente: compra, contraparte = el vendedor', () => {
+    const b = interpretarPagina(qr({ emisor: '401007551', comprador: '00112345673', encf: 'E410000000001' }), ctx({ tipoPorDefecto: 'venta' }))
+    expect(b).toMatchObject({ estado: 'qr', tipo: 'compra' })
+    expect(b.campos.rncCedulaContraparte).toBe('00112345673')
+  })
+
+  it('QR de gastos menores (E43) emitido por el cliente: compra con el RNC del cliente', () => {
+    const b = interpretarPagina(qr({ emisor: '401007551', comprador: null, encf: 'E430000000001' }), ctx({ tipoPorDefecto: 'venta' }))
+    expect(b).toMatchObject({ estado: 'qr', tipo: 'compra' })
+    expect(b.campos.rncCedulaContraparte).toBe('401007551')
+  })
+
   it('QR sin comprador y de otro emisor: se toma como compra', () => {
     expect(interpretarPagina(qr({ comprador: null }), ctx({ tipoPorDefecto: 'venta' }))).toMatchObject({ estado: 'qr', tipo: 'compra' })
   })

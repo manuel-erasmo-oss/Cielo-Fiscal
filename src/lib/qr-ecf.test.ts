@@ -52,6 +52,12 @@ describe('pertenenciaSegunQr', () => {
     expect(pertenenciaSegunQr(qr, '101123451')).toBe('venta')
   })
 
+  it('e-CF de compras, gastos menores o pagos al exterior emitido por el cliente: compra', () => {
+    for (const encf of ['E410000000001', 'E430000000001', 'E470000000001']) {
+      expect(pertenenciaSegunQr({ ...qr, encf }, '101123451'), encf).toBe('compra')
+    }
+  })
+
   it('ajena si nombra a otros dos; indeterminada si no trae comprador', () => {
     expect(pertenenciaSegunQr(qr, '130000001')).toBe('ajena')
     expect(pertenenciaSegunQr({ ...qr, rncComprador: null }, '130000001')).toBe('indeterminada')

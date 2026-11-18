@@ -115,26 +115,97 @@ export function esNcfValido607(ncf: string): boolean {
   return NCF_607.test(ncf)
 }
 
-// Tipo de comprobante, igual que `ObtenerTipoNcf` de la macro: con 11
-// posiciones los caracteres 2-3, con 19 los 10-11. Con 13 (e-NCF) la macro
-// devuelve vacío, así que ninguna regla "por tipo" aplica a un e-NCF.
+// e-NCF que puede emitir un vendedor (Guía de NCF, tabla de tipos
+// electrónicos): 31-34 y 44-46. Los tipos 41, 43 y 47 los emite el comprador.
+const ECF_VENTA = /^E(?:3[1-4]|4[4-6])\d{10}$/
+
+// NCF aceptado en el reporte de ingresos: lo que admite la macro del 607
+// más los e-NCF de venta (la macro del 607 no admite la serie E, y la del
+// 606 no admite el 46 de exportación).
+export function esNcfValidoIngresos(ncf: string): boolean {
+  return NCF_607.test(ncf) || ECF_VENTA.test(ncf)
+}
+
+// Tipo de comprobante: las dos posiciones que siguen a la serie. Con 11
+// posiciones (serie B) los caracteres 2-3 y con 19 (series A/P/Q) los 10-11,
+// igual que `ObtenerTipoNcf` de la macro. Con 13 (e-NCF, serie E) la macro
+// devuelve vacío; aquí se devuelven también los caracteres 2-3, porque la
+// Guía Informativa de NCF de la DGII (marzo 2026, "Estructura de Comprobante
+// Fiscal Electrónico") dice que las dos posiciones después de la E son el
+// tipo de comprobante. Los tipos electrónicos (31-34, 41, 43-47) no chocan
+// con los de la serie B (01-04, 11-17), así que las reglas de la macro por
+// tipo no cambian para un e-NCF salvo donde se agregan a propósito.
 export function tipoNcf(ncf: string | null): string {
   if (!ncf) return ''
-  if (ncf.length === 11) return ncf.slice(1, 3)
+  if (ncf.length === 11 || ncf.length === 13) return ncf.slice(1, 3)
   if (ncf.length === 19) return ncf.slice(9, 11)
   return ''
 }
 
+// ¿Es un comprobante fiscal electrónico (serie E, 13 posiciones)?
+export function esECF(ncf: string | null): boolean {
+  return !!ncf && /^E\d{12}$/.test(ncf)
+}
+
+// Tipos de comprobante. Serie B: Guía Informativa de NCF (DGII, marzo 2026).
+// Serie E: misma guía, tabla "tipos de comprobantes fiscales electrónicos"
+// (fuente que cita: Aviso núm. 24-2019): 31 crédito fiscal, 32 consumo,
+// 33 nota de débito, 34 nota de crédito, 41 compras, 43 gastos menores,
+// 44 regímenes especiales, 45 gubernamental, 46 exportación, 47 pagos al
+// exterior. No existe un tipo 42.
 const TIPO_CONSUMO = '02'
 const TIPO_NOTA_DEBITO = '03'
 const TIPO_NOTA_CREDITO = '04'
 const TIPO_REGISTRO_UNICO_INGRESOS = '12'
 const TIPO_GASTOS_MENORES = '13'
 const TIPO_PAGOS_EXTERIOR = '17'
+const TIPOS_CONSUMO = new Set([TIPO_CONSUMO, '32'])
+const TIPOS_NOTA_DEBITO = new Set([TIPO_NOTA_DEBITO, '33'])
+const TIPOS_NOTA_CREDITO = new Set([TIPO_NOTA_CREDITO, '34'])
+const TIPOS_COMPRAS = new Set(['11', '41'])
+const TIPOS_GASTOS_MENORES = new Set([TIPO_GASTOS_MENORES, '43'])
+const TIPOS_PAGOS_EXTERIOR = new Set([TIPO_PAGOS_EXTERIOR, '47'])
 
+// Nota de crédito: 04 (serie B, también en A/P/Q) o 34 (e-CF). Resta en los
+// totales. Antes de recibir la guía, una nota de crédito electrónica sumaba.
 export function esNotaDeCredito(doc: Pick<DocumentoFiscal, 'ncf'>): boolean {
-  return tipoNcf(doc.ncf) === TIPO_NOTA_CREDITO
+  return TIPOS_NOTA_CREDITO.has(tipoNcf(doc.ncf))
 }
+
+export function esNotaDeDebito(doc: Pick<DocumentoFiscal, 'ncf'>): boolean {
+  return TIPOS_NOTA_DEBITO.has(tipoNcf(doc.ncf))
+}
+
+// Comprobantes que emite el propio COMPRADOR para sustentar una compra
+// (Guía de NCF): Compras (11/41, a quien no está registrado como
+// contribuyente), Gastos Menores (13/43) y Pagos al Exterior (17/47). En
+// ellos el cliente del contador figura como emisor y aun así es una compra.
+export function loEmiteElComprador(ncf: string | null): boolean {
+  const t = tipoNcf(ncf)
+  return TIPOS_COMPRAS.has(t) || TIPOS_GASTOS_MENORES.has(t) || TIPOS_PAGOS_EXTERIOR.has(t)
+}
+
+// Gastos menores y pagos al exterior: en el 606 va el RNC del propio cliente
+// (13 según la macro; 17 según el instructivo; 43 y 47 por ser su versión
+// electrónica en la Guía de NCF).
+export function vaConRncDelCliente(ncf: string | null): boolean {
+  const t = tipoNcf(ncf)
+  return TIPOS_GASTOS_MENORES.has(t) || TIPOS_PAGOS_EXTERIOR.has(t)
+}
+
+export function esFacturaDeConsumo(ncf: string | null): boolean {
+  return TIPOS_CONSUMO.has(tipoNcf(ncf))
+}
+
+// Fin del calendario de la Ley 32-23 de Facturación Electrónica (art. 37):
+// pequeños, micro y no clasificados tenían 36 meses desde la vigencia de la
+// ley (los grandes nacionales 12 y los grandes locales y medianos 24). La ley
+// salió en la Gaceta Oficial 11107 del 17 de mayo de 2023 y rige desde su
+// promulgación y publicación más los plazos del Código Civil (art. 42), así
+// que el último plazo vence alrededor del 17 de mayo de 2026.
+// ⚠️ SIN VERIFICAR el día exacto: depende de cómo se cuenten esos plazos.
+// Solo se usa para avisos, nunca bloquea.
+export const FIN_CALENDARIO_ECF = '2026-05-17'
 
 // ─── Dígito verificador ──────────────────────────────────────────────────────
 
@@ -215,6 +286,34 @@ function avisarDigitoVerificador(identificacion: string, salida: Problema[]) {
   }
 }
 
+// Avisos que salen de las normas de comprobantes y no de la macro del 606.
+// Nunca bloquean: la factura se reporta igual en el 606 (se reportan todas
+// las compras), pero la persona tiene que saber que puede no sustentar
+// costos, gastos o crédito de ITBIS.
+function avisosDeComprobanteCompra(doc: CamposDocumento, tipo: string, p: Problema[]) {
+  // Guía de NCF, "Facturas de Consumo (02)": quien la recibe no puede usarla
+  // para sustentar crédito de ITBIS ni reducir costos y gastos del ISR. Se
+  // aplica igual a su versión electrónica (32).
+  if (esFacturaDeConsumo(doc.ncf)) {
+    p.push(aviso('ncf', 'Es una factura de consumo: según la DGII no sirve para adelantar el ITBIS ni para deducir el costo o gasto en el ISR. Para eso hace falta una de crédito fiscal.'))
+  }
+  // Guía de NCF, preguntas frecuentes 11: el comprobante de pagos al
+  // exterior solo aplica a la adquisición de servicios.
+  if (TIPOS_PAGOS_EXTERIOR.has(tipo) && (doc.montoBienes ?? 0) > 0) {
+    p.push(aviso('montoBienes', 'El comprobante de pagos al exterior solo se usa para servicios, y esta compra tiene monto en bienes.'))
+  }
+  // Ley 32-23, art. 37 (calendario de facturación electrónica); Decreto
+  // 587-24, art. 55 (la DGII da por vencidos los comprobantes de quien no
+  // implementó a tiempo), art. 42 (un comprobante no electrónico de un
+  // emisor electrónico solo sustenta costos, gastos y crédito fiscal si el
+  // emisor estaba en contingencia notificada) y art. 8 (prórroga única de
+  // hasta 6 meses). No se sabe a qué grupo pertenece cada emisor ni si tuvo
+  // prórroga, así que solo se avisa desde el último plazo.
+  if (!esECF(doc.ncf) && doc.fechaComprobante && doc.fechaComprobante >= FIN_CALENDARIO_ECF) {
+    p.push(aviso('ncf', 'Comprobante no electrónico emitido después de mayo de 2026, cuando venció el último plazo para facturar en electrónico. Solo vale para costos, gastos y crédito de ITBIS si el emisor tenía una prórroga vigente o estaba en contingencia notificada a la DGII. Verifícalo.'))
+  }
+}
+
 // Reglas del Formato 606 para una compra. `rncCliente` es el RNC/cédula del
 // cliente del contador (el del encabezado del archivo).
 export function validarCompra606(doc: CamposDocumento, rncCliente: string): Problema[] {
@@ -227,8 +326,7 @@ export function validarCompra606(doc: CamposDocumento, rncCliente: string): Prob
   else if (!/^\d+$/.test(rnc) || (rnc.length !== 9 && rnc.length !== 11)) {
     p.push(err('rncCedulaContraparte', 'Debe tener 9 dígitos (RNC) u 11 (cédula).'))
   } else {
-    // Gastos menores (13) según la macro; pagos al exterior (B17) según el instructivo.
-    if ((tipo === TIPO_GASTOS_MENORES || tipo === TIPO_PAGOS_EXTERIOR) && rnc !== rncCliente) {
+    if (vaConRncDelCliente(doc.ncf) && rnc !== rncCliente) {
       p.push(err('rncCedulaContraparte', 'Con este tipo de NCF debe ir el mismo RNC del cliente.'))
     }
     avisarDigitoVerificador(rnc, p)
@@ -246,6 +344,7 @@ export function validarCompra606(doc: CamposDocumento, rncCliente: string): Prob
   if (doc.ncfModificado && !esNcfValido606(doc.ncfModificado)) {
     p.push(err('ncfModificado', 'El NCF modificado no tiene una estructura válida.'))
   }
+  if (doc.ncf) avisosDeComprobanteCompra(doc, tipo, p)
 
   // 6-7. Fechas. La de pago es obligatoria si hay retenciones.
   validarFechas(doc, 'fechaComprobante', 'fechaPago', p)
@@ -311,8 +410,10 @@ export function validarVentaIngresos(doc: CamposDocumento): Problema[] {
   const p: Problema[] = []
 
   if (!doc.ncf) p.push(err('ncf', 'Falta el NCF.'))
-  else if (!esNcfValido606(doc.ncf) && !esNcfValido607(doc.ncf)) p.push(err('ncf', 'El NCF no tiene una estructura válida.'))
-  if (doc.ncfModificado && !esNcfValido606(doc.ncfModificado) && !esNcfValido607(doc.ncfModificado)) {
+  else if (esECF(doc.ncf) && loEmiteElComprador(doc.ncf)) {
+    p.push(err('ncf', 'Este tipo de comprobante (compras, gastos menores o pagos al exterior) lo emite el comprador para una compra; no corresponde a una venta.'))
+  } else if (!esNcfValidoIngresos(doc.ncf)) p.push(err('ncf', 'El NCF no tiene una estructura válida.'))
+  if (doc.ncfModificado && !esNcfValidoIngresos(doc.ncfModificado)) {
     p.push(err('ncfModificado', 'El NCF modificado no tiene una estructura válida.'))
   }
 

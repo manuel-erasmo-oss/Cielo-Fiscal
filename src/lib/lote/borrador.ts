@@ -1,5 +1,6 @@
 import { CAMPOS_EXTRAIDOS, CAMPOS_VACIOS, buscarDuplicado, normalizarNcf, problemasDeRevision, type CamposDocumento } from '@/lib/documentos'
 import type { ResultadoOCR } from '@/lib/ocr-tipos'
+import { vaConRncDelCliente } from '@/lib/dgii-formatos'
 import { leerQrEcf, pertenenciaSegunQr } from '@/lib/qr-ecf'
 import { CONTADOR_LOCAL, type CampoExtraido, type ClienteFiscal, type DocumentoFiscal, type TipoDocumento } from '@/types'
 
@@ -58,7 +59,11 @@ export function interpretarPagina(textoQr: string | null, ctx: ContextoLote): Bo
   // Si el QR no trae comprador, el emisor no es el cliente, así que el
   // cliente solo puede ser quien compró.
   const tipo: TipoDocumento = pertenencia === 'venta' ? 'venta' : 'compra'
-  const contraparte = tipo === 'venta' ? qr.rncComprador : qr.rncEmisor
+  // En un e-CF de compras (41) autoemitido el vendedor figura como
+  // comprador; en gastos menores (43) y pagos al exterior (47) el 606 lleva
+  // el RNC del propio cliente, que aquí es el emisor.
+  const autoemitido = tipo === 'compra' && qr.rncEmisor === ctx.cliente.rncCedula
+  const contraparte = tipo === 'venta' || (autoemitido && !vaConRncDelCliente(qr.encf)) ? qr.rncComprador : qr.rncEmisor
   const campos: CamposDocumento = {
     ...CAMPOS_VACIOS,
     rncCedulaContraparte: contraparte,

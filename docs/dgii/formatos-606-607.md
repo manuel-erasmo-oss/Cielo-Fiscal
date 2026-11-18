@@ -37,7 +37,8 @@ Los instructivos se declaran "publicación informativa sin validez legal".
     de cada producto; verificador = (10 − suma mod 10) mod 10.
 - Tipo de NCF (`ObtenerTipoNcf`): con 11 posiciones, los caracteres 2-3; con
   19, los caracteres 10-11; **con 13 (e-NCF) la macro devuelve vacío**, así
-  que ninguna regla "por tipo" aplica a un e-NCF.
+  que en la macro ninguna regla "por tipo" aplica a un e-NCF. El sistema se
+  aparta de esto (ver "Tipos de comprobante" y "Dónde el sistema se aparta").
 - Una nota de crédito (tipo 04) **resta** en los totales.
 
 ## 606 — Compras de bienes y servicios (máximo 10,000 registros)
@@ -150,7 +151,69 @@ versión no admite e-NCF (serie E)**: longitud solo 11 o 19.
 - Con NCF tipo 12 (registro único de ingresos) la identificación debe ser
   la misma del encabezado.
 
+## Tipos de comprobante (Guía Informativa de NCF, DGII, marzo 2026)
+
+Fuente recibida del usuario el 2026-11-18. La tabla de tipos electrónicos
+cita como origen el Aviso núm. 24-2019 (no recibido).
+
+| Serie B | Serie E (e-CF) | Nombre | Quién lo emite |
+|---|---|---|---|
+| 01 | 31 | Factura de crédito fiscal | vendedor |
+| 02 | 32 | Factura de consumo | vendedor |
+| 03 | 33 | Nota de débito | vendedor |
+| 04 | 34 | Nota de crédito | vendedor |
+| 11 | 41 | Comprobante de compras | **comprador** |
+| 12 | — | Registro único de ingresos | vendedor |
+| 13 | 43 | Gastos menores | **comprador** |
+| 14 | 44 | Regímenes especiales | vendedor |
+| 15 | 45 | Gubernamental | vendedor |
+| 16 | 46 | Exportaciones | vendedor |
+| 17 | 47 | Pagos al exterior | **comprador** |
+
+No existe un tipo 42. Estructura: serie B = letra + 2 del tipo + 8 de
+secuencia (11 posiciones); serie E = letra + 2 del tipo + 10 (13 posiciones).
+
+Reglas de la guía que el sistema aplica:
+- **Consumo (02/32)**: quien la recibe no puede usarla para sustentar
+  crédito de ITBIS ni costos y gastos del ISR → aviso en la compra.
+- **Pagos al exterior (17/47)**: solo para servicios (preguntas
+  frecuentes, 11) → aviso si la compra tiene monto en bienes.
+- **Compras, gastos menores y pagos al exterior** los emite el comprador:
+  el cliente aparece como emisor y aun así es una compra suya (lo aplican
+  la IA y el lector de QR). En gastos menores y pagos al exterior el 606
+  lleva el RNC del propio cliente; en compras, el del vendedor.
+- Secuencias de serie B: válidas hasta el 31 de diciembre del año siguiente
+  al de su autorización. No se valida (no se sabe cuándo se autorizó cada
+  secuencia).
+
+## Facturación electrónica (Ley 32-23 y Decreto 587-24)
+
+- **Ley 32-23**, G.O. 11107 del 17 de mayo de 2023, art. 37: plazos
+  máximos para emitir e-CF contados desde la vigencia de la ley: grandes
+  nacionales 12 meses; grandes locales y medianos 24; pequeños, micro y no
+  clasificados 36 (≈ mayo 2026). La DGII publica por aviso la lista de
+  obligados; se puede acordar una extensión.
+- **Decreto 587-24** (reglamento): art. 8, prórroga única de hasta 6 meses
+  desde el vencimiento del plazo (≈ noviembre 2026 para el último grupo);
+  art. 42, un comprobante no electrónico de un emisor electrónico solo
+  sustenta costos, gastos y crédito fiscal si el emisor estaba en
+  contingencia notificada a la DGII; art. 55, la DGII da por vencidos los
+  comprobantes de quien no implementó en plazo.
+- Consecuencia en el sistema: una compra con NCF no electrónico fechada
+  desde el 17 de mayo de 2026 (`FIN_CALENDARIO_ECF`, día exacto sin
+  verificar) muestra un aviso. No bloquea: puede haber prórroga o
+  contingencia, y el sistema no sabe a qué grupo pertenece cada emisor.
+
 ## Dónde el sistema se aparta de la macro, y por qué
+
+- **Tipo de un e-NCF**: la macro devuelve vacío; el sistema toma las dos
+  posiciones después de la E, como dice la Guía de NCF. Efectos: la nota
+  de crédito electrónica (34) resta en los totales igual que la 04, y
+  gastos menores (43) y pagos al exterior (47) exigen el RNC del cliente
+  igual que 13 y 17. Hasta el 2026-11-18 una E34 sumaba.
+- **Reporte de ingresos**: admite los e-NCF de venta 31-34 y 44-46 (la
+  macro del 607 no admite la serie E y la del 606 no admite el 46) y
+  rechaza 41, 43 y 47 porque los emite el comprador.
 
 - **Forma de pago (606, campo 23)**: la macro la exige en cada fila. El
   usuario decidió que no sea obligatoria al registrar la factura; el
@@ -161,7 +224,7 @@ versión no admite e-NCF (serie E)**: longitud solo 11 o 19.
 - **e-NCF y código QR**: en facturas reales, el QR de un e-CF lleva una URL
   de `ecf.dgii.gov.do/.../ConsultaTimbre` con `RncEmisor`, `RncComprador`,
   `ENCF`, `FechaEmision` (DD-MM-AAAA), `MontoTotal`, `FechaFirma` y
-  `CodigoSeguridad`. No se usa todavía.
+  `CodigoSeguridad`. Se lee en la captura por lotes.
 
 ## Pendiente / dudas abiertas
 
@@ -173,6 +236,5 @@ versión no admite e-NCF (serie E)**: longitud solo 11 o 19.
 3. El resultado real solo se confirma pasando el TXT por la **Herramienta
    de Pre-validación** de la DGII (aplicación de Windows) y enviándolo. Eso
    lo tiene que hacer el usuario; aquí solo se verificó contra la macro.
-4. Semántica de los tipos de e-CF (31-34, 41-47): las fuentes solo dan los
-   rangos válidos, no qué significa cada uno. No se codificó nada que
-   dependa de ello.
+4. ~~Semántica de los tipos de e-CF~~: resuelta el 2026-11-18 con la Guía
+   de NCF (ver "Tipos de comprobante").

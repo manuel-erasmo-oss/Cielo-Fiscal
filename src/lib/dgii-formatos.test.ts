@@ -3,6 +3,10 @@ import {
   clasificacionContable,
   digitoVerificadorCorrecto,
   esConsumoBajoUmbral,
+  esNotaDeCredito,
+  esNotaDeDebito,
+  esNcfValidoIngresos,
+  loEmiteElComprador,
   esNcfValido606,
   esNcfValido607,
   generar606,
@@ -78,11 +82,42 @@ describe('NCF', () => {
     expect(esNcfValido607('B1700000001')).toBe(false)
   })
 
-  it('tipoNcf sigue a la macro: vacío para e-NCF', () => {
+  it('tipoNcf: posiciones 2-3 en serie B y en e-NCF (Guía de NCF), 10-11 en serie A', () => {
     expect(tipoNcf('B0400000001')).toBe('04')
     expect(tipoNcf('A010010010100000001')).toBe('01')
-    expect(tipoNcf('E340000000001')).toBe('')
+    expect(tipoNcf('E340000000001')).toBe('34')
     expect(tipoNcf(null)).toBe('')
+  })
+})
+
+// Fuente: Guía Informativa de NCF (DGII, marzo 2026) y su tabla de tipos
+// electrónicos (Aviso núm. 24-2019).
+describe('tipos de comprobante según la Guía de NCF', () => {
+  it('nota de crédito: 04 y su versión electrónica 34; nota de débito: 03 y 33', () => {
+    expect(esNotaDeCredito({ ncf: 'B0400000001' })).toBe(true)
+    expect(esNotaDeCredito({ ncf: 'E340000000001' })).toBe(true)
+    expect(esNotaDeCredito({ ncf: 'E310000000001' })).toBe(false)
+    expect(esNotaDeDebito({ ncf: 'B0300000001' })).toBe(true)
+    expect(esNotaDeDebito({ ncf: 'E330000000001' })).toBe(true)
+    expect(esNotaDeDebito({ ncf: 'E340000000001' })).toBe(false)
+  })
+
+  it('compras, gastos menores y pagos al exterior los emite el comprador', () => {
+    for (const ncf of ['B1100000001', 'B1300000001', 'B1700000001', 'E410000000001', 'E430000000001', 'E470000000001']) {
+      expect(loEmiteElComprador(ncf), ncf).toBe(true)
+    }
+    for (const ncf of ['B0100000001', 'B0200000001', 'E310000000001', 'E440000000001', 'E460000000001', null]) {
+      expect(loEmiteElComprador(ncf), String(ncf)).toBe(false)
+    }
+  })
+
+  it('ingresos: e-NCF de venta (31-34, 44-46) sí; no existe el tipo 42', () => {
+    for (const ncf of ['E310000000001', 'E340000000001', 'E440000000001', 'E450000000001', 'E460000000001', 'B0100000001', 'B1500000001']) {
+      expect(esNcfValidoIngresos(ncf), ncf).toBe(true)
+    }
+    for (const ncf of ['E420000000001', 'E350000000001', 'E480000000001', 'E41000000001']) {
+      expect(esNcfValidoIngresos(ncf), ncf).toBe(false)
+    }
   })
 })
 
@@ -125,6 +160,34 @@ describe('validarCompra606', () => {
 
   it('ITBIS en cero es válido', () => {
     expect(validarCompra606(compra({ itbisFacturado: 0 }), RNC_CLIENTE)).toEqual([])
+  })
+
+  it('gastos menores y pagos al exterior electrónicos (43, 47) llevan el RNC del cliente, igual que 13 y 17', () => {
+    for (const ncf of ['B1300000001', 'E430000000001', 'E470000000001']) {
+      expect(errores(validarCompra606(compra({ ncf, montoServicios: 1000, montoBienes: 0 }), RNC_CLIENTE)), ncf).toEqual(['rncCedulaContraparte'])
+      expect(validarCompra606(compra({ ncf, rncCedulaContraparte: RNC_CLIENTE, montoServicios: 1000, montoBienes: 0 }), RNC_CLIENTE), ncf).toEqual([])
+    }
+  })
+
+  it('factura de consumo (02 o 32): se acepta, con aviso de que no sustenta ITBIS ni costos', () => {
+    for (const ncf of ['B0200000001', 'E320000000001']) {
+      const p = validarCompra606(compra({ ncf }), RNC_CLIENTE)
+      expect(p.map(x => [x.campo, x.nivel]), ncf).toEqual([['ncf', 'aviso']])
+      expect(p[0].mensaje).toMatch(/consumo/)
+    }
+  })
+
+  it('pagos al exterior con monto en bienes: aviso (solo aplica a servicios)', () => {
+    const p = validarCompra606(compra({ ncf: 'E470000000001', rncCedulaContraparte: RNC_CLIENTE }), RNC_CLIENTE)
+    expect(p.map(x => [x.campo, x.nivel])).toEqual([['montoBienes', 'aviso']])
+  })
+
+  it('comprobante no electrónico después del último plazo de la Ley 32-23: aviso, no error', () => {
+    expect(validarCompra606(compra({ fechaComprobante: '2026-05-16' }), RNC_CLIENTE)).toEqual([])
+    const tarde = validarCompra606(compra({ fechaComprobante: '2026-06-01' }), RNC_CLIENTE)
+    expect(tarde.map(x => [x.campo, x.nivel])).toEqual([['ncf', 'aviso']])
+    expect(tarde[0].mensaje).toMatch(/electrónico/)
+    expect(validarCompra606(compra({ ncf: 'E310000000001', fechaComprobante: '2026-06-01' }), RNC_CLIENTE)).toEqual([])
   })
 
   it('con retenciones exige fecha de pago', () => {
@@ -179,6 +242,15 @@ describe('validarVentaIngresos (reporte interno; el 607 ya no se envía)', () =>
       expect(validarVentaIngresos(venta({ ncf })), ncf).toEqual([])
     }
     expect(errores(validarVentaIngresos(venta({ ncf: 'B01123' })))).toEqual(['ncf'])
+  })
+
+  it('admite exportación electrónica (46) y rechaza los e-CF que emite el comprador', () => {
+    expect(validarVentaIngresos(venta({ ncf: 'E460000000001' }))).toEqual([])
+    for (const ncf of ['E410000000001', 'E430000000001', 'E470000000001']) {
+      const p = validarVentaIngresos(venta({ ncf }))
+      expect(errores(p), ncf).toEqual(['ncf'])
+      expect(p[0].mensaje).toMatch(/comprador/)
+    }
   })
 
   it('retenciones sin fecha de retención: no bloquea', () => {
@@ -288,6 +360,13 @@ describe('archivo 606', () => {
     for (const linea of archivo.contenido.split('\r\n').slice(1)) expect(linea.split('|')).toHaveLength(23)
     expect(archivo.registros).toBe(2)
     // La nota de crédito resta.
+    expect(archivo.totalMontoFacturado).toBe(900)
+    expect(archivo.totalItbisFacturado).toBe(162)
+  })
+
+  it('una nota de crédito electrónica (E34) resta en los totales, igual que la B04', () => {
+    const nota = compra({ ncf: 'E340000000002', ncfModificado: 'E310000000001', montoBienes: 100, itbisFacturado: 18 })
+    const archivo = generar606(RNC_CLIENTE, '202603', [compra({ ncf: 'E310000000001' }), nota])
     expect(archivo.totalMontoFacturado).toBe(900)
     expect(archivo.totalItbisFacturado).toBe(162)
   })
