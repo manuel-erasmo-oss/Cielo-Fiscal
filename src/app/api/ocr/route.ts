@@ -83,6 +83,10 @@ function instrucciones(actividad: string, tramos: number): string {
   const comoViene = tramos > 1
     ? `Las ${tramos} imágenes adjuntas son tramos consecutivos, de arriba abajo, de UN solo documento (un recibo largo partido en partes). Algunos renglones se repiten entre un tramo y el siguiente: cuéntalos una sola vez.`
     : 'El documento adjunto es una página o una foto.'
+  // Fuentes de dos reglas del texto: la "E" de los artículos exentos sale del
+  // Decreto 254-06, art. 8, numeral 1 e); el comprobante de compras emitido
+  // por el comprador, del mismo decreto, art. 5 párrafo III, y de la Guía
+  // Informativa de NCF (tipo 11) y la NG 01-2020, art. 3 t) (tipo 41).
   return `Lees comprobantes fiscales de la República Dominicana para llenar los reportes que un contador envía a la DGII. Lo que devuelves se usa tal cual, así que tiene que ser exacto.
 
 ${comoViene}
@@ -92,13 +96,14 @@ Primero decide esComprobanteFiscal: true si es una factura, un recibo de caja u 
 Si es un comprobante, devuelve cada campo tal como está impreso:
 - rncEmisor y nombreEmisor: RNC (o cédula) y nombre de quien EMITE el comprobante (el negocio que vende; suele estar en el encabezado).
 - rncComprador y nombreComprador: RNC (o cédula) y nombre de A QUIÉN se le factura (suele decir "cliente", "RNC/cédula del cliente" o "comprador"). Si el comprobante no identifica al comprador, null.
+- Excepción: el comprobante de compras (NCF tipo 11 o e-NCF tipo 41) lo emite el COMPRADOR a un vendedor no registrado. En ese caso pon en rncEmisor/nombreEmisor los datos de quien lo emite (el comprador) y en rncComprador/nombreComprador el nombre y la cédula del vendedor que aparecen en el documento.
 - ncf: el Número de Comprobante Fiscal (NCF o e-NCF) de este comprobante, completo.
 - ncfModificado: el NCF que este comprobante modifica, solo si es una nota de crédito o débito que lo indica. Si no, null.
 - fechaComprobante: fecha de emisión, en formato YYYY-MM-DD. En República Dominicana las fechas se escriben día/mes/año.
 - fechaPago: fecha de pago, solo si aparece impresa, en formato YYYY-MM-DD. Si no, null.
 - montoSinImpuestos: subtotal antes de cualquier impuesto, como número sin separador de miles.
 - montoServicios y montoBienes: cómo se reparte ese subtotal entre servicios y bienes, según lo que describen las líneas. Si todo son bienes, pon el subtotal en montoBienes y 0 en montoServicios; si todo son servicios, al revés. Si es mixta y no puedes separar los montos con lo impreso, devuelve ambos como null.
-- itbisFacturado: monto total de ITBIS (puede venir a varias tasas: súmalas). Si el documento muestra ITBIS en cero o dice que está exento, devuelve 0.
+- itbisFacturado: monto total de ITBIS (puede venir a varias tasas: súmalas). Si el documento muestra ITBIS en cero o dice que está exento, devuelve 0. Los artículos exentos suelen llevar una "E" a la izquierda de su descripción: no les corresponde ITBIS.
 - impuestoSelectivoConsumo: monto del Impuesto Selectivo al Consumo, solo si aparece desglosado. Si no, null.
 - otrosImpuestos: suma de otros impuestos o tasas desglosados que no sean ITBIS, selectivo ni propina. Si no hay, null.
 - propinaLegal: monto de la propina legal (10%), solo si aparece desglosada. Si no, null.

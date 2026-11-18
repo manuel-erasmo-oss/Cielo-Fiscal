@@ -19,12 +19,20 @@ su propio documento: `formatos-606-607.md`.
 | Decreto de 2001 que modifica el Reglamento 140-98 (el usuario lo envió como "Decreto ITBIS") | **Derogado**: el art. 30 del Decreto 293-11 deroga el 140-98 y sus modificaciones de 2001 (196-01, 274-01, 1108-01) y la 603-10 | Nada |
 | **Norma General 06-2018** sobre comprobantes fiscales (01-02-2018) | Vigente para comprobantes no electrónicos; la facturación electrónica la va dejando sin objeto | Vigencia de secuencias, fin de las series de 19 posiciones |
 | NIIF para las PYMES, 3.ª edición (2025) | Vigente | Costo, gasto y activo en el 606 |
+| **Decreto 254-06**, reglamento de comprobantes fiscales (19-06-2006) | Vigente; la NG 01-2020 hace equivalentes a él los e-CF | Tipos, requisitos de la factura, obligación de validar el NCF |
+| **Norma General 06-2014**, remisión de informaciones (rige desde 2015) | **Sustituida** en el formato y el plazo: la NG 01-2020 dice que el 606 se rige por la **NG 07-2018** (modificada por la NG 10-18). Su formato de ancho fijo y su plazo del día 20 ya no son los de la herramienta vigente (separador `\|`, 23 campos, día 15) | Solo el alcance: qué se reporta en 606, 607, 608 y 609 |
+| **Norma General 06-2021** (14-06-2021) | Vigente; solo cambia de 10 a 5 días hábiles la respuesta a la solicitud de comprobantes (art. 3 de la NG 06-2018) | Nada |
+| **Norma General 01-2020**, facturación electrónica (09-01-2020) | Vigente, ahora bajo la Ley 32-23 y el Decreto 587-24 | Definición de cada tipo de e-CF, timbre (QR), validación por el receptor |
+| Guía Informativa de NCF (2.ª copia recibida en el tercer lote) | Igual a la ya leída | — |
 
-**Ojo con un error anterior**: en la lista de pedidos se llamó a la NG
-06-2018 "la de remisión de informaciones". No lo es: es la de comprobantes.
-La de remisión de informaciones (la que rige el 606) es la **NG 06-2014**,
-que la propia 06-2018 cita como "que sustituye la NG 01-07 sobre Remisión
-de Informaciones". Falta recibirla y confirmar si sigue vigente.
+**Cadena de la norma de remisión de informaciones (la que rige el 606)**:
+NG 01-07 → NG 06-2014 (recibida; vigente desde 2015) → **NG 07-2018**, del
+09-03-2018, modificada por la **NG 10-18** (las cita como vigentes la NG
+01-2020, art. 8 párrafo III). Las dos últimas no se han recibido. Mientras
+tanto, el formato y el plazo del 606 salen de la herramienta y el
+instructivo de la DGII de 2025 (ver `formatos-606-607.md`), que son
+posteriores a todas ellas. Antes se dijo por error que la NG 06-2018 era la
+de remisión: es la de comprobantes.
 
 ## Dentro del Código Tributario: lo superado
 
@@ -114,7 +122,50 @@ de Informaciones". Falta recibirla y confirmar si sigue vigente.
 - Art. 10: los NCF autorizados antes de la norma (series de 19 posiciones)
   solo podían emitirse hasta el **30-04-2018**. → aviso en el 606.
 
+## Decreto 254-06 (reglamento de comprobantes): lo que importa
+
+- Art. 4: tipos (crédito fiscal, consumo, notas de débito y crédito); las
+  notas solo modifican comprobantes del mismo comprador. Los tiques de
+  máquina registradora solo valen con consumidores finales (art. 20).
+- Art. 5 párrafo III: comprobante especial que emite el propio comprador
+  (hoy el de compras, 11/41): el emisor es el comprador y quien lo recibe
+  es el vendedor. → instrucción a la IA.
+- Art. 8: la factura debe desglosar el ITBIS y otros impuestos, y marcar
+  con una **"E"** a la izquierda los artículos exentos. → instrucción a la
+  IA.
+- Art. 9: la factura con valor fiscal lleva nombre y RNC del comprador; las
+  notas, el NCF que modifican.
+- **Art. 27: quien use un comprobante para crédito de ITBIS o para costos y
+  gastos debe consultar su validez en la DGII**; si no lo hace, no puede
+  alegar desconocimiento. (Idea sin decidir: validar en la DGII desde el
+  sistema.)
+
+## Norma General 01-2020 (facturación electrónica): lo que importa
+
+- Art. 3: estados del e-CF (aceptado, aceptado condicional, rechazado, en
+  proceso); un e-CF rechazado no vale para fines fiscales (art. 8 párr. V).
+- Art. 3 j): el **timbre electrónico** (el QR) permite verificar que el
+  e-NCF está autorizado, que los datos principales no se alteraron y quién
+  lo emitió; para sustentar costos y gastos debe coincidir con lo
+  registrado en la DGII. Respalda la regla de la captura por lotes de que
+  lo del QR manda.
+- Art. 3, definiciones de cada tipo: gastos menores (43) = pagos del
+  personal por su trabajo (consumibles, pasajes, transporte, parqueos,
+  peajes); pagos al exterior (47) = rentas de fuente dominicana pagadas a
+  no residentes con retención total del ISR; regímenes especiales (44) =
+  ventas exentas a quienes tienen esos regímenes.
+- Art. 8 párrafos I y III: el receptor electrónico da su conformidad con la
+  aprobación comercial o al reportar la compra en el 606, y debe consultar
+  la validez del e-CF en la DGII.
+- Art. 14 párrafo: las facturas de consumo electrónicas desde el monto que
+  fije la NG 07-2018 deben identificar al comprador.
+
 ## Aplicado en el código (2026-11-18)
+
+- Tercer lote: dos instrucciones nuevas a la IA (`src/app/api/ocr/route.ts`):
+  la "E" de los artículos exentos y, en el comprobante de compras (11/41),
+  poner al vendedor como "comprador", que es como lo interpreta
+  `interpretarLectura`.
 
 - `dgii-fiscal.ts`: ITBIS 18% verificado (usuario + Código); ISR jurídicas
   27% con el 30% transitorio; escala de personas físicas 2027; recargo por

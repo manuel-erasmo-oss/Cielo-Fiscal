@@ -608,6 +608,11 @@ Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
 1. **¿Que la IA lea la fecha de vencimiento de la secuencia** impresa en
    los comprobantes B (NG 06-2018, art. 7) y avise si la factura es
    posterior? Requiere un campo nuevo. Sin decidir.
+1b. **¿Validar cada comprobante en la consulta de la DGII?** El Decreto
+   254-06 (art. 27) obliga a quien usa un comprobante para crédito o costos
+   a verificar su validez, y un e-CF rechazado no vale (NG 01-2020). Para
+   los e-CF el QR ya trae la dirección de consulta. Falta saber si la DGII
+   deja consultar desde el servidor (desde estas sesiones responde 403).
 2. **Excel exportable aunque el reporte esté incompleto** (decisión
    propia; el archivo lo advierte en el nombre y en el Resumen).
 3. **Segunda remisión por retenciones en el 606** (NCF que se vuelve a
@@ -702,13 +707,19 @@ a verificados.
     esa es la NG 06-2014.
   - El usuario confirmó: ITBIS 18%; la facturación electrónica ya es
     obligatoria, pero los comprobantes serie B se siguen dejando pasar.
+- **Tercer lote (2026-11-18)** → `docs/dgii/marco-legal.md`: Decreto 254-06
+  (reglamento de comprobantes, vigente), NG 06-2014 (remisión de
+  informaciones: **sustituida** por la NG 07-2018 y la NG 10-18, según la
+  NG 01-2020), NG 06-2021 (solo cambia un plazo de respuesta de la DGII),
+  NG 01-2020 (facturación electrónica) y otra copia de la Guía de NCF.
+  Aplicado: dos instrucciones a la IA (artículos exentos con "E";
+  comprobante de compras 11/41 emitido por el comprador).
 
 **Pedidas al usuario para lo que sigue** (sin recibir; el usuario dijo
 que envía "lo otro" en otro lote):
-- NG 06-2014 sobre remisión de informaciones (la que rige el 606), o la
-  que la haya sustituido.
-- NG 05-2019, NG 01-2020, NG 06-2021, Aviso 24-2019 y Decreto 254-06
-  (reglamento de comprobantes), con sus modificaciones vigentes.
+- **NG 07-2018 sobre remisión de informaciones y la NG 10-18 que la
+  modifica** (las que rigen hoy el 606, según la NG 01-2020).
+- NG 05-2019 (tipos de comprobantes especiales) y Aviso 24-2019.
 - Avisos de la DGII con las listas de obligados a e-CF y sus prórrogas.
 - Formulario IT-1 con su anexo A e instructivo vigentes.
 - Formulario e instructivo del IR-17 y la norma de retenciones vigente
