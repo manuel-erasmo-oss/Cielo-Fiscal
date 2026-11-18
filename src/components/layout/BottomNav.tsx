@@ -2,17 +2,16 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ArrowLeftRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CONFIGURACION_ITEM, NAV_GLOBAL, empresaDeRuta, estaActivo, navEmpresa, type NavItem } from '@/lib/nav-items'
 
-// Móvil: dentro de una empresa, sus módulos más "Cambiar" (vuelve a Tus
-// empresas); fuera, Tus empresas y Ajustes.
+// Móvil: dentro de una empresa, sus módulos (para cambiar de empresa está la
+// franja de arriba, una sola vez); fuera, Tus empresas y Ajustes.
 export function BottomNav() {
   const pathname = usePathname()
   const empresaId = empresaDeRuta(pathname)
   const items: NavItem[] = empresaId
-    ? [...navEmpresa(empresaId), { href: '/', icon: ArrowLeftRight, label: 'Cambiar', exacto: true }]
+    ? navEmpresa(empresaId)
     : [...NAV_GLOBAL, { ...CONFIGURACION_ITEM, label: 'Ajustes' }]
 
   return (

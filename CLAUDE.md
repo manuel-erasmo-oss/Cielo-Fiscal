@@ -313,8 +313,8 @@ cuentas todavía**; el inicio de sesión llega con la migración a la nube
   eliminar con aviso de que se borran sus facturas). Reemplaza al Inicio y
   a la pantalla de Clientes de antes.
 - **Los módulos solo existen dentro de una empresa**: `/empresa/<id>`
-  (Tablero), `/empresa/<id>/facturas`, `/empresa/<id>/lote` y
-  `/empresa/<id>/reportes`. La empresa va en la dirección, no en un estado
+  (Tablero), `/empresa/<id>/facturas`, `/empresa/<id>/lote` (se entra desde
+  Facturas, ver "Cada opción una sola vez") y `/empresa/<id>/reportes`. La empresa va en la dirección, no en un estado
   oculto: cada pestaña queda atada a una empresa. Las direcciones viejas
   (`/clientes`, `/facturas`, `/lote`, `/reportes`) llevan a "Tus empresas"
   (`next.config.mjs`). Una dirección con un id que no existe muestra "Esta
@@ -331,8 +331,9 @@ cuentas todavía**; el inicio de sesión llega con la migración a la nube
   del formulario de factura (ahí la empresa es un campo de solo lectura):
   una factura no se puede pasar a otra empresa.
 - Siempre visible dentro de una empresa: franja "Trabajando en <empresa>
-  <RNC> · Cambiar de empresa" en el encabezado y bloque "Empresa activa" en
-  el menú lateral. En móvil, la barra inferior trae "Cambiar".
+  <RNC> · Cambiar de empresa" en el encabezado (único lugar para cambiar
+  de empresa, también en móvil) y bloque "Empresa activa" en el menú
+  lateral (solo muestra la empresa, sin enlace).
 - Al entrar a una empresa se ve su **Tablero** (antes "Resumen"; ver
   "Tablero de la empresa", abajo).
 - Refuerzo que ya existía: en la captura por lotes, una factura cuyo QR
@@ -432,6 +433,38 @@ tocó `tailwind.config.ts` ni `globals.css`; solo utilidades de Tailwind).
 - **Reportes**: el reporte se elige con dos tarjetas (606 / Ingresos), el
   mes abre en el período del 606 en curso, y el resumen del reporte trae
   estado "Completo" o "Incompleto", vencimiento y totales.
+
+### Cada opción una sola vez (pedido por el usuario el 2026-11-18) — MANDA
+
+> "Hay opciones que se repiten en distintos lugares demasiado, subir lote se
+> repite demasiadas veces."
+
+Decidido con las opciones recomendadas:
+
+- **Regla**: la navegación vive en el menú (lateral en computadora, barra
+  inferior en móvil). Un botón dentro de una pantalla solo aparece si es el
+  siguiente paso de esa pantalla (por ejemplo, "Subir el primer lote" en el
+  tablero de una empresa sin facturas, o "Revisar las pendientes" en
+  "Listo para el 606"). No volver a poner accesos que repitan el menú.
+- **Menú de una empresa: Tablero, Facturas y Reportes.** "Subir lote" ya no
+  es un módulo: es parte de Facturas. En Facturas hay un solo botón,
+  **"Agregar facturas"**, con dos opciones: "Una factura" (foto o PDF de una
+  factura, o a mano) y "Un lote" (PDF con muchas facturas o varias fotos),
+  que lleva a `/empresa/<id>/lote`. Ahí "Facturas" queda marcada en el menú
+  (`NavItem.activoEn`).
+- Se quitaron: "Subir lote" del menú y de la barra móvil; los botones Subir
+  lote / Facturas / Reportes del encabezado del Tablero; el botón "Subir
+  lote" junto a "Nueva factura" (los dos se volvieron "Agregar facturas");
+  el botón del estado vacío de Facturas (el texto remite a "Agregar
+  facturas"); "Cambiar de empresa" del menú lateral y "Cambiar" de la barra
+  móvil (queda solo en la franja de arriba).
+- Comprobado en navegador real: 14/14 del tablero (dos nuevas: el tablero no
+  repite el menú; el menú lateral es exactamente Tablero, Facturas,
+  Reportes), 27/27 de la separación por empresa (nuevas: Subir lote desde
+  "Agregar facturas", Facturas marcada en el menú, un solo "Cambiar de
+  empresa"; en móvil la barra trae Tablero, Facturas y Reportes y "Cambiar"
+  aparece una vez), y 16/16, 9/9, 15/15 y 26/26 adaptadas a "Agregar
+  facturas". Sin desplazamiento horizontal en móvil.
 
 ## Verificación en la DGII (pedida por el usuario el 2026-11-18) — construida
 
@@ -992,7 +1025,9 @@ que envía "lo otro" en otro lote):
   empresa con "Tus empresas" y diseño premium de esa pantalla y del
   resumen) el 2026-11-18; PR #7 (comprobación en producción del PR #6, solo
   documentación) el mismo día; PR #8 (tablero de la empresa y estilo
-  premium en Facturas, Subir lote y Reportes) el 2026-11-18.
+  premium en Facturas, Subir lote y Reportes) y PR #9 (su comprobación en
+  producción) el 2026-11-18. Pendiente de fusionar: "Cada opción una sola
+  vez" (rama de desarrollo).
 
 ## Nombre del producto
 

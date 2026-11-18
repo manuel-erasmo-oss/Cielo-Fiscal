@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowDownRight, ArrowRight, ArrowUpRight, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert,
-  FileSpreadsheet, Files, Minus, PenLine, ReceiptText, ShieldAlert, ShieldX, Table2, Upload,
+  Files, Minus, ReceiptText, ShieldAlert, ShieldX, Table2, Upload,
 } from 'lucide-react'
 import { BarraComposicion, BarraEstado, BarrasProveedores, COLOR_ESTADO, GraficoMensual, Leyenda, VARIABLES_GRAFICOS } from '@/components/dashboard/Graficos'
 import { Pagina } from '@/components/layout/Pagina'
@@ -105,17 +105,6 @@ export default function TableroEmpresaPage() {
                   {empresa.actividad && <><span aria-hidden="true" className="hidden text-indigo-300/50 sm:inline">·</span><span className="hidden max-w-xs truncate sm:inline">{empresa.actividad}</span></>}
                 </p>
               </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href={rutaEmpresa(empresa.id, 'lote')} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#1B2980] shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg">
-                <Upload className="h-4 w-4" /> Subir lote
-              </Link>
-              <Link href={rutaEmpresa(empresa.id, 'facturas')} className="hidden items-center gap-2 rounded-xl bg-white/10 sm:inline-flex px-4 py-2.5 text-sm font-semibold text-white ring-1 ring-inset ring-white/20 transition-colors hover:bg-white/15">
-                <PenLine className="h-4 w-4" /> Facturas
-              </Link>
-              <Link href={rutaEmpresa(empresa.id, 'reportes')} className="hidden items-center gap-2 rounded-xl bg-white/10 sm:inline-flex px-4 py-2.5 text-sm font-semibold text-white ring-1 ring-inset ring-white/20 transition-colors hover:bg-white/15">
-                <FileSpreadsheet className="h-4 w-4" /> Reportes
-              </Link>
             </div>
           </div>
 

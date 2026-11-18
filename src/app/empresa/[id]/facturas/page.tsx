@@ -1,8 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowDownLeft, ArrowUpRight, CheckCheck, CheckCircle2, CircleAlert, Coins, Files, Pencil, Plus, ReceiptText, ShieldAlert, ShieldCheck, ShieldX, Sparkles, Trash2, Wallet, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, CheckCheck, CheckCircle2, ChevronDown, CircleAlert, Coins, FileText, Files, Pencil, Plus, ReceiptText, ShieldAlert, ShieldCheck, ShieldX, Sparkles, Trash2, Wallet, X } from 'lucide-react'
 import { FacturaModal } from '@/components/facturas/FacturaModal'
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
 import { AccionSugerida, Cifra, Estado, Segmentos } from '@/components/ui/premium'
@@ -171,16 +171,7 @@ export default function FacturasPage() {
       subtitle="Compras y ventas de esta empresa"
       actions={
         empresa && (
-          <>
-            <Link href={rutaEmpresa(empresa.id, 'lote')} className={BTN_SECONDARY}>
-              <Files className="h-4 w-4" />
-              <span className="hidden sm:inline">Subir lote</span>
-            </Link>
-            <button onClick={() => setEnEdicion(null)} className={BTN_PRIMARY}>
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Nueva factura</span>
-            </button>
-          </>
+          <AgregarFacturas hrefLote={rutaEmpresa(empresa.id, 'lote')} onUna={() => setEnEdicion(null)} />
         )
       }
     >
@@ -269,8 +260,8 @@ export default function FacturasPage() {
               title={hayFiltros ? 'Ninguna factura coincide con los filtros' : 'Todavía no hay facturas'}
               message={hayFiltros
                 ? 'Cambia o quita los filtros para ver más facturas.'
-                : 'Sube la primera factura y el sistema leerá sus datos para que los revises.'}
-              action={hayFiltros ? undefined : { label: 'Nueva factura', onClick: () => setEnEdicion(null) }}
+                : 'Usa “Agregar facturas”, arriba: una factura suelta o un lote completo. El sistema leerá sus datos para que los revises.'}
+              // Sin botón propio: "Agregar facturas" ya está arriba (cada opción una sola vez).
             />
           ) : (
             <div className={cn(CARD_CLASS, 'animate-content-in overflow-hidden')}>
@@ -412,5 +403,49 @@ export default function FacturasPage() {
 
       {aviso && <Toast message={aviso.mensaje} type={aviso.tipo} onClose={() => setAviso(null)} />}
     </Pagina>
+  )
+}
+
+// Un solo botón para agregar facturas (pedido por el usuario el 2026-11-18:
+// "subir lote se repite demasiadas veces"). Subir lote vive aquí, no en el
+// menú ni en el tablero.
+function AgregarFacturas({ hrefLote, onUna }: { hrefLote: string; onUna: () => void }) {
+  const [abierto, setAbierto] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!abierto) return
+    const fuera = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setAbierto(false) }
+    const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') setAbierto(false) }
+    document.addEventListener('mousedown', fuera)
+    document.addEventListener('keydown', escape)
+    return () => { document.removeEventListener('mousedown', fuera); document.removeEventListener('keydown', escape) }
+  }, [abierto])
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setAbierto(a => !a)} aria-haspopup="menu" aria-expanded={abierto} className={BTN_PRIMARY}>
+        <Plus className="h-4 w-4" />
+        <span className="hidden sm:inline">Agregar facturas</span>
+        <span className="sm:hidden">Agregar</span>
+        <ChevronDown className={cn('h-4 w-4 transition-transform', abierto && 'rotate-180')} />
+      </button>
+      {abierto && (
+        <div role="menu" className="animate-modal-in absolute right-0 z-30 mt-2 w-72 overflow-hidden rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl dark:border-[#252840] dark:bg-[#141722]">
+          <button role="menuitem" onClick={() => { setAbierto(false); onUna() }} className="flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-[#1a1d2e]">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#eef0fb] text-[#1B2980] dark:bg-indigo-950/50 dark:text-indigo-300"><FileText className="h-4 w-4" /></span>
+            <span>
+              <span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-100">Una factura</span>
+              <span className="block text-xs text-zinc-500 dark:text-zinc-400">Foto o PDF de una factura, o a mano</span>
+            </span>
+          </button>
+          <Link role="menuitem" href={hrefLote} onClick={() => setAbierto(false)} className="flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-[#1a1d2e]">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#eef0fb] text-[#1B2980] dark:bg-indigo-950/50 dark:text-indigo-300"><Files className="h-4 w-4" /></span>
+            <span>
+              <span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-100">Un lote</span>
+              <span className="block text-xs text-zinc-500 dark:text-zinc-400">PDF con muchas facturas o varias fotos</span>
+            </span>
+          </Link>
+        </div>
+      )}
+    </div>
   )
 }
