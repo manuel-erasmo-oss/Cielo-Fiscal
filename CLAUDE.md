@@ -367,6 +367,10 @@ tocó `tailwind.config.ts` ni `globals.css`; solo utilidades de Tailwind).
 - Revisado en capturas en claro, oscuro y móvil (iPhone 13), sin
   desplazamiento horizontal. En móvil los indicadores van en una fila
   compacta.
+- **Pendiente de decisión del usuario** (dicho el 2026-11-18: "para luego
+  tomar una decisión sobre facturas, subir lote y reportes"): si se lleva
+  el mismo estilo a Facturas, Subir lote y Reportes, que conservan el
+  diseño anterior.
 
 ## Verificación en la DGII (pedida por el usuario el 2026-11-18) — construida
 
@@ -729,6 +733,10 @@ partir de lo que corrija el contador.
 
 Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
 
+0. **¿Llevar el diseño premium a Facturas, Subir lote y Reportes?** El
+   usuario lo va a decidir después de ver en el sitio "Tus empresas" y el
+   resumen.
+
 1. **¿Que la IA lea la fecha de vencimiento de la secuencia** impresa en
    los comprobantes B (NG 06-2018, art. 7) y avise si la factura es
    posterior? Requiere un campo nuevo. Sin decidir.
@@ -913,7 +921,10 @@ que envía "lo otro" en otro lote):
   fusionados el 2026-11-15; PR #3 (captura por lotes + IA automática) el
   2026-11-17; PR #4 (cuatro lotes de normas fiscales aplicados, Ley 30-26 en
   el motor fiscal, verificación automática en la DGII, serie A rechazada,
-  verificación humana de e-CF sin QR legible) el 2026-11-18.
+  verificación humana de e-CF sin QR legible) el 2026-11-18; PR #5
+  (comprobación en producción, solo documentación) y PR #6 (separación por
+  empresa con "Tus empresas" y diseño premium de esa pantalla y del
+  resumen) el 2026-11-18.
 
 ## Nombre del producto
 
