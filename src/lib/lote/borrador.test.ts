@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CAMPOS_VACIOS } from '@/lib/documentos'
 import type { ResultadoOCR } from '@/lib/ocr-tipos'
-import { documentoDesdePagina, fusionarConLectura, interpretarPagina, observaciones, type ContextoLote } from './borrador'
+import { aplicarVerificacion, conDatosDGII, documentoDesdePagina, fusionarConLectura, interpretarPagina, observaciones, type ContextoLote } from './borrador'
 
 const CLIENTE = { id: 'c1', rncCedula: '401007551' }
 const qr = (o: { emisor?: string; comprador?: string | null; encf?: string; total?: string } = {}) =>
@@ -139,5 +139,64 @@ describe('fusionarConLectura', () => {
     const b = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ camposDudosos: ['tipoBienesServicios'] }), ctx())
     const doc = documentoDesdePagina('d9', b, CLIENTE, { nombre: 'julio.pdf', pagina: 9 }, '2026-08-01T10:00:00.000Z')
     expect(doc).toMatchObject({ origen: 'ocr', confianzaOCR: 0.9, estadoRevision: 'pendiente_revision', camposIncompletos: ['tipoBienesServicios'] })
+  })
+})
+
+describe('verificación en la DGII', () => {
+  const lectura = (campos: Partial<ResultadoOCR['extraccion']> = {}, dudosos: ResultadoOCR['camposDudosos'] = []): ResultadoOCR => ({
+    esComprobante: true, tipo: 'compra', coincideCliente: true, confianzaOCR: 0.9, camposDudosos: dudosos,
+    extraccion: {
+      ...CAMPOS_VACIOS, rncCedulaContraparte: '101123451', nombreContraparte: null, ncf: 'E310000007629',
+      fechaComprobante: '2026-07-01', montoServicios: 0, montoBienes: 2068, itbisFacturado: 300, montoTotal: 2440.24,
+      tipoBienesServicios: '09', ...campos,
+    },
+  })
+  const respuesta = (estado: 'aceptado' | 'rechazado' | 'no_encontrado', itbis: number | null = 372.24) => ({
+    estado, texto: estado,
+    datos: estado === 'no_encontrado' ? null : {
+      rncEmisor: '101123451', razonSocialEmisor: 'FERRETERIA EL SOL SRL', rncComprador: '401007551', razonSocialComprador: 'CLIENTE SRL',
+      encf: 'E310000007629', totalItbis: itbis, montoTotal: 2440.24,
+    },
+  })
+  const AHORA = '2026-11-18T12:00:00.000Z'
+
+  it('la página con QR de un e-CF guarda su dirección de consulta', () => {
+    expect(interpretarPagina(qr(), ctx()).qrUrl).toMatch(/^https:\/\/ecf\.dgii\.gov\.do\//)
+  })
+
+  it('aceptada: el ITBIS de la DGII deja de estar en duda y la razón social llena el nombre', () => {
+    const leida = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ itbisFacturado: 372.24 }, ['itbisFacturado']), ctx())
+    expect(observaciones(leida, CLIENTE.rncCedula)).toEqual(['itbisFacturado'])
+    const b = aplicarVerificacion(leida, respuesta('aceptado'), AHORA)
+    expect(observaciones(b, CLIENTE.rncCedula)).toEqual([])
+    const doc = documentoDesdePagina('d1', b, CLIENTE, { nombre: 'lote.pdf', pagina: 1 }, AHORA)
+    expect(doc).toMatchObject({
+      itbisFacturado: 372.24, nombreContraparte: 'FERRETERIA EL SOL SRL',
+      verificacionDGII: { estado: 'aceptado', consultadoEn: AHORA },
+    })
+    expect(doc.qrUrl).toMatch(/ConsultaTimbre/)
+  })
+
+  it('el ITBIS de la DGII reemplaza el de la IA; si la IA no cuadraba, el reparto de montos sigue en duda', () => {
+    const leida = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura(), ctx())
+    const b = aplicarVerificacion(leida, respuesta('aceptado'), AHORA)
+    expect(conDatosDGII(b).campos.itbisFacturado).toBe(372.24)
+    expect(conDatosDGII(b).dudosos).toEqual(['montoServicios', 'montoBienes'])
+  })
+
+  it('si con el ITBIS de la DGII los montos no suman el total, los montos de la IA quedan en duda', () => {
+    const leida = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ montoBienes: 1000 }), ctx())
+    const b = aplicarVerificacion(leida, respuesta('aceptado'), AHORA)
+    expect(conDatosDGII(b).dudosos).toEqual(['montoServicios', 'montoBienes'])
+  })
+
+  it('rechazada o no encontrada: queda en observación por el NCF y no se aprueba en bloque', () => {
+    const leida = fusionarConLectura(interpretarPagina(qr(), ctx()), lectura({ itbisFacturado: 372.24 }), ctx())
+    expect(observaciones(leida, CLIENTE.rncCedula)).toEqual([])
+    for (const estado of ['rechazado', 'no_encontrado'] as const) {
+      const b = aplicarVerificacion(leida, respuesta(estado), AHORA)
+      expect(observaciones(b, CLIENTE.rncCedula), estado).toEqual(['ncf'])
+      expect(documentoDesdePagina('d', b, CLIENTE, { nombre: 'l.pdf', pagina: 1 }, AHORA).camposIncompletos, estado).toEqual(['ncf'])
+    }
   })
 })

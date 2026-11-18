@@ -190,14 +190,30 @@ describe('validarCompra606', () => {
     expect(validarCompra606(compra({ ncf: 'E310000000001', fechaComprobante: '2026-06-01' }), RNC_CLIENTE)).toEqual([])
   })
 
-  it('NCF de 19 posiciones después del 30-04-2018 (NG 06-2018, art. 10): un solo aviso', () => {
+  it('NCF de 19 posiciones (serie A): error siempre, por decisión del usuario (NG 06-2018, art. 10)', () => {
     const viejo = 'A010010010100000001'
-    expect(validarCompra606(compra({ ncf: viejo, fechaComprobante: '2018-04-30' }), RNC_CLIENTE)).toEqual([])
-    for (const fecha of ['2018-05-01', '2026-06-01']) {
+    for (const fecha of ['2018-04-30', '2026-06-01']) {
       const p = validarCompra606(compra({ ncf: viejo, fechaComprobante: fecha }), RNC_CLIENTE)
-      expect(p.map(x => [x.campo, x.nivel]), fecha).toEqual([['ncf', 'aviso']])
+      expect(errores(p), fecha).toEqual(['ncf'])
       expect(p[0].mensaje).toMatch(/19 posiciones/)
     }
+    expect(errores(validarCompra606(compra({ ncf: 'B0400000001', ncfModificado: viejo }), RNC_CLIENTE))).toEqual(['ncfModificado'])
+    expect(errores(validarVentaIngresos(venta({ ncf: viejo })))).toEqual(['ncf'])
+  })
+
+  it('comprobante de exportación (B16/E46) en compras: error que explica que lo sustenta la DUA (NG 05-2019, art. 10)', () => {
+    for (const ncf of ['B1600000001', 'E460000000001']) {
+      const p = validarCompra606(compra({ ncf }), RNC_CLIENTE)
+      expect(errores(p), ncf).toEqual(['ncf'])
+      expect(p[0].mensaje).toMatch(/DUA/)
+    }
+  })
+
+  it('comprobante de compras con ITBIS y sin retener: aviso de retención del 100% (NG 05-2019, art. 7)', () => {
+    const p = validarCompra606(compra({ ncf: 'E410000000001', rncCedulaContraparte: '00112345673' }), RNC_CLIENTE)
+    expect(p.map(x => [x.campo, x.nivel])).toEqual([['itbisRetenido', 'aviso']])
+    expect(p[0].mensaje).toMatch(/05-2019/)
+    expect(validarCompra606(compra({ ncf: 'E410000000001', rncCedulaContraparte: '00112345673', itbisRetenido: 180, fechaPago: '2026-03-20' }), RNC_CLIENTE)).toEqual([])
   })
 
   it('servicio de persona física a empresa sin ITBIS retenido: aviso (Reglamento del ITBIS, art. 25)', () => {

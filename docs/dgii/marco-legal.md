@@ -24,15 +24,18 @@ su propio documento: `formatos-606-607.md`.
 | **Norma General 06-2021** (14-06-2021) | Vigente; solo cambia de 10 a 5 días hábiles la respuesta a la solicitud de comprobantes (art. 3 de la NG 06-2018) | Nada |
 | **Norma General 01-2020**, facturación electrónica (09-01-2020) | Vigente, ahora bajo la Ley 32-23 y el Decreto 587-24 | Definición de cada tipo de e-CF, timbre (QR), validación por el receptor |
 | Guía Informativa de NCF (2.ª copia recibida en el tercer lote) | Igual a la ya leída | — |
+| **Norma General 07-2018**, remisión de informaciones (09-03-2018, rige desde el período mayo 2018) | **Vigente**; deroga la NG 06-2014 (art. 12) | Formato 606 (anexo A): separador `\|`, 23 campos, plazo hasta el **día 15** (art. 8), catálogos |
+| **Norma General 10-18** (05-07-2018) | Vigente; modifica el art. 4 de la NG 07-2018 | Las facturas de consumo van al 607 solo desde **RD$250,000** (antes 50,000) |
+| **Norma General 05-2019**, comprobantes especiales (08-04-2019) | Vigente | Regímenes especiales, gubernamental, compras, gastos menores, pagos al exterior, exportaciones |
+| Instructivo del IT-1 2020 y formulario IT-1 (Excel, versión 2020) | Vigente en su estructura (rige desde enero 2020); la sección de **penalidades** (recargos e interés) quedó superada por la Ley 30-26. Puede haber una versión más nueva del formulario | Estructura de la declaración de ITBIS (paso 6 del roadmap) |
 
 **Cadena de la norma de remisión de informaciones (la que rige el 606)**:
-NG 01-07 → NG 06-2014 (recibida; vigente desde 2015) → **NG 07-2018**, del
-09-03-2018, modificada por la **NG 10-18** (las cita como vigentes la NG
-01-2020, art. 8 párrafo III). Las dos últimas no se han recibido. Mientras
-tanto, el formato y el plazo del 606 salen de la herramienta y el
-instructivo de la DGII de 2025 (ver `formatos-606-607.md`), que son
-posteriores a todas ellas. Antes se dijo por error que la NG 06-2018 era la
-de remisión: es la de comprobantes.
+NG 01-07 → NG 06-2014 → **NG 07-2018** (vigente, recibida), modificada por
+la **NG 10-18** (recibida). La NG 07-2018 confirma lo que ya hacía el
+sistema con la herramienta de 2025: separador `|`, los 23 campos del 606 en
+el mismo orden, plazo hasta el día 15 y, sin operaciones, envío informativo
+(art. 8 párr. II). Antes se dijo por error que la NG 06-2018 era la de
+remisión: es la de comprobantes.
 
 ## Dentro del Código Tributario: lo superado
 
@@ -160,7 +163,80 @@ de remisión: es la de comprobantes.
 - Art. 14 párrafo: las facturas de consumo electrónicas desde el monto que
   fije la NG 07-2018 deben identificar al comprador.
 
+## Norma General 07-2018 y 10-18 (remisión de informaciones): lo que importa
+
+- Anexo A (606): el NCF lleva 11 posiciones en esta norma (serie B); los
+  e-NCF de 13 los admite la herramienta de 2025, posterior a la norma.
+- "ITBIS llevado al costo" = el ITBIS de compras destinadas solo a
+  operaciones exentas o no sujetas; "ITBIS por adelantar" = facturado menos
+  llevado al costo; "ITBIS sujeto a proporcionalidad" = art. 349 del Código.
+- Tabla de costos y gastos con la descripción oficial de cada código (01
+  personal ... 11 seguros). Ej.: 02 incluye honorarios, seguridad,
+  electricidad, combustibles, papelería; 04 = reparación y mantenimiento de
+  activos fijos; 05 = relaciones públicas, publicidad, viajes y hospedaje;
+  07 = comisiones bancarias, intereses e impuesto a cheques; 08 = solo lo
+  que no es del giro habitual. (Pendiente: usar estas descripciones en el
+  texto que guía a la IA al elegir la categoría.)
+- Retención ISR (8 códigos) y forma de pago (7 códigos) coinciden con los
+  catálogos de la herramienta.
+- 607: facturas de crédito y comprobantes especiales siempre; facturas de
+  consumo solo desde **RD$250,000** (NG 10-18), con la identidad del
+  comprador; las demás, como resumen en la Oficina Virtual. Coincide con
+  `UMBRAL_CONSUMO_607` del código.
+
+## Norma General 05-2019 (comprobantes especiales): lo que importa
+
+- Art. 3: regímenes especiales (14/44): ventas exentas a zonas francas y
+  otros regímenes, sin ITBIS.
+- Art. 4: gubernamental (15/45): toda compra del Estado debe venir en este
+  tipo.
+- Art. 5-6: registro único de ingresos (12): solo estaciones de
+  combustible, colmados, transporte de pasajeros, AFP, casas de cambio e
+  instituciones religiosas; si le venden a un contribuyente que necesita
+  crédito, deben dar factura con NCF.
+- **Art. 7: comprobante de compras (11/41)**: quien lo emite debe verificar
+  que el vendedor NO esté registrado como contribuyente (si lo está, no vale
+  para ISR ni ITBIS) y **retiene siempre el 100% del ITBIS**. → aviso en el
+  606.
+- Art. 8 y 9: gastos menores (13/43) y pagos al exterior (17/47), mismas
+  definiciones que la NG 01-2020.
+- **Art. 10 párr. I: lo que una zona franca vende al mercado local va con
+  comprobante de exportación (16/46) y no es deducible para quien compra**:
+  el costo y el ITBIS los sustenta la DUA. → error con esa explicación en
+  el 606.
+- Art. 12: el autoconsumo se documenta con documentos internos, no con NCF.
+
+## Instructivo y formulario IT-1 (2020): estructura, para el paso 6
+
+- Anexo A: II operaciones del 607 por tipo de NCF (casillas 1-11, incluye e-CF
+  31-34 y 44-46; las notas de crédito restan), III por forma de cobro
+  (12-19), IV por tipo de ingreso (20-26), V retenciones que le hicieron al
+  contribuyente (27-33), VI-VII constructoras y comisionistas, IX ITBIS
+  pagado: no deducible (45-48), deducible (49-52) y sujeto a
+  proporcionalidad (53-56, coeficiente = operaciones exentas y exportaciones
+  sobre el total).
+- Formulario: II ingresos no gravados (2-9) y gravados por tasa (11 al 18%,
+  12 al 16%, 13 al 9% y 14 al 8% por la Ley 690-16, 15 venta de activos
+  depreciables); III liquidación (16-34: ITBIS cobrado, deducible, saldo a
+  favor anterior, retenciones, pagos a cuenta); IV penalidades (35-37:
+  superadas por la Ley 30-26); V monto a pagar; A ITBIS retenido a terceros
+  (40-51: personas físicas, entidades sin fines de lucro, sociedades, RST,
+  comprobantes de compras).
+- Nota del instructivo: el 606 y el 607 se envían antes del IT-1, y las
+  casillas del anexo A se llenan solas con lo del 607 (salvo para quien
+  factura en e-CF). Las tasas de 9% y 8% de la Ley 690-16 no están en las
+  fuentes recibidas: verificarlas antes de codificar.
+
 ## Aplicado en el código (2026-11-18)
+
+- Cuarto lote:
+  - **NCF de 19 posiciones (serie A): rechazados** como error en compras,
+    ventas y NCF modificado (decisión del usuario).
+  - Comprobante de exportación en compras: error que explica la DUA (NG
+    05-2019, art. 10). Comprobante de compras con ITBIS sin retener: aviso
+    del 100% (art. 7).
+  - **Verificación automática en la DGII** (decisión del usuario, ver la
+    sección siguiente).
 
 - Tercer lote: dos instrucciones nuevas a la IA (`src/app/api/ocr/route.ts`):
   la "E" de los artículos exentos y, en el comprobante de compras (11/41),
@@ -175,3 +251,36 @@ de remisión: es la de comprobantes.
   30-04-2018. Los comprobantes serie B se siguen aceptando (decisión del
   usuario: la facturación electrónica ya es obligatoria, pero "deja pasar
   al sistema los comprobantes serie B"); solo llevan el aviso.
+
+## Verificación automática del estado en la DGII (2026-11-18)
+
+Pedida por el usuario: "es necesario que el sistema verifique
+automáticamente el estatus de las facturas para evitar tener en el reporte
+facturas rechazadas". Fundamento: Decreto 254-06, art. 27 (obligación de
+validar) y NG 01-2020, arts. 3 j) y 8 (timbre verificable; un e-CF rechazado
+no vale).
+
+- **Medido contra la DGII real**: la consulta del código QR
+  (`ecf.dgii.gov.do/eCF/ConsultaTimbre`) responde sin desafío con una tabla:
+  RNC y razón social de emisor y comprador, e-NCF, fecha, total de ITBIS,
+  monto total y Estado. Tres facturas reales del PDF de muestra: "Aceptado".
+  Sin el código de seguridad, sin la fecha de firma o con el monto
+  alterado: "No fue encontrada la factura (e-CF)". En una factura real la
+  casilla de ITBIS venía vacía.
+- **Cómo funciona**: `POST /api/verificar-dgii` (servidor; solo consulta
+  direcciones de la DGII, protegida con el código de acceso) →
+  `src/lib/verificacion-dgii.ts` interpreta la página. En la captura por
+  lotes es el paso 2 de 3, gratis, antes de la IA; en una factura suelta se
+  busca el QR en el archivo y se verifica sola; en Facturas, "Verificar en
+  la DGII" vuelve a consultar las que tienen QR.
+- **Reglas**: rechazada o no encontrada = error (no se aprueba, no se puede
+  marcar revisada, el 606 no se descarga). En proceso o estado desconocido =
+  aviso. Sin verificar = aviso. Si el NCF de la factura no es el del QR
+  verificado = error. El ITBIS de la DGII manda sobre la IA y su razón
+  social llena el nombre si falta.
+- **Límites**: solo e-CF con QR legible. Los comprobantes serie B y los e-CF
+  sin QR no se pueden verificar todavía: la consulta de NCF de la DGII
+  (`dgii.gov.do/.../consultas/ncf.aspx`) responde 403 desde el entorno de
+  desarrollo. No se ha comprobado que la DGII responda a los servidores de
+  Vercel. Los nombres de los estados distintos de "Aceptado" vienen de la
+  NG 01-2020, no de respuestas vistas.

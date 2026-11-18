@@ -67,6 +67,8 @@ recomendada y confirmada explícitamente, que el **MVP arranca híbrido**:
 - **Una sola pieza de servidor**: `POST /api/ocr`, porque la API key de
   Anthropic no puede vivir en el navegador. Por eso se despliega en
   **Vercel** y no en GitHub Pages (Pages solo sirve archivos estáticos).
+  (Desde el 2026-11-18 hay una segunda, `POST /api/verificar-dgii`, porque
+  la DGII no deja que otra página web la consulte desde el navegador.)
 - El desarrollo sigue siendo en estas sesiones en la nube + GitHub; "local"
   se refiere a dónde se guardan los datos del contador, no a dónde se
   desarrolla.
@@ -290,11 +292,47 @@ Consecuencias de diseño (implementadas):
   persona: retenciones (decisión del usuario), y cualquier factura con
   observaciones.
 
+## Verificación en la DGII (pedida por el usuario el 2026-11-18) — construida
+
+> "Es necesario que el sistema verifique automáticamente el estatus de las
+> facturas para evitar tener en el reporte facturas rechazadas."
+
+- El código QR de un e-CF es la dirección de la consulta de la DGII. La
+  ruta `POST /api/verificar-dgii` la consulta desde el servidor (solo
+  direcciones `ecf.dgii.gov.do` / `fc.dgii.gov.do` de la consulta de
+  timbres; código de acceso obligatorio; sin redirecciones) y
+  `src/lib/verificacion-dgii.ts` interpreta la respuesta.
+- Dónde corre: paso 2 de 3 de la captura por lotes (gratis, antes de la
+  IA); al subir una factura suelta (se busca el QR en el archivo); y en
+  Facturas con "Verificar en la DGII" (vuelve a consultar todas las de la
+  lista que tienen QR).
+- Reglas: rechazada o "no encontrada" = error (no se aprueba en bloque, no
+  se marca revisada, el 606 no se descarga). En proceso o estado desconocido
+  = aviso. Sin verificar (serie B, e-CF sin QR legible) = aviso. NCF de la
+  factura distinto del e-NCF del QR = error. **Lo de la DGII manda** como lo
+  del QR: su ITBIS reemplaza el de la IA y su razón social llena el nombre.
+  En una factura suelta también mandan los datos del QR (RNC, e-NCF, fecha,
+  total), igual que en los lotes.
+- `DocumentoFiscal.qrUrl` y `DocumentoFiscal.verificacionDGII` guardan la
+  dirección y la última respuesta.
+- **Medido el 2026-11-18 contra la DGII real** (ver
+  `docs/dgii/marco-legal.md`): responde sin desafío; con el QR completo da la
+  tabla con "Estado: Aceptado" (3 facturas reales, y otras 4 en el
+  recorrido de navegador); sin código de seguridad, sin fecha de firma o con
+  el monto alterado responde "No fue encontrada".
+- **Límites**: la consulta de NCF serie B (`dgii.gov.do`) responde 403 desde
+  el entorno de desarrollo: no construida. Tampoco se ha comprobado que la
+  DGII responda a los servidores de Vercel (en producción hace falta además
+  `OCR_CODIGO_ACCESO` configurado; la API key de Anthropic no). Los estados
+  distintos de "Aceptado" salen de la NG 01-2020, no se han visto en una
+  respuesta real.
+
 ## Captura por lotes (construida el 2026-11-15, IA automática el 2026-11-17)
 
 Flujo: Facturas → "Subir lote" → se elige el cliente y se sube un PDF de
 hasta 100 páginas o varias fotos → **paso 1** (navegador, gratis): separar
-páginas y leer el código QR → **paso 2** (servidor, con costo): la IA lee
+páginas y leer el código QR → **paso 2** (servidor, gratis, desde el
+2026-11-18): estado de cada e-CF en la DGII → **paso 3** (servidor, con costo): la IA lee
 cada página, 3 a la vez, con barra de progreso y botón "Detener" → cada
 página queda como tarjeta con "Lista" o "Revisar: …" → "Guardar N
 factura(s)" → "Aprobar las N sin observaciones".
@@ -608,11 +646,10 @@ Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
 1. **¿Que la IA lea la fecha de vencimiento de la secuencia** impresa en
    los comprobantes B (NG 06-2018, art. 7) y avise si la factura es
    posterior? Requiere un campo nuevo. Sin decidir.
-1b. **¿Validar cada comprobante en la consulta de la DGII?** El Decreto
-   254-06 (art. 27) obliga a quien usa un comprobante para crédito o costos
-   a verificar su validez, y un e-CF rechazado no vale (NG 01-2020). Para
-   los e-CF el QR ya trae la dirección de consulta. Falta saber si la DGII
-   deja consultar desde el servidor (desde estas sesiones responde 403).
+1b. **Verificar los comprobantes serie B y los e-CF sin QR**: la consulta
+   de NCF de la DGII responde 403 desde el entorno de desarrollo. Opciones:
+   probarla desde Vercel, o que la persona los verifique a mano (hoy quedan
+   con un aviso). Confirmar también que la DGII responde a Vercel.
 2. **Excel exportable aunque el reporte esté incompleto** (decisión
    propia; el archivo lo advierte en el nombre y en el Resumen).
 3. **Segunda remisión por retenciones en el 606** (NCF que se vuelve a
@@ -707,6 +744,17 @@ a verificados.
     esa es la NG 06-2014.
   - El usuario confirmó: ITBIS 18%; la facturación electrónica ya es
     obligatoria, pero los comprobantes serie B se siguen dejando pasar.
+- **Cuarto lote (2026-11-18)** → `docs/dgii/marco-legal.md`: NG 07-2018
+  (remisión de informaciones, **vigente**; confirma el 606 que ya genera el
+  sistema), NG 10-18 (umbral de RD$250,000 del consumo en el 607; coincide
+  con el código), NG 05-2019 (comprobantes especiales), instructivo y
+  formulario del IT-1 2020 (estructura para el paso 6; sus penalidades
+  quedaron superadas por la Ley 30-26). Decisiones del usuario: verificar
+  el estado en la DGII automáticamente (construido) y **no aceptar NCF de
+  19 posiciones** (error en compras, ventas y NCF modificado). Aplicado de
+  la NG 05-2019: comprobante de exportación en compras = error (lo sustenta
+  la DUA, art. 10); comprobante de compras con ITBIS sin retener = aviso
+  del 100% (art. 7).
 - **Tercer lote (2026-11-18)** → `docs/dgii/marco-legal.md`: Decreto 254-06
   (reglamento de comprobantes, vigente), NG 06-2014 (remisión de
   informaciones: **sustituida** por la NG 07-2018 y la NG 10-18, según la
@@ -717,11 +765,10 @@ a verificados.
 
 **Pedidas al usuario para lo que sigue** (sin recibir; el usuario dijo
 que envía "lo otro" en otro lote):
-- **NG 07-2018 sobre remisión de informaciones y la NG 10-18 que la
-  modifica** (las que rigen hoy el 606, según la NG 01-2020).
-- NG 05-2019 (tipos de comprobantes especiales) y Aviso 24-2019.
+- Aviso 24-2019 (tipos de e-CF).
+- Ley 690-16 (tasas de ITBIS de 9% y 8% que aparecen en el IT-1) y, si
+  existe, una versión del formulario IT-1 posterior a la de 2020.
 - Avisos de la DGII con las listas de obligados a e-CF y sus prórrogas.
-- Formulario IT-1 con su anexo A e instructivo vigentes.
 - Formulario e instructivo del IR-17 y la norma de retenciones vigente
   (de ISR y de ITBIS).
 - Escala de ISR de personas físicas ajustada de 2026.
@@ -737,6 +784,8 @@ que envía "lo otro" en otro lote):
   `/api/ocr` responde 503 "El OCR no está configurado en el servidor",
   porque **todavía no hay `ANTHROPIC_API_KEY`**. La lectura de QR y todo lo
   demás funciona sin ella.
+- La verificación en la DGII solo necesita `OCR_CODIGO_ACCESO` en Vercel
+  (no la API key); sin él responde 503 y las facturas quedan "sin verificar".
 - Para activar la IA: en Vercel, Settings → Environment Variables, agregar
   `ANTHROPIC_API_KEY` (key propia del producto, nunca personal) y
   `OCR_CODIGO_ACCESO` (frase larga elegida por el usuario), ambas en
@@ -792,7 +841,7 @@ roadmap (el 4 se completó el 2026-11-17).
   edición, borrado), `/lote` (captura por lotes: PDF o varias fotos), `/reportes` (genera y descarga el TXT del 606 o 607
   de un cliente y un mes y lo exporta a Excel; y el reporte de ingresos en
   Excel), `/configuracion` (código de acceso al OCR).
-- **Servidor**: solo `src/app/api/ocr/route.ts`.
+- **Servidor**: `src/app/api/ocr/route.ts` y `src/app/api/verificar-dgii/route.ts`.
 - **Datos** (`src/lib/datos`): `repositorio.ts` (interfaz),
   `repositorio-local.ts` (`localStorage`, claves `cielo-fiscal:clientes:v1`
   y `cielo-fiscal:documentos:v1`; imágenes en IndexedDB, base
@@ -802,6 +851,7 @@ roadmap (el 4 se completó el 2026-11-17).
   revisada y entrar a un reporte, duplicados, validación de cliente),
   `excel-reporte.ts` (arma las hojas del Excel del 606 y de ingresos),
   `qr-ecf.ts` (interpreta el QR de un comprobante electrónico),
+  `verificacion-dgii.ts` y `verificacion-cliente.ts` (estado en la DGII),
   `ocr-interpretar.ts` (de la lectura del modelo a los campos: compra o
   venta, contraparte, dudas), `lote/leer-paginas.ts` (páginas y QR),
   `lote/borrador.ts` (combina QR + IA y calcula observaciones),
@@ -886,9 +936,9 @@ roadmap (el 4 se completó el 2026-11-17).
   salga picomatch 4.0.8 o superior.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (4 páginas estáticas +
   `/api/ocr` dinámica).
-- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (159
-  de 159 desde el 2026-11-18, con las reglas de comprobantes y la Ley
-  30-26) — fechas
+- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (177
+  de 177 desde el 2026-11-18, con las reglas de comprobantes, la Ley 30-26
+  y la verificación en la DGII) — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
   comparados carácter por carácter, dígito verificador, duplicados.
@@ -935,6 +985,20 @@ roadmap (el 4 se completó el 2026-11-17).
   QR y los montos que no cuadran quedan en observación; 21 listas y 32 con
   observaciones; al aprobar quedan 21 revisadas y entran al 606; con 503
   se detiene tras 3 llamadas. Regresión: 15/15, 9/9 y 16/16.
+- Verificación en la DGII (2026-11-18), navegador real contra `next start`
+  con la DGII real y la IA simulada, PDF de 15 páginas de la muestra:
+  **18 de 18** — se ve el paso 2 de 3; las 5 páginas con QR se consultan (4
+  reales "Aceptado" + 1 forzada a "Rechazado"); la rechazada queda con
+  observación en el NCF, con aviso en el resumen y marca roja en Facturas;
+  se guardan `qrUrl` y la verificación; la razón social y el ITBIS de la
+  DGII llenan la factura (en una la DGII no tenía ITBIS y se conservó el de
+  la IA); "Verificar en la DGII" en Facturas vuelve a consultar las 5 de
+  verdad; una factura suelta (foto con QR) se verifica sola y su NCF queda
+  el del QR. La ruta contra el servidor real: 200 con estado para QR reales
+  y "no_encontrado" para uno inventado; 400 para otra dirección o sin JSON;
+  401 sin código o con código incorrecto. Regresión: 16/16, 9/9 y 15/15.
+  El recorrido de 58 páginas (`e2e7.js`) no se volvió a correr: espera el
+  texto "Paso 2 de 2", que ahora es "Paso 3 de 3".
 - Dato de control del dígito verificador: el algoritmo de la macro da
   correcto el RNC `401007551`.
 - Ruta OCR contra el servidor real: sin código o código incorrecto → 401;

@@ -165,6 +165,7 @@ const TIPOS_NOTA_CREDITO = new Set([TIPO_NOTA_CREDITO, '34'])
 const TIPOS_COMPRAS = new Set(['11', '41'])
 const TIPOS_GASTOS_MENORES = new Set([TIPO_GASTOS_MENORES, '43'])
 const TIPOS_PAGOS_EXTERIOR = new Set([TIPO_PAGOS_EXTERIOR, '47'])
+const TIPOS_EXPORTACION = new Set(['16', '46'])
 
 // Nota de crédito: 04 (serie B, también en A/P/Q) o 34 (e-CF). Resta en los
 // totales. Antes de recibir la guía, una nota de crédito electrónica sumaba.
@@ -209,9 +210,14 @@ export function esFacturaDeConsumo(ncf: string | null): boolean {
 // comprobantes serie B se sigan dejando pasar.
 export const FIN_CALENDARIO_ECF = '2026-05-17'
 
-// Último día en que se podían emitir los NCF de 19 posiciones (series A, P,
-// Q): Norma General 06-2018, art. 10. Solo para avisos.
-export const FIN_SERIES_19_POSICIONES = '2018-04-30'
+// NCF de 19 posiciones (series A, P y Q, anteriores a mayo de 2018): solo
+// podían emitirse hasta el 30-04-2018 (Norma General 06-2018, art. 10). El
+// usuario decidió (2026-11-18) que el sistema NO los acepte, aunque la macro
+// del 606 todavía los admite para períodos viejos.
+export function esNcfDe19Posiciones(ncf: string | null): boolean {
+  return !!ncf && /^[AQP]\d{18}$/.test(ncf)
+}
+const MENSAJE_19_POSICIONES = 'Este sistema no acepta NCF de 19 posiciones (serie A): dejaron de emitirse el 30 de abril de 2018.'
 
 // ─── Dígito verificador ──────────────────────────────────────────────────────
 
@@ -315,11 +321,7 @@ function avisosDeComprobanteCompra(doc: CamposDocumento, tipo: string, p: Proble
   // emisor estaba en contingencia notificada) y art. 8 (prórroga única de
   // hasta 6 meses). No se sabe a qué grupo pertenece cada emisor ni si tuvo
   // prórroga, así que solo se avisa desde el último plazo.
-  // Norma General 06-2018, art. 10: los NCF autorizados antes de esa norma
-  // (series de 19 posiciones) solo podían emitirse hasta el 30-04-2018.
-  if (doc.ncf?.length === 19 && doc.fechaComprobante && doc.fechaComprobante > FIN_SERIES_19_POSICIONES) {
-    p.push(aviso('ncf', 'NCF de 19 posiciones con fecha posterior al 30 de abril de 2018, cuando dejaron de poder emitirse. Verifica el comprobante.'))
-  } else if (!esECF(doc.ncf) && doc.fechaComprobante && doc.fechaComprobante >= FIN_CALENDARIO_ECF) {
+  if (!esECF(doc.ncf) && doc.fechaComprobante && doc.fechaComprobante >= FIN_CALENDARIO_ECF) {
     p.push(aviso('ncf', 'Comprobante no electrónico emitido después de mayo de 2026, cuando venció el último plazo para facturar en electrónico. Solo vale para costos, gastos y crédito de ITBIS si el emisor tenía una prórroga vigente o estaba en contingencia notificada a la DGII. Verifícalo.'))
   }
 }
@@ -333,6 +335,12 @@ function avisosDeComprobanteCompra(doc: CamposDocumento, tipo: string, p: Proble
 // de único dueño con cédula queda fuera del aviso, aunque el artículo
 // también lo alcanza).
 function avisoRetencionItbisPersonaFisica(doc: CamposDocumento, rncCliente: string, p: Problema[]) {
+  // NG 05-2019, art. 7 párrafo II: con el comprobante de compras (11/41) se
+  // retiene siempre el 100% del ITBIS facturado.
+  if (TIPOS_COMPRAS.has(tipoNcf(doc.ncf)) && (doc.itbisFacturado ?? 0) > 0 && !tieneValor(doc.itbisRetenido)) {
+    p.push(aviso('itbisRetenido', 'Con el comprobante de compras se retiene siempre el 100% del ITBIS facturado (Norma General 05-2019, art. 7). Si se retuvo, digítalo junto con la fecha de pago.'))
+    return
+  }
   const proveedorPersonaFisica = doc.rncCedulaContraparte?.length === 11
   const clienteJuridico = /^\d{9}$/.test(rncCliente)
   if (
@@ -369,8 +377,15 @@ export function validarCompra606(doc: CamposDocumento, rncCliente: string): Prob
 
   // 4-5. NCF y NCF modificado
   if (!doc.ncf) p.push(err('ncf', 'Falta el NCF.'))
-  else if (!esNcfValido606(doc.ncf)) p.push(err('ncf', 'El NCF no tiene una estructura válida.'))
-  if (doc.ncfModificado && !esNcfValido606(doc.ncfModificado)) {
+  else if (esNcfDe19Posiciones(doc.ncf)) p.push(err('ncf', MENSAJE_19_POSICIONES))
+  else if (TIPOS_EXPORTACION.has(tipo)) {
+    // NG 05-2019, art. 10 párrafo I: lo que una zona franca vende al mercado
+    // local con comprobante de exportación no es deducible para quien compra;
+    // el costo y el crédito de ITBIS los sustenta la declaración aduanera (DUA).
+    p.push(err('ncf', 'Comprobante de exportación: no se reporta como compra. El costo y el ITBIS de esa importación los sustenta la declaración de aduanas (DUA).'))
+  } else if (!esNcfValido606(doc.ncf)) p.push(err('ncf', 'El NCF no tiene una estructura válida.'))
+  if (doc.ncfModificado && esNcfDe19Posiciones(doc.ncfModificado)) p.push(err('ncfModificado', MENSAJE_19_POSICIONES))
+  else if (doc.ncfModificado && !esNcfValido606(doc.ncfModificado)) {
     p.push(err('ncfModificado', 'El NCF modificado no tiene una estructura válida.'))
   }
   if (doc.ncf) avisosDeComprobanteCompra(doc, tipo, p)
@@ -440,10 +455,12 @@ export function validarVentaIngresos(doc: CamposDocumento): Problema[] {
   const p: Problema[] = []
 
   if (!doc.ncf) p.push(err('ncf', 'Falta el NCF.'))
+  else if (esNcfDe19Posiciones(doc.ncf)) p.push(err('ncf', MENSAJE_19_POSICIONES))
   else if (esECF(doc.ncf) && loEmiteElComprador(doc.ncf)) {
     p.push(err('ncf', 'Este tipo de comprobante (compras, gastos menores o pagos al exterior) lo emite el comprador para una compra; no corresponde a una venta.'))
   } else if (!esNcfValidoIngresos(doc.ncf)) p.push(err('ncf', 'El NCF no tiene una estructura válida.'))
-  if (doc.ncfModificado && !esNcfValidoIngresos(doc.ncfModificado)) {
+  if (doc.ncfModificado && esNcfDe19Posiciones(doc.ncfModificado)) p.push(err('ncfModificado', MENSAJE_19_POSICIONES))
+  else if (doc.ncfModificado && !esNcfValidoIngresos(doc.ncfModificado)) {
     p.push(err('ncfModificado', 'El NCF modificado no tiene una estructura válida.'))
   }
 

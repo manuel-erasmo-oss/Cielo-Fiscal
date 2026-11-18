@@ -153,12 +153,17 @@ versión no admite e-NCF (serie E)**: longitud solo 11 o 19.
 
 ## Normas que rigen el formato
 
-La NG 06-2014 (remisión de informaciones) describía un formato de ancho fijo
-con pocos campos y plazo hasta el día 20. Ya no rige así: según la NG
-01-2020 (art. 8 párr. III), el 606 se rige por la NG 07-2018, modificada
-por la NG 10-18 (no recibidas). Este documento sigue la herramienta y el
-instructivo de 2025, que son lo vigente en la práctica: separador `|`, 23
-campos y plazo hasta el día 15.
+Rige la **NG 07-2018** (anexo A = 606, anexo B = 607), modificada por la NG
+10-18; ambas recibidas el 2026-11-18. Derogó la NG 06-2014, que describía
+un formato de ancho fijo con plazo hasta el día 20. La NG 07-2018 coincide
+con la herramienta y el instructivo de 2025 que sigue este documento:
+separador `|`, los mismos 23 campos, plazo hasta el día 15, catálogos de
+retención y forma de pago, y umbral de RD$250,000 para las facturas de
+consumo en el 607 (NG 10-18).
+
+**Diferencia con la macro, por decisión del usuario (2026-11-18)**: el
+sistema no acepta NCF de 19 posiciones (series A, P, Q), aunque la macro
+del 606 los admite para períodos viejos.
 
 ## Tipos de comprobante (Guía Informativa de NCF, DGII, marzo 2026)
 

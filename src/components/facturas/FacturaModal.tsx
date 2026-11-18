@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, FileUp, Info, Keyboard, LoaderCircle, ScanText } from 'lucide-react'
+import { AlertTriangle, FileUp, Info, Keyboard, LoaderCircle, ScanText, ShieldCheck } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { BTN_SECONDARY, INPUT_CLASS, LABEL_CLASS } from '@/components/ui/clases'
 import {
@@ -28,7 +28,11 @@ import {
   problemasDeRevision,
   type CamposDocumento,
 } from '@/lib/documentos'
+import { interpretarPagina } from '@/lib/lote/borrador'
+import { leerPaginas } from '@/lib/lote/leer-paginas'
 import { OCRError, esArchivoSoportado, extraerFactura } from '@/lib/ocr-cliente'
+import { verificarEnDGII } from '@/lib/verificacion-cliente'
+import { ETIQUETA_ESTADO_DGII, esUrlConsultaDGII } from '@/lib/verificacion-dgii'
 import { MIME_PDF } from '@/lib/ocr-tipos'
 import { BTN_PRIMARY, cn, formatRD, parseFechaLocal, redondear2, soloDigitos } from '@/lib/utils'
 import {
@@ -37,6 +41,7 @@ import {
   type ClienteFiscal,
   type DocumentoFiscal,
   type TipoDocumento,
+  type VerificacionDGII,
 } from '@/types'
 
 interface FacturaModalProps {
@@ -140,6 +145,11 @@ export function FacturaModal({
   // como revisada (o al abrir una factura que quedó pendiente).
   const [mostrarProblemas, setMostrarProblemas] = useState(documento?.estadoRevision === 'pendiente_revision')
   const [errorGuardar, setErrorGuardar] = useState<string | null>(null)
+  // Código QR (dirección de consulta de la DGII) y su verificación.
+  const [qrUrl, setQrUrl] = useState<string | undefined>(documento?.qrUrl)
+  const [verificacion, setVerificacion] = useState<VerificacionDGII | undefined>(documento?.verificacionDGII)
+  const [verificando, setVerificando] = useState(false)
+  const [errorVerificacion, setErrorVerificacion] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
   const inputArchivo = useRef<HTMLInputElement>(null)
   // Descarta la respuesta del OCR si el modal se cerró mientras llegaba.
@@ -164,7 +174,56 @@ export function FacturaModal({
 
   const { campos } = useMemo(() => aCampos(valores, tipo), [valores, tipo])
   const rncCliente = clientes.find(c => c.id === clienteId)?.rncCedula ?? ''
-  const problemas = useMemo(() => problemasDeRevision(tipo, campos, rncCliente), [tipo, campos, rncCliente])
+  const problemas = useMemo(
+    () => problemasDeRevision(tipo, { ...campos, qrUrl, verificacionDGII: verificacion }, rncCliente),
+    [tipo, campos, rncCliente, verificacion, qrUrl],
+  )
+
+  // Consulta en la DGII el estado del comprobante con la dirección de su QR.
+  // Al subir la factura (`aplicarDatos`), el ITBIS que tiene la DGII manda y
+  // su razón social llena el nombre si está vacío, igual que en los lotes. Al
+  // volver a verificar una factura ya guardada no se toca lo que puso una
+  // persona.
+  async function verificar(url: string, aplicarDatos = false) {
+    setVerificando(true)
+    setErrorVerificacion(null)
+    try {
+      const r = await verificarEnDGII(url)
+      if (!vivo.current) return
+      setVerificacion({ estado: r.estado, texto: r.texto, consultadoEn: new Date().toISOString() })
+      const d = r.datos
+      if (aplicarDatos && d) {
+        setValores(v => {
+          const contraparte = v.rncCedulaContraparte
+          const razon = contraparte === d.rncEmisor ? d.razonSocialEmisor : contraparte === d.rncComprador ? d.razonSocialComprador : null
+          return {
+            ...v,
+            itbisFacturado: d.totalItbis !== null ? String(d.totalItbis) : v.itbisFacturado,
+            nombreContraparte: v.nombreContraparte || razon || '',
+          }
+        })
+        if (d.totalItbis !== null) setDudosos(prev => { const n = new Set(prev); n.delete('itbisFacturado'); return n })
+      }
+    } catch (e) {
+      if (vivo.current) setErrorVerificacion(e instanceof Error ? e.message : 'No se pudo verificar en la DGII.')
+    } finally {
+      if (vivo.current) setVerificando(false)
+    }
+  }
+
+  // Busca el código QR de un e-CF en el archivo subido (en el navegador, sin
+  // costo). Si no hay o no se puede leer, la factura queda sin verificar.
+  async function buscarQrDelArchivo(seleccionado: File): Promise<string | undefined> {
+    let encontrado: string | undefined
+    try {
+      await leerPaginas([seleccionado], pagina => {
+        if (!encontrado && pagina.textoQr && esUrlConsultaDGII(pagina.textoQr)) encontrado = pagina.textoQr
+      }, () => !vivo.current || !!encontrado)
+    } catch {
+      return undefined
+    }
+    return encontrado
+  }
 
   const duplicado = useMemo(
     () => buscarDuplicado({ id: documento?.id ?? '', clienteId, tipo, ncf: campos.ncf, rncCedulaContraparte: campos.rncCedulaContraparte }, documentos),
@@ -192,7 +251,12 @@ export function FacturaModal({
     setErrorOCR(null)
     setArchivo(seleccionado)
     setPaso('extrayendo')
+    setQrUrl(undefined)
+    setVerificacion(undefined)
     try {
+      // Primero el QR (en el navegador, sin costo); si falla, se sigue sin él.
+      const url = await buscarQrDelArchivo(seleccionado)
+      if (!vivo.current) return
       const delCliente = clientes.find(c => c.id === clienteId)
       const resultado = await extraerFactura(seleccionado, tipo, { rncCliente: delCliente?.rncCedula, actividad: delCliente?.actividad })
       if (!vivo.current) return
@@ -203,8 +267,30 @@ export function FacturaModal({
       }
       // Si la factura dice que es una venta (o una compra), manda la factura.
       setTipo(resultado.tipo)
-      setValores(aValores(resultado.extraccion))
-      setDudosos(new Set(resultado.camposDudosos))
+      // Lo del QR manda (RNC, e-NCF, fecha y total los firmó el emisor), igual
+      // que en los lotes; solo si el QR y la IA coinciden en compra o venta.
+      let extraccion = resultado.extraccion
+      const dudas = new Set(resultado.camposDudosos)
+      if (url && delCliente) {
+        const b = interpretarPagina(url, { cliente: delCliente, tipoPorDefecto: resultado.tipo, existentes: [] })
+        if (b.conQr && b.estado !== 'ajena' && b.tipo === resultado.tipo) {
+          const q = b.campos
+          extraccion = {
+            ...extraccion,
+            rncCedulaContraparte: q.rncCedulaContraparte ?? extraccion.rncCedulaContraparte,
+            ncf: q.ncf ?? extraccion.ncf,
+            fechaComprobante: q.fechaComprobante ?? extraccion.fechaComprobante,
+            montoTotal: q.montoTotal ?? extraccion.montoTotal,
+          }
+          for (const c of ['rncCedulaContraparte', 'ncf', 'fechaComprobante', 'montoTotal'] as const) if (q[c] !== null) dudas.delete(c)
+        }
+      }
+      setValores(aValores(extraccion))
+      setDudosos(dudas)
+      if (url) {
+        setQrUrl(url)
+        void verificar(url, true)
+      }
       setConfianza(resultado.confianzaOCR)
       setOrigen('ocr')
       setPaso('formulario')
@@ -286,7 +372,7 @@ export function FacturaModal({
     setErrores(erroresFormato)
     if (Object.keys(erroresFormato).length > 0) return
 
-    const bloqueos = problemasDeRevision(tipo, finales, rncCliente).filter(p => p.nivel === 'error')
+    const bloqueos = problemasDeRevision(tipo, { ...finales, qrUrl, verificacionDGII: verificacion }, rncCliente).filter(p => p.nivel === 'error')
     if (comoRevisada && (bloqueos.length > 0 || duplicado)) {
       setMostrarProblemas(true) // los mensajes quedan en pantalla, campo por campo
       return
@@ -306,6 +392,10 @@ export function FacturaModal({
         origen,
         archivoNombre: archivo?.name ?? documento?.archivoNombre,
         archivoMimeType: archivo?.type ?? documento?.archivoMimeType,
+        archivoPagina: archivo ? undefined : documento?.archivoPagina,
+        archivoPath: documento?.archivoPath,
+        qrUrl,
+        verificacionDGII: verificacion,
         ...finales,
         confianzaOCR: confianza,
         camposIncompletos: comoRevisada ? [] : CAMPOS_EXTRAIDOS.filter(c => pendientes.has(c)),
@@ -528,6 +618,27 @@ export function FacturaModal({
                   {leyendo ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ScanText className="h-4 w-4" />}
                   {leyendo ? 'Leyendo…' : 'Leer con IA lo que falta'}
                 </button>
+              </div>
+            )}
+            {(qrUrl || verificacion) && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 dark:border-[#252840] px-3.5 py-2.5">
+                <ShieldCheck className={cn('h-4 w-4 shrink-0',
+                  !verificacion ? 'text-zinc-400'
+                    : ['aceptado', 'aceptado_condicional'].includes(verificacion.estado) ? 'text-emerald-600 dark:text-emerald-400'
+                      : ['rechazado', 'no_encontrado'].includes(verificacion.estado) ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-amber-600 dark:text-amber-400')} />
+                <p className="min-w-[200px] flex-1 text-xs text-zinc-600 dark:text-zinc-400">
+                  {verificando ? 'Verificando en la DGII…'
+                    : verificacion ? <><strong>{ETIQUETA_ESTADO_DGII[verificacion.estado]}</strong> (respuesta de la DGII: “{verificacion.texto}”, {new Date(verificacion.consultadoEn).toLocaleString('es-DO')})</>
+                      : errorVerificacion ? `No se pudo verificar en la DGII: ${errorVerificacion}`
+                        : 'Sin verificar en la DGII.'}
+                </p>
+                {qrUrl && (
+                  <button type="button" onClick={() => void verificar(qrUrl)} disabled={verificando} className={BTN_SECONDARY}>
+                    {verificando ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                    {verificacion ? 'Verificar de nuevo' : 'Verificar en la DGII'}
+                  </button>
+                )}
               </div>
             )}
             {paso === 'formulario' && errorOCR && (

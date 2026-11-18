@@ -102,6 +102,25 @@ export type EstadoRevision =
   // Descartado (duplicado, ilegible, no es una factura fiscal…).
   | 'descartado'
 
+// Estado de un comprobante electrónico según la consulta de la DGII (la que
+// abre su código QR). Ver src/lib/verificacion-dgii.ts.
+export type EstadoDGII =
+  | 'aceptado'
+  | 'aceptado_condicional'
+  | 'rechazado'
+  | 'en_proceso'
+  // La DGII no encuentra un e-CF con exactamente los datos del QR.
+  | 'no_encontrado'
+  // La DGII respondió un estado que este sistema no conoce.
+  | 'otro'
+
+export interface VerificacionDGII {
+  estado: EstadoDGII
+  // El texto tal como lo mostró la DGII (p. ej. "Aceptado").
+  texto: string
+  consultadoEn: InstanteISO
+}
+
 export interface DocumentoFiscal {
   id: string
   contadorUid: string
@@ -173,6 +192,13 @@ export interface DocumentoFiscal {
   cobroBonos: number | null
   cobroPermuta: number | null
   cobroOtras: number | null
+
+  // ── Verificación en la DGII ──
+  // Dirección de consulta que trae el código QR de un e-CF (incluye el código
+  // de seguridad). Sin ella no se puede consultar el estado.
+  qrUrl?: string
+  // Última respuesta de la DGII. Sin ella, la factura no se ha verificado.
+  verificacionDGII?: VerificacionDGII
 
   // ── Confianza de la extracción (snapshot en el dato, no solo en la UI) ──
   // 0..1, autorreportada por el modelo — orientativa, no una probabilidad

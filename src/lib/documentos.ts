@@ -5,6 +5,7 @@ import {
   type Problema,
 } from '@/lib/dgii-formatos'
 import { soloDigitos } from '@/lib/utils'
+import { problemaVerificacion } from '@/lib/verificacion-dgii'
 import type { CampoExtraido, ClienteFiscal, DocumentoFiscal, TipoDocumento } from '@/types'
 
 export type { CamposDocumento } from '@/lib/dgii-formatos'
@@ -136,12 +137,24 @@ export function montoFacturadoDe(
 // Todo lo que impide dar la factura por buena, más avisos. Una compra se
 // mide contra el Formato 606; una venta, contra las reglas mínimas del
 // reporte de ingresos. `rncCliente` es el RNC/cédula del cliente del contador.
-export function problemasDeRevision(tipo: TipoDocumento, campos: CamposDocumento, rncCliente: string): Problema[] {
-  return tipo === 'compra' ? validarCompra606(campos, rncCliente) : validarVentaIngresos(campos)
+// Además de las reglas del formato, el estado del comprobante en la DGII
+// (src/lib/verificacion-dgii.ts): rechazado o no encontrado es un error.
+export function problemasDeRevision(
+  tipo: TipoDocumento,
+  campos: CamposDocumento & Pick<Partial<DocumentoFiscal>, 'verificacionDGII' | 'qrUrl'>,
+  rncCliente: string,
+): Problema[] {
+  const p = tipo === 'compra' ? validarCompra606(campos, rncCliente) : validarVentaIngresos(campos)
+  const dgii = problemaVerificacion(campos)
+  return dgii ? [...p, dgii] : p
 }
 
 // Una factura solo puede marcarse 'revisado' si el formato no le objeta nada.
-export function puedeMarcarseRevisada(tipo: TipoDocumento, campos: CamposDocumento, rncCliente: string): boolean {
+export function puedeMarcarseRevisada(
+  tipo: TipoDocumento,
+  campos: CamposDocumento & Pick<Partial<DocumentoFiscal>, 'verificacionDGII' | 'qrUrl'>,
+  rncCliente: string,
+): boolean {
   return problemasDeRevision(tipo, campos, rncCliente).every(p => p.nivel !== 'error')
 }
 
