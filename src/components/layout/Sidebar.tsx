@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { ArrowLeftRight, Building2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn, formatCedula } from '@/lib/utils'
+import { Monograma } from '@/components/ui/Monograma'
 import { useDatos } from '@/lib/datos/datos-context'
 import { CONFIGURACION_ITEM, NAV_GLOBAL, empresaDeRuta, estaActivo, navEmpresa } from '@/lib/nav-items'
 
@@ -159,10 +160,15 @@ export function Sidebar() {
             {wide ? (
               <>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400 dark:text-zinc-500">Empresa activa</p>
-                <p className="mt-1 truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100" title={empresa?.razonSocial}>
-                  {empresa?.razonSocial ?? '…'}
-                </p>
-                {empresa && <p className="text-xs tabular-nums text-zinc-500 dark:text-zinc-400">{formatCedula(empresa.rncCedula)}</p>}
+                <div className="mt-2 flex items-center gap-2.5">
+                  {empresa && <Monograma nombre={empresa.razonSocial} clave={empresa.id} tamano="sm" className="h-8 w-8" />}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100" title={empresa?.razonSocial}>
+                      {empresa?.razonSocial ?? '…'}
+                    </p>
+                    {empresa && <p className="text-xs tabular-nums text-zinc-500 dark:text-zinc-400">{formatCedula(empresa.rncCedula)}</p>}
+                  </div>
+                </div>
                 <Link
                   href="/"
                   className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#1B2980] hover:underline dark:text-indigo-400"
@@ -171,9 +177,10 @@ export function Sidebar() {
                 </Link>
               </>
             ) : (
-              <Link href="/" title={`${empresa?.razonSocial ?? 'Empresa'} · Cambiar de empresa`}
-                className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#eef0fb] text-[#1B2980] dark:bg-indigo-950/40 dark:text-indigo-400">
-                <Building2 className="h-4 w-4" />
+              <Link href="/" title={`${empresa?.razonSocial ?? 'Empresa'} · Cambiar de empresa`}>
+                {empresa
+                  ? <Monograma nombre={empresa.razonSocial} clave={empresa.id} tamano="sm" className="h-9 w-9" />
+                  : <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#eef0fb] text-[#1B2980] dark:bg-indigo-950/40 dark:text-indigo-400"><Building2 className="h-4 w-4" /></span>}
               </Link>
             )}
           </div>

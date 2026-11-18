@@ -339,6 +339,35 @@ cuentas todavía**; el inicio de sesión llega con la migración a la nube
 - Refuerzo que ya existía: en la captura por lotes, una factura cuyo QR
   nombra a otro contribuyente no se deja guardar.
 
+### Diseño premium de esas pantallas (pedido por el usuario el 2026-11-18)
+
+> "Estamos creando un producto premium y debe verse como tal ... ahora mismo
+> es muy fácil identificar que lo hecho hasta ahora fue hecho con Claude."
+
+Hecho sin romper el sistema visual: misma paleta (`#1B2980`, `#2f3fa8`,
+`#00E676`), Inter, modo oscuro, y las clases compartidas de siempre (no se
+tocó `tailwind.config.ts` ni `globals.css`; solo utilidades de Tailwind).
+
+- **Monograma** (`src/components/ui/Monograma.tsx` + `src/lib/monograma.ts`,
+  probado): iniciales de la empresa sin la forma jurídica ni conectores, en
+  un tono propio y estable (lo fija el id). Se usa en la lista, la ficha, la
+  franja "Trabajando en" y el menú lateral.
+- **Tus empresas**: encabezado de marca en azul degradado con el arco del
+  isotipo como marca de agua, saludo según la hora y tres indicadores
+  (empresas, facturas por revisar, por verificar en la DGII); buscador y
+  filtro segmentado "Todas / Por revisar"; filas tipo tarjeta con monograma,
+  RNC, tipo de persona, estado ("N por revisar" o "Al día") y "Entrar →".
+- **Resumen de la empresa**: ficha con monograma, RNC y actividad; tarjeta
+  "Próximo vencimiento" con los días que faltan para el 606 (en rojo a 3
+  días o menos); indicadores con acento de color; accesos directos (Subir
+  lote destacado, Revisar facturas, Generar reportes); y "Requieren tu
+  atención": hasta 6 facturas pendientes, primero las rechazadas o
+  inexistentes en la DGII, después las que hay que verificar a mano y luego
+  las que tienen datos por revisar.
+- Revisado en capturas en claro, oscuro y móvil (iPhone 13), sin
+  desplazamiento horizontal. En móvil los indicadores van en una fila
+  compacta.
+
 ## Verificación en la DGII (pedida por el usuario el 2026-11-18) — construida
 
 > "Es necesario que el sistema verifique automáticamente el estatus de las
@@ -1015,8 +1044,8 @@ verificación automática en la DGII.
   salga picomatch 4.0.8 o superior.
 - `npx tsc --noEmit` limpio; `npm run build` limpio (páginas estáticas +
   `/api/ocr` y, desde el 2026-11-18, `/api/verificar-dgii` dinámicas).
-- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (183
-  de 183 desde el 2026-11-18, con las reglas de comprobantes, la Ley 30-26
+- `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (185
+  de 185 desde el 2026-11-18, con las reglas de comprobantes, la Ley 30-26
   y la verificación en la DGII) — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
@@ -1095,7 +1124,8 @@ verificación automática en la DGII.
   llevan a la lista; eliminar una empresa borra solo sus facturas; móvil
   con "Cambiar" y sin desplazamiento horizontal; el resumen muestra el 606
   de noviembre 2026 (el de octubre ya venció el 15). Las pruebas anteriores,
-  adaptadas a las direcciones nuevas: 16/16, 9/9, 15/15 y 26/26.
+  adaptadas a las direcciones nuevas: 16/16, 9/9, 15/15 y 26/26. Tras el
+  rediseño premium, todo de nuevo: 25/25, 16/16, 9/9, 15/15 y 26/26.
 - Dato de control del dígito verificador: el algoritmo de la macro da
   correcto el RNC `401007551`.
 - Ruta OCR contra el servidor real: sin código o código incorrecto → 401;
