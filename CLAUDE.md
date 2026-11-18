@@ -313,7 +313,7 @@ cuentas todavía**; el inicio de sesión llega con la migración a la nube
   eliminar con aviso de que se borran sus facturas). Reemplaza al Inicio y
   a la pantalla de Clientes de antes.
 - **Los módulos solo existen dentro de una empresa**: `/empresa/<id>`
-  (Resumen), `/empresa/<id>/facturas`, `/empresa/<id>/lote` y
+  (Tablero), `/empresa/<id>/facturas`, `/empresa/<id>/lote` y
   `/empresa/<id>/reportes`. La empresa va en la dirección, no en un estado
   oculto: cada pestaña queda atada a una empresa. Las direcciones viejas
   (`/clientes`, `/facturas`, `/lote`, `/reportes`) llevan a "Tus empresas"
@@ -333,9 +333,8 @@ cuentas todavía**; el inicio de sesión llega con la migración a la nube
 - Siempre visible dentro de una empresa: franja "Trabajando en <empresa>
   <RNC> · Cambiar de empresa" en el encabezado y bloque "Empresa activa" en
   el menú lateral. En móvil, la barra inferior trae "Cambiar".
-- Resumen de la empresa: facturas registradas, por revisar, por verificar
-  en la DGII, revisadas, y el próximo vencimiento del 606 (si el día 15 del
-  mes ya pasó, muestra el del mes en curso).
+- Al entrar a una empresa se ve su **Tablero** (antes "Resumen"; ver
+  "Tablero de la empresa", abajo).
 - Refuerzo que ya existía: en la captura por lotes, una factura cuyo QR
   nombra a otro contribuyente no se deja guardar.
 
@@ -357,7 +356,7 @@ tocó `tailwind.config.ts` ni `globals.css`; solo utilidades de Tailwind).
   (empresas, facturas por revisar, por verificar en la DGII); buscador y
   filtro segmentado "Todas / Por revisar"; filas tipo tarjeta con monograma,
   RNC, tipo de persona, estado ("N por revisar" o "Al día") y "Entrar →".
-- **Resumen de la empresa**: ficha con monograma, RNC y actividad; tarjeta
+- **Resumen de la empresa** (reemplazado por el Tablero el mismo día): ficha con monograma, RNC y actividad; tarjeta
   "Próximo vencimiento" con los días que faltan para el 606 (en rojo a 3
   días o menos); indicadores con acento de color; accesos directos (Subir
   lote destacado, Revisar facturas, Generar reportes); y "Requieren tu
@@ -367,10 +366,72 @@ tocó `tailwind.config.ts` ni `globals.css`; solo utilidades de Tailwind).
 - Revisado en capturas en claro, oscuro y móvil (iPhone 13), sin
   desplazamiento horizontal. En móvil los indicadores van en una fila
   compacta.
-- **Pendiente de decisión del usuario** (dicho el 2026-11-18: "para luego
-  tomar una decisión sobre facturas, subir lote y reportes"): si se lleva
-  el mismo estilo a Facturas, Subir lote y Reportes, que conservan el
-  diseño anterior.
+- **Decidido por el usuario el 2026-11-18** ("me gustó puedes actualizar los
+  otros módulos"): el mismo estilo llegó a Facturas, Subir lote y Reportes,
+  y el Resumen se cambió por un tablero (siguiente sección).
+
+### Tablero de la empresa y estilo premium en los módulos (2026-11-18)
+
+> "En vez del resumen ... me gustaría que saliera un dashboard profesional
+> que se vea todo premium."
+
+- **Tablero** (`src/app/empresa/[id]/page.tsx`; cálculos en
+  `src/lib/dashboard.ts`, lógica pura con 12 pruebas; gráficos en
+  `src/components/dashboard/Graficos.tsx`, SVG/HTML a mano, sin librería
+  nueva). De arriba abajo:
+  - Encabezado de marca con la empresa (monograma, RNC, tipo, actividad),
+    accesos (Subir lote, Facturas, Reportes) y los **tres próximos
+    vencimientos** con los días que faltan: IT-1 (día 20), IR-17 (día 10) y
+    606 (día 15). Cada uno es el del mes pasado mientras su día no haya
+    pasado; si ya pasó, el del mes en curso (`proximosVencimientos`).
+  - **Un solo filtro, el período**, arriba de todo lo que afecta (flechas +
+    lista de los meses con facturas). Por defecto, el período del 606 en
+    curso si ya tiene facturas; si no, el último que tenga.
+  - Indicadores del período: compras y ventas sin impuestos (con cantidad y
+    variación contra el mes anterior; solo en ventas subir es "bueno"),
+    ITBIS en compras (y en ventas) y **diferencia de ITBIS, marcada como
+    orientativa**: ventas menos compras, no la IT-1 (no aplica
+    proporcionalidad, retenciones ni saldos a favor).
+  - "Compras y ventas": columnas agrupadas de los últimos 6 meses, un solo
+    eje, tooltip al pasar el cursor o con el teclado, botón "Tabla", y tocar
+    un mes lo vuelve el período.
+  - "Listo para el 606": % de facturas del período revisadas (la cifra
+    grande de la pantalla), barra de estados y conteo de revisadas, por
+    revisar, por verificar en la DGII y rechazadas o inexistentes; botón a
+    Facturas, o a Reportes si todo está revisado.
+  - "En qué se fueron las compras": costo / gasto / activo (y sin
+    clasificar) según `clasificacionContable`, en una barra segmentada.
+  - "Principales proveedores": los 5 de más monto (agrupados por RNC) y
+    "Otros".
+  - "Requieren tu atención" (de todos los meses, lo más grave primero).
+  - Reglas de los montos: sin impuestos; las notas de crédito (B04/E34)
+    restan; las descartadas no cuentan; las pendientes sí (el tablero dice
+    cuántas hay).
+  - Colores de los gráficos validados con el script de la guía de
+    visualización (contraste ≥ 3:1 y separación para daltonismo, en claro
+    y en oscuro): compras/gasto índigo `#3446c4` (oscuro `#6b7cf0`),
+    ventas/costo `#0f9f8a` (`#1aa58c`), activo `#c8590f` (`#de6e2e`). Los
+    estados usan su propia paleta, siempre con ícono y texto.
+  - En el menú, "Resumen" pasó a llamarse "Tablero".
+- **Estilo compartido**: `src/components/ui/clases.ts` refinado (tarjetas
+  `rounded-2xl` con sombra mínima, campos con halo de foco de la marca,
+  botones secundarios blancos) y piezas nuevas en
+  `src/components/ui/premium.tsx`: `Cifra`, `Segmentos` (selector
+  segmentado), `Estado` (píldora con ícono), `AccionSugerida` y `Pasos`.
+  Siguen sin tocarse `tailwind.config.ts` y `globals.css`.
+- **Facturas**: cuatro cifras (facturas, por revisar, monto sin impuestos,
+  total facturado), filtros en una fila (estado con conteos, tipo, mes,
+  "Quitar filtros"), "Aprobar las N" y "Verificar en la DGII" como acciones
+  sugeridas (la segunda con barra de avance), y tabla con ícono de compra o
+  venta, NCF y fecha juntos, **un solo estado por fila** (el más grave:
+  rechazada > revisada > verificar en la DGII > por revisar) y clic en la
+  fila para abrirla.
+- **Subir lote**: los tres pasos siempre a la vista (hecho / actual / por
+  venir), zona para soltar archivos rediseñada, resumen del resultado con
+  "listas" y "con observaciones" destacadas, y pantalla final de éxito.
+- **Reportes**: el reporte se elige con dos tarjetas (606 / Ingresos), el
+  mes abre en el período del 606 en curso, y el resumen del reporte trae
+  estado "Completo" o "Incompleto", vencimiento y totales.
 
 ## Verificación en la DGII (pedida por el usuario el 2026-11-18) — construida
 
@@ -733,10 +794,6 @@ partir de lo que corrija el contador.
 
 Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
 
-0. **¿Llevar el diseño premium a Facturas, Subir lote y Reportes?** El
-   usuario lo va a decidir después de ver en el sitio "Tus empresas" y el
-   resumen.
-
 1. **¿Que la IA lea la fecha de vencimiento de la secuencia** impresa en
    los comprobantes B (NG 06-2018, art. 7) y avise si la factura es
    posterior? Requiere un campo nuevo. Sin decidir.
@@ -928,7 +985,9 @@ que envía "lo otro" en otro lote):
   verificación humana de e-CF sin QR legible) el 2026-11-18; PR #5
   (comprobación en producción, solo documentación) y PR #6 (separación por
   empresa con "Tus empresas" y diseño premium de esa pantalla y del
-  resumen) el 2026-11-18.
+  resumen) el 2026-11-18; PR #7 (comprobación en producción del PR #6, solo
+  documentación) el mismo día. Pendiente de fusionar: tablero de la empresa
+  y estilo premium en Facturas, Subir lote y Reportes (rama de desarrollo).
 
 ## Nombre del producto
 
@@ -957,7 +1016,7 @@ verificación automática en la DGII.
 
 - **Pantallas** (`src/app`), desde el 2026-11-18 (ver "Separación por
   empresa"): `/` Tus empresas (lista, búsqueda, alta, edición, borrado en
-  cascada, "Entrar"); dentro de una empresa: `/empresa/[id]` Resumen,
+  cascada, "Entrar"); dentro de una empresa: `/empresa/[id]` Tablero,
   `/empresa/[id]/facturas` (filtros por tipo/mes/estado, totales, alta por
   OCR o a mano, edición, borrado, verificación en la DGII),
   `/empresa/[id]/lote` (captura por lotes), `/empresa/[id]/reportes` (TXT
@@ -979,7 +1038,7 @@ verificación automática en la DGII.
   venta, contraparte, dudas), `lote/leer-paginas.ts` (páginas y QR),
   `lote/borrador.ts` (combina QR + IA y calcula observaciones),
   `lote/tramos.ts` (parte los recibos largos),
-  `dgii-fiscal.ts` (motor fiscal), `utils.ts` (fechas locales, montos),
+  `dashboard.ts` (cálculos del tablero), `dgii-fiscal.ts` (motor fiscal), `utils.ts` (fechas locales, montos),
   `ocr-tipos.ts` (contrato servidor↔navegador), `ocr-cliente.ts` (prepara
   el archivo y llama a la ruta), `config-local.ts`.
 - **Scripts**: `scripts/copiar-estaticos.mjs`.
@@ -989,7 +1048,8 @@ verificación automática en la DGII.
 - **Interfaz** (`src/components`): `layout/` (Sidebar portado de Nómina sin
   selector de empresa ni logout, Header, BottomNav, Pagina), `ui/`
   (Toast, Badge, EmptyState, ThemeToggle y StatCard copiados de Nómina;
-  Modal y ConfirmDialog nuevos), `clientes/ClienteModal`,
+  Modal y ConfirmDialog nuevos; `Monograma` y `premium.tsx` del diseño
+  premium), `dashboard/Graficos`, `clientes/ClienteModal`,
   `facturas/FacturaModal`.
 - Copiados byte a byte de `manuel-erasmo-oss/tyui` (commit `1555027`):
   `src/app/globals.css`, `postcss.config.mjs`, `tsconfig.json`,
@@ -1061,7 +1121,7 @@ verificación automática en la DGII.
   `/api/ocr` y, desde el 2026-11-18, `/api/verificar-dgii` dinámicas).
 - `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (185
   de 185 desde el 2026-11-18, con las reglas de comprobantes, la Ley 30-26
-  y la verificación en la DGII) — fechas
+  y la verificación en la DGII; 197 de 197 con el tablero) — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
   comparados carácter por carácter, dígito verificador, duplicados.
@@ -1141,6 +1201,16 @@ verificación automática en la DGII.
   de noviembre 2026 (el de octubre ya venció el 15). Las pruebas anteriores,
   adaptadas a las direcciones nuevas: 16/16, 9/9, 15/15 y 26/26. Tras el
   rediseño premium, todo de nuevo: 25/25, 16/16, 9/9, 15/15 y 26/26.
+- Tablero y módulos premium (2026-11-18), navegador real contra
+  `next start`: **12 de 12** comprobaciones nuevas (`e2e10.js`): "Tablero"
+  en el menú, período por defecto, tres vencimientos, indicadores con
+  variación, tocar un mes del gráfico cambia el período, flechas, vista de
+  tabla, diferencia de ITBIS rotulada como orientativa, empresa sin facturas
+  invita a subir el primer lote, Reportes abre en el período en curso. Las
+  anteriores, adaptadas a los textos nuevos: 25/25, 16/16, 9/9, 15/15 y
+  26/26 (la de la DGII, con la DGII real; el servidor de prueba necesita
+  `OCR_CODIGO_ACCESO`). Capturas revisadas de las cuatro pantallas en
+  claro, oscuro y móvil (iPhone 13), sin desplazamiento horizontal.
 - Dato de control del dígito verificador: el algoritmo de la macro da
   correcto el RNC `401007551`.
 - Ruta OCR contra el servidor real: sin código o código incorrecto → 401;
@@ -1197,5 +1267,6 @@ verificación automática en la DGII.
 - `⚠️ SIN VERIFICAR` en el código: que las fechas límite no se corren por
   fin de semana o feriado, y el día exacto del fin del calendario de e-CF.
   El viejo recargo "10% + 4% + 1.10%" nunca se codificó y ya no rige.
-- Del motor fiscal solo se usa en pantalla la fecha límite del 606/607.
-  Nada calcula impuestos todavía.
+- Del motor fiscal se usan en pantalla las fechas límite del 606, la IT-1 y
+  el IR-17 (Tablero). Nada calcula impuestos todavía: la "diferencia de
+  ITBIS" del tablero es una resta orientativa, no la IT-1.

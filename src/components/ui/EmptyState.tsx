@@ -15,7 +15,7 @@ interface EmptyStateProps {
 export function EmptyState({ icon: Icon = Inbox, title, message, action, className }: EmptyStateProps) {
   return (
     <div className={cn(
-      'flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 dark:border-[#252840] bg-white dark:bg-[#141722] py-16 gap-1 px-6',
+      'flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-300 dark:border-[#252840] bg-white dark:bg-[#141722] py-16 gap-1 px-6',
       className,
     )}>
       <div className="relative mb-3">

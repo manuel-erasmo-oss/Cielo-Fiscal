@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCheck, CircleCheck, CircleStop, FileUp, Info, Loade
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Pasos } from '@/components/ui/premium'
 import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS } from '@/components/ui/clases'
 import { leerCodigoOCR } from '@/lib/config-local'
 import { rutaEmpresa, useEmpresaActiva } from '@/lib/datos/empresa-context'
@@ -347,22 +348,30 @@ export default function LotePage() {
     <Pagina title="Subir lote" subtitle="Un PDF con muchas facturas, o varias fotos">
       {errorCarga && <AvisoErrorCarga mensaje={errorCarga} />}
 
+      <section className="animate-content-in">
+        <Pasos pasos={[
+          { titulo: 'Páginas y códigos QR', detalle: 'En tu navegador · gratis', estado: fase === 'inicio' || fase === 'leyendo' ? 'actual' : 'hecho' },
+          { titulo: 'Estado en la DGII', detalle: 'Con el QR · gratis', estado: fase === 'verificando' ? 'actual' : ['leyendo_ia', 'resultado', 'guardado'].includes(fase) ? 'hecho' : 'pendiente' },
+          { titulo: 'La IA llena los datos', detalle: 'Tú solo revisas lo que haga falta', estado: fase === 'leyendo_ia' ? 'actual' : ['resultado', 'guardado'].includes(fase) ? 'hecho' : 'pendiente' },
+        ]} />
+      </section>
+
       {error && (
-        <div role="alert" className="flex items-start gap-3 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-5 py-4 text-sm text-rose-700 dark:text-rose-300">
+        <div role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-5 py-4 text-sm text-rose-700 dark:text-rose-300">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>{error}</p>
         </div>
       )}
 
       {avisoDGII && (fase === 'resultado' || fase === 'leyendo_ia') && (
-        <div role="alert" className="flex items-start gap-3 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-5 py-4 text-sm text-amber-800 dark:text-amber-300">
+        <div role="alert" className="flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-5 py-4 text-sm text-amber-800 dark:text-amber-300">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>{avisoDGII}</p>
         </div>
       )}
 
       {avisoIA && (fase === 'resultado' || fase === 'leyendo_ia') && (
-        <div role="alert" className="flex items-start gap-3 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-5 py-4 text-sm text-amber-800 dark:text-amber-300">
+        <div role="alert" className="flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-5 py-4 text-sm text-amber-800 dark:text-amber-300">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p>{avisoIA.mensaje}</p>
@@ -374,7 +383,7 @@ export default function LotePage() {
 
       {/* ── Inicio: cliente y archivos ─────────────────────────────────── */}
       {cliente && fase === 'inicio' && (
-        <div className={cn(CARD_CLASS, 'space-y-4 px-5 py-4')}>
+        <div className={cn(CARD_CLASS, 'animate-content-in space-y-5 p-5 sm:p-6')}>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="lote-tipo" className={LABEL_CLASS}>Si no se puede saber si es compra o venta</label>
@@ -390,12 +399,20 @@ export default function LotePage() {
             onClick={() => inputArchivos.current?.click()}
             onDragOver={e => e.preventDefault()}
             onDrop={e => { e.preventDefault(); void procesar(e.dataTransfer.files) }}
-            className="flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed border-zinc-300 dark:border-[#33395a] px-6 py-12 text-center transition-colors hover:border-[#1B2980] hover:bg-[#eef0fb]/40 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/20"
+            className="group relative flex w-full flex-col items-center gap-2 overflow-hidden rounded-2xl border-2 border-dashed border-[#1B2980]/20 bg-gradient-to-b from-[#f7f8fd] to-white px-6 py-14 text-center transition-all hover:border-[#1B2980]/50 hover:shadow-[0_18px_40px_-24px_rgba(27,41,128,0.45)] dark:border-indigo-500/25 dark:from-indigo-950/20 dark:to-[#141722] dark:hover:border-indigo-400/60"
           >
-            <FileUp className="h-8 w-8 text-[#1B2980] dark:text-indigo-400" strokeWidth={1.75} />
-            <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Sube el PDF del mes o varias fotos</span>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">
-              Hasta {MAXIMO_PAGINAS_LOTE} páginas por lote. Arrastra los archivos aquí o haz clic.
+            <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 -top-24 mx-auto h-48 w-48 rounded-full bg-[#2f3fa8]/10 blur-3xl transition-opacity group-hover:opacity-100 dark:bg-indigo-500/10" />
+            <span className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#1B2980] to-[#2f3fa8] text-white shadow-[0_10px_24px_-10px_rgba(27,41,128,0.7)] transition-transform group-hover:-translate-y-0.5">
+              <FileUp className="h-6 w-6" strokeWidth={1.75} />
+            </span>
+            <span className="relative mt-2 text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">Sube el PDF del mes o varias fotos</span>
+            <span className="relative text-sm text-zinc-500 dark:text-zinc-400">
+              Arrastra los archivos aquí o <span className="font-semibold text-[#1B2980] dark:text-indigo-300">elige en tu equipo</span>
+            </span>
+            <span className="relative mt-3 flex flex-wrap justify-center gap-2 text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+              <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200 dark:bg-[#1a1d2e] dark:ring-[#252840]">PDF de hasta {MAXIMO_PAGINAS_LOTE} páginas</span>
+              <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200 dark:bg-[#1a1d2e] dark:ring-[#252840]">Fotos JPG, PNG o WebP</span>
+              <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200 dark:bg-[#1a1d2e] dark:ring-[#252840]">Verificación en la DGII</span>
             </span>
           </button>
           <input
@@ -407,7 +424,7 @@ export default function LotePage() {
             onChange={e => { void procesar(e.target.files); e.target.value = '' }}
           />
 
-          <div className="flex items-start gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="flex items-start gap-2.5 rounded-xl bg-zinc-50 px-4 py-3 text-xs leading-relaxed text-zinc-600 dark:bg-[#171a29] dark:text-zinc-400">
             <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#1B2980] dark:text-indigo-400" />
             <span>
               La IA lee cada página y llena los campos del 606: RNC, nombre, NCF, fecha, montos en bienes y servicios,
@@ -431,7 +448,9 @@ export default function LotePage() {
       {/* ── Leyendo ────────────────────────────────────────────────────── */}
       {leyendo && (
         <div role="status" className={cn(CARD_CLASS, 'flex items-center gap-4 px-5 py-4')}>
-          <LoaderCircle className="h-6 w-6 shrink-0 animate-spin text-[#1B2980] dark:text-indigo-400" />
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#eef0fb] dark:bg-indigo-950/50">
+            <LoaderCircle className="h-5 w-5 animate-spin text-[#1B2980] dark:text-indigo-400" />
+          </span>
           <div className="min-w-0 flex-1">
             {fase === 'leyendo' ? (
               <>
@@ -457,7 +476,7 @@ export default function LotePage() {
             )}
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-[#1a1d2e]">
               <div
-                className="h-full rounded-full bg-[#1B2980] dark:bg-indigo-500 transition-[width]"
+                className="h-full rounded-full bg-gradient-to-r from-[#1B2980] to-[#2f3fa8] transition-[width] duration-300 dark:from-indigo-500 dark:to-indigo-400"
                 style={{ width: `${fase === 'leyendo' ? (total ? (paginas.length / total) * 100 : 0) : fase === 'verificando' ? (aVerificar ? (verificadas / aVerificar) * 100 : 0) : (aLeerIA ? (leidasIA / aLeerIA) * 100 : 0)}%` }}
               />
             </div>
@@ -473,10 +492,10 @@ export default function LotePage() {
 
       {/* ── Resultado ──────────────────────────────────────────────────── */}
       {cliente && fase === 'resultado' && (
-        <div className={cn(CARD_CLASS, 'space-y-3 px-5 py-4')}>
+        <div className={cn(CARD_CLASS, 'animate-content-in space-y-4 p-5 sm:p-6')}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              <h2 className="text-[15px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
                 {paginas.length} página(s) de {cliente.razonSocial}
               </h2>
               <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
@@ -506,16 +525,16 @@ export default function LotePage() {
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="flex items-center gap-3 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/20 px-3.5 py-2.5">
-              <CircleCheck className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-              <p className="text-sm text-emerald-800 dark:text-emerald-300">
-                <strong>{conteo.listas}</strong> lista(s): la IA llenó todo y cuadra.
+            <div className="flex items-center gap-3 rounded-2xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-white px-4 py-3 dark:border-emerald-900/50 dark:from-emerald-950/30 dark:to-[#141722]">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white"><CircleCheck className="h-5 w-5" /></span>
+              <p className="text-sm text-emerald-900 dark:text-emerald-200">
+                <strong className="text-lg font-semibold">{conteo.listas}</strong> lista(s): la IA llenó todo y cuadra.
               </p>
             </div>
-            <div className="flex items-center gap-3 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20 px-3.5 py-2.5">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
-              <p className="text-sm text-amber-800 dark:text-amber-300">
-                <strong>{conteo.incluidas - conteo.listas}</strong> con observaciones: necesitan que las mires.
+            <div className="flex items-center gap-3 rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50 to-white px-4 py-3 dark:border-amber-900/50 dark:from-amber-950/30 dark:to-[#141722]">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-amber-950"><AlertTriangle className="h-5 w-5" /></span>
+              <p className="text-sm text-amber-900 dark:text-amber-200">
+                <strong className="text-lg font-semibold">{conteo.incluidas - conteo.listas}</strong> con observaciones: necesitan que las mires.
               </p>
             </div>
           </div>
@@ -542,11 +561,11 @@ export default function LotePage() {
             const pendientes = p.incluir ? pendientesDe(p) : []
             const sinDatos = !c.ncf && !c.rncCedulaContraparte && c.montoTotal === null
             return (
-              <li key={p.numero} className={cn(CARD_CLASS, 'flex flex-col overflow-hidden', !p.incluir && 'opacity-60')}>
-                <div className="relative h-44 bg-zinc-100 dark:bg-[#0d0f1a]">
+              <li key={p.numero} className={cn(CARD_CLASS, 'flex flex-col overflow-hidden transition-shadow hover:shadow-md', !p.incluir && 'opacity-60')}>
+                <div className="relative h-44 border-b border-zinc-100 bg-zinc-50 dark:border-[#1d2035] dark:bg-[#0d0f1a]">
                   {/* eslint-disable-next-line @next/next/no-img-element -- object URL local, no optimizable */}
                   <img src={p.url} alt={`Página ${p.numero}`} loading="lazy" className="h-full w-full object-contain object-top" />
-                  <span className="absolute left-2 top-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-semibold text-white">Pág. {p.numero}</span>
+                  <span className="absolute left-2 top-2 rounded-lg bg-zinc-900/70 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur">Pág. {p.numero}</span>
                 </div>
                 <div className="flex flex-1 flex-col gap-1.5 px-3 py-2.5">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -615,9 +634,14 @@ export default function LotePage() {
 
       {/* ── Guardado ───────────────────────────────────────────────────── */}
       {cliente && fase === 'guardado' && (
-        <div className={cn(CARD_CLASS, 'flex flex-col items-center gap-3 px-6 py-12 text-center')}>
-          <CircleCheck className="h-10 w-10 text-emerald-500" strokeWidth={1.75} />
-          <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{guardados.length} factura(s) guardadas</p>
+        <div className={cn(CARD_CLASS, 'animate-content-in flex flex-col items-center gap-3 px-6 py-14 text-center')}>
+          <span className="relative flex h-16 w-16 items-center justify-center">
+            <span aria-hidden="true" className="absolute inset-0 rounded-full bg-emerald-400/20 blur-md" />
+            <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-[0_10px_24px_-10px_rgba(5,150,105,0.7)]">
+              <CircleCheck className="h-7 w-7" strokeWidth={2} />
+            </span>
+          </span>
+          <p className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">{guardados.length} factura(s) guardadas</p>
           {aprobadas > 0 ? (
             <p className="max-w-md text-sm text-zinc-500 dark:text-zinc-400">
               Aprobaste {aprobadas}. Las {guardados.length - aprobadas} restantes quedan pendientes: ábrelas en Facturas, verás la
