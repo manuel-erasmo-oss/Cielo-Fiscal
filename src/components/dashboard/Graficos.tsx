@@ -422,7 +422,7 @@ export function DonaComposicion({ partes }: { partes: Composicion[] }) {
               <span aria-hidden="true" className="mt-[3px] h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: COLOR_PARTE[p.parte] }} />
               <span className="min-w-0">
                 <span className="block truncate font-medium text-zinc-700 dark:text-zinc-200">{p.parte}</span>
-                <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">{pct(p.monto)}% de las compras</span>
+                <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">{pct(p.monto)}%</span>
               </span>
             </span>
             <span className="shrink-0 font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{montoRDCompacto(p.monto)}</span>
