@@ -226,7 +226,7 @@ export default function ReportesPage() {
                   <p>
                     Hay {analisis.pendientes.length} factura(s) de este mes sin revisar
                     {formato === '606' ? '. No se puede descargar un archivo incompleto: ' : ' y no entran al reporte: '}
-                    <Link href={rutaEmpresa(cliente.id, 'facturas')} className="font-semibold underline">revísalas</Link> o elimínalas primero.
+                    <Link href={rutaEmpresa(cliente.id, formato === '606' ? 'costos-gastos' : 'ingresos')} className="font-semibold underline">revísalas</Link> o elimínalas primero.
                   </p>
                 </div>
               )}
@@ -237,7 +237,7 @@ export default function ReportesPage() {
                     <h2 className="text-sm font-semibold text-rose-700 dark:text-rose-400">
                       {analisis.conErrores.length} factura(s) revisada(s) con errores
                     </h2>
-                    <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Corrígelas en Facturas para que entren al reporte.</p>
+                    <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Corrígelas en {formato === '606' ? 'Costos y gastos' : 'Ingresos'} para que entren al reporte.</p>
                   </div>
                   <table className="w-full text-sm">
                     <thead>
