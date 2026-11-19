@@ -4,7 +4,8 @@ import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { FORMA_PAGO_606, TIPO_BIENES_SERVICIOS_606 } from '@/lib/dgii-formatos'
-import { CAMPOS_MODELO, interpretarLectura } from '@/lib/ocr-interpretar'
+import { interpretarLectura } from '@/lib/ocr-interpretar'
+import { LecturaSchema, lecturaDesdeModelo } from '@/lib/ocr-esquema'
 import {
   ENCABEZADO_CODIGO,
   MAXIMO_TRAMOS,
@@ -45,39 +46,6 @@ const MODELO_OCR = 'claude-opus-5-5'
 
 const TipoSchema = z.enum(['compra', 'venta'])
 
-const CODIGOS_FORMA_PAGO = FORMA_PAGO_606.map(o => o.codigo) as [string, ...string[]]
-const CODIGOS_TIPO_BIENES = TIPO_BIENES_SERVICIOS_606.map(o => o.codigo) as [string, ...string[]]
-
-// Lo que el modelo devuelve (mismo contenido que `LecturaModelo`). Lee lo que
-// está IMPRESO en la factura, más una clasificación — el tipo de bienes y
-// servicios del 606 — que el usuario pidió que el sistema elija. Retenciones,
-// tipo de ingreso y formas de cobro no se le piden: son de la persona. Sin
-// restricciones numéricas en el schema (structured outputs no las
-// garantiza): los rangos se validan en `interpretarLectura`.
-const LecturaSchema = z.object({
-  esComprobanteFiscal: z.boolean(),
-  rncEmisor: z.string().nullable(),
-  nombreEmisor: z.string().nullable(),
-  rncComprador: z.string().nullable(),
-  nombreComprador: z.string().nullable(),
-  ncf: z.string().nullable(),
-  ncfModificado: z.string().nullable(),
-  fechaComprobante: z.string().nullable(),
-  fechaPago: z.string().nullable(),
-  montoSinImpuestos: z.number().nullable(),
-  montoServicios: z.number().nullable(),
-  montoBienes: z.number().nullable(),
-  itbisFacturado: z.number().nullable(),
-  impuestoSelectivoConsumo: z.number().nullable(),
-  otrosImpuestos: z.number().nullable(),
-  propinaLegal: z.number().nullable(),
-  montoTotal: z.number().nullable(),
-  formaPago: z.enum(CODIGOS_FORMA_PAGO).nullable(),
-  tipoBienesServicios: z.enum(CODIGOS_TIPO_BIENES).nullable(),
-  camposDudosos: z.array(z.enum(CAMPOS_MODELO)),
-  confianza: z.number(),
-})
-
 function instrucciones(actividad: string, tramos: number): string {
   const formasDePago = FORMA_PAGO_606.map(o => `${o.codigo} = ${o.nombre}`).join('; ')
   const comoViene = tramos > 1
@@ -111,7 +79,7 @@ Si es un comprobante, devuelve cada campo tal como está impreso:
 - formaPago: solo si el documento dice cómo se pagó, uno de estos códigos: ${formasDePago}. Si no lo dice, null.
 - tipoBienesServicios: ${clasificacion606(actividad)}
 
-Un dato inventado es peor que un dato faltante: si un campo no aparece, es ilegible o tendrías que adivinar algún dígito, devuélvelo como null. No calcules montos que no estén impresos ni completes un RNC o NCF parcialmente legible. Los sellos, firmas y marcas a mano encima del texto no son datos.
+Un dato inventado es peor que un dato faltante: si un campo no aparece, es ilegible o tendrías que adivinar algún dígito, devuélvelo como null. En los campos de texto (RNC, nombres, NCF, fechas, formaPago y tipoBienesServicios) "null" se escribe como cadena vacía ""; en los montos, como null. No calcules montos que no estén impresos ni completes un RNC o NCF parcialmente legible. Los sellos, firmas y marcas a mano encima del texto no son datos.
 
 En camposDudosos lista los campos que sí devolviste pero de los que no estás seguro (imagen borrosa, dígito ambiguo o tapado por un sello, varios candidatos posibles, reparto entre bienes y servicios poco claro, categoría que podría ser otra). En confianza da tu confianza global en la lectura, entre 0 y 1.
 
@@ -229,7 +197,8 @@ export async function POST(request: Request) {
     }
     if (e instanceof Anthropic.BadRequestError) {
       console.error('[api/ocr] Solicitud rechazada por Anthropic:', e.message)
-      return error(422, 'No se pudo procesar el archivo. Verifica que sea una imagen o PDF legible.')
+      // El motivo de Anthropic no trae secretos y ayuda a diagnosticar.
+      return error(422, `No se pudo procesar el archivo (la IA rechazó la solicitud: ${e.message.slice(0, 200)}).`)
     }
     if (e instanceof Anthropic.APIError) {
       console.error(`[api/ocr] Error ${e.status} de Anthropic:`, e.message)
@@ -249,9 +218,6 @@ export async function POST(request: Request) {
 
   // ── 4. De la lectura del modelo a los campos de la factura ────────────────
   return NextResponse.json<ResultadoOCR>(
-    interpretarLectura(
-      { ...crudo, formaPago: crudo.formaPago, tipoBienesServicios: crudo.tipoBienesServicios },
-      { tipoPorDefecto: tipoLeido.data, rncCliente },
-    ),
+    interpretarLectura(lecturaDesdeModelo(crudo), { tipoPorDefecto: tipoLeido.data, rncCliente }),
   )
 }

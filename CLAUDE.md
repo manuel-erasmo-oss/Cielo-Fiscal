@@ -1513,6 +1513,17 @@ verificación automática en la DGII.
   con fallback de servidor (`fallbacks: 'default'`). Cambiar de modelo es
   una constante (`MODELO_OCR`) — decisión de costo/precisión pendiente de
   medir con facturas reales.
+- **Límite de complejidad del esquema (arreglado el 2026-11-19)**: la API
+  admite como máximo 16 parámetros con tipo unión y 24 opcionales por
+  solicitud con salida estructurada (documentación de Anthropic, "Schema
+  complexity limits"). Cada `.nullable()` es una unión. El esquema tenía 18
+  y la API respondía 400 a TODAS las lecturas: la primera prueba real en
+  producción ("la IA no pudo leer ninguna de las facturas") falló por eso. Ahora
+  el esquema vive en `src/lib/ocr-esquema.ts`. Los textos y los catálogos
+  usan la cadena vacía para "no aparece" (`lecturaDesdeModelo` la vuelve
+  null) y solo los 8 montos son nulables. Una prueba cuenta las uniones del
+  esquema que envía el SDK. Si la API rechaza una solicitud (400), el mensaje
+  de la pantalla trae el motivo de Anthropic.
 - No guarda nada. Devuelve `{ esComprobante, tipo, coincideCliente,
   extraccion, confianzaOCR, camposDudosos }` (ver `ResultadoOCR` en
   `src/lib/ocr-tipos.ts`). Lo que no pasa validación vuelve como `null` y
