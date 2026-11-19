@@ -2,12 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CheckCheck, CircleCheck, CircleStop, FileUp, Info, LoaderCircle, QrCode, ShieldCheck, Sparkles, Users } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCheck, CircleCheck, CircleStop, FileUp, Info, LoaderCircle, QrCode, ShieldCheck, Sparkles } from 'lucide-react'
 import { AvisoErrorCarga, Pagina } from '@/components/layout/Pagina'
 import { Badge } from '@/components/ui/Badge'
-import { EmptyState } from '@/components/ui/EmptyState'
 import { Pasos } from '@/components/ui/premium'
-import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS } from '@/components/ui/clases'
+import { BTN_SECONDARY, CARD_CLASS } from '@/components/ui/clases'
 import { leerCodigoOCR } from '@/lib/config-local'
 import { rutaEmpresa, useEmpresaActiva } from '@/lib/datos/empresa-context'
 import { ETIQUETA_CAMPO } from '@/lib/documentos'
@@ -28,6 +27,7 @@ import { esECF } from '@/lib/dgii-formatos'
 import { ETIQUETA_ESTADO_DGII } from '@/lib/verificacion-dgii'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD } from '@/lib/utils'
 import type { CampoExtraido, DocumentoFiscal, TipoDocumento } from '@/types'
+import { MODULO_DE } from '@/lib/modulos'
 
 // Captura por lotes: un PDF de muchas páginas (o varias fotos) → una factura
 // por página, llenada por la IA. Dos pasos automáticos:
@@ -38,6 +38,12 @@ import type { CampoExtraido, DocumentoFiscal, TipoDocumento } from '@/types'
 //      la página es una factura. Lo que vino del QR manda sobre lo que lea.
 // La persona solo interviene en las páginas con observaciones.
 // Ver CLAUDE.md, "Captura por lotes".
+//
+// Desde el 2026-11-18 se entra desde Ingresos o desde Costos y gastos: el
+// módulo fija el tipo que se asume si no se puede saber si la factura es
+// compra o venta. Aun así la IA y el QR deciden solos ("Objetivo del
+// sistema"): una venta que aparezca en un lote de Costos y gastos se guarda
+// como venta y la pantalla final dice que quedó en Ingresos.
 
 interface PaginaLote extends PaginaLeida {
   url: string // object URL de la imagen, para la miniatura
@@ -69,11 +75,13 @@ const leerConIA = (p: PaginaLote) => esIncluible(p) && !p.borrador.leidaConIA
 // Las que tienen un QR de e-CF y todavía no se consultaron en la DGII.
 const verificarDGII = (p: PaginaLote) => esIncluible(p) && !!p.borrador.qrUrl && !p.borrador.dgii
 
-export default function LotePage() {
+export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
   // El lote es siempre de la empresa en la que se entró (ver empresa-context).
   const { errorCarga, empresa, documentos, guardarLote, guardarDocumentos } = useEmpresaActiva()
+  const modulo = MODULO_DE[tipoPorDefecto]
+  const otroTipo: TipoDocumento = tipoPorDefecto === 'compra' ? 'venta' : 'compra'
+  const otroModulo = MODULO_DE[otroTipo]
 
-  const [tipoPorDefecto, setTipoPorDefecto] = useState<TipoDocumento>('compra')
   const [fase, setFase] = useState<Fase>('inicio')
   const [paginas, setPaginas] = useState<PaginaLote[]>([])
   const [total, setTotal] = useState(0)
@@ -331,6 +339,8 @@ export default function LotePage() {
 
   // Facturas guardadas a las que la IA les llenó todo sin dudas.
   const sinObservaciones = guardados.filter(d => d.camposIncompletos.length === 0)
+  // Las que la IA o el QR leyeron como del otro tipo: quedaron en el otro módulo.
+  const delOtroModulo = guardados.filter(d => d.tipo !== tipoPorDefecto).length
 
   async function aprobarSinObservaciones() {
     const ahora = new Date().toISOString()
@@ -345,7 +355,7 @@ export default function LotePage() {
   const leyendo = fase === 'leyendo' || fase === 'verificando' || fase === 'leyendo_ia'
 
   return (
-    <Pagina title="Subir lote" subtitle="Facturas · un PDF con muchas facturas, o varias fotos">
+    <Pagina title="Subir lote" subtitle={`${modulo.nombre} · un PDF con muchas facturas, o varias fotos`}>
       {errorCarga && <AvisoErrorCarga mensaje={errorCarga} />}
 
       <section className="animate-content-in">
@@ -384,16 +394,6 @@ export default function LotePage() {
       {/* ── Inicio: cliente y archivos ─────────────────────────────────── */}
       {cliente && fase === 'inicio' && (
         <div className={cn(CARD_CLASS, 'animate-content-in space-y-5 p-5 sm:p-6')}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="lote-tipo" className={LABEL_CLASS}>Si no se puede saber si es compra o venta</label>
-              <select id="lote-tipo" value={tipoPorDefecto} onChange={e => setTipoPorDefecto(e.target.value as TipoDocumento)} className={INPUT_CLASS}>
-                <option value="compra">Tratarla como compra</option>
-                <option value="venta">Tratarla como venta</option>
-              </select>
-            </div>
-          </div>
-
           <button
             type="button"
             onClick={() => inputArchivos.current?.click()}
@@ -427,10 +427,12 @@ export default function LotePage() {
           <div className="flex items-start gap-2.5 rounded-xl bg-zinc-50 px-4 py-3 text-xs leading-relaxed text-zinc-600 dark:bg-[#171a29] dark:text-zinc-400">
             <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#1B2980] dark:text-indigo-400" />
             <span>
-              La IA lee cada página y llena los campos del 606: RNC, nombre, NCF, fecha, montos en bienes y servicios,
-              ITBIS, otros impuestos y el tipo de gasto, costo o activo. También decide si es compra o venta y descarta
-              las páginas que no son facturas. Del código QR de los comprobantes electrónicos se toman, exactos, el RNC,
-              el e-NCF, la fecha y el total. Tú solo revisas las facturas con observaciones.
+              {tipoPorDefecto === 'compra'
+                ? 'La IA lee cada página y llena los campos del 606: RNC, nombre, NCF, fecha, montos en bienes y servicios, ITBIS, otros impuestos y el tipo de gasto, costo o activo.'
+                : 'La IA lee cada página y llena los campos del reporte de ingresos: cliente, NCF, fecha, monto sin impuestos, ITBIS y otros impuestos.'}
+              {' '}También decide si cada factura es compra o venta (si es una {otroTipo}, queda en {otroModulo.nombre}) y
+              descarta las páginas que no son facturas. Del código QR de los comprobantes electrónicos se toman, exactos, el
+              RNC, el e-NCF, la fecha y el total. Tú solo revisas las facturas con observaciones.
             </span>
           </div>
           {!hayCodigo && (
@@ -573,7 +575,9 @@ export default function LotePage() {
                     {p.borrador.conQr && <Badge variant="default"><QrCode className="mr-1 h-3 w-3" />QR</Badge>}
                     {p.borrador.leidaConIA && <Badge variant="default"><Sparkles className="mr-1 h-3 w-3" />IA</Badge>}
                     {p.borrador.estado !== 'no_factura' && !sinDatos && (
-                      <Badge variant="neutral">{p.borrador.tipo === 'compra' ? 'Compra' : 'Venta'}</Badge>
+                      p.borrador.tipo === tipoPorDefecto
+                        ? <Badge variant="neutral">{p.borrador.tipo === 'compra' ? 'Compra' : 'Venta'}</Badge>
+                        : <Badge variant="warning">{p.borrador.tipo === 'compra' ? 'Compra' : 'Venta'} · va a {otroModulo.nombre}</Badge>
                     )}
                   </div>
                   {sinDatos ? (
@@ -644,14 +648,25 @@ export default function LotePage() {
           <p className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">{guardados.length} factura(s) guardadas</p>
           {aprobadas > 0 ? (
             <p className="max-w-md text-sm text-zinc-500 dark:text-zinc-400">
-              Aprobaste {aprobadas}. Las {guardados.length - aprobadas} restantes quedan pendientes: ábrelas en Facturas, verás la
+              Aprobaste {aprobadas}. Las {guardados.length - aprobadas} restantes quedan pendientes: ábrelas en {modulo.nombre}, verás la
               imagen al lado y qué falta revisar.
             </p>
           ) : (
             <p className="max-w-md text-sm text-zinc-500 dark:text-zinc-400">
               {sinObservaciones.length > 0
                 ? `${sinObservaciones.length} no tienen observaciones: la IA llenó todo y cuadra. Puedes aprobarlas ahora; las demás quedan pendientes para que las revises con la imagen al lado.`
-                : 'Todas quedaron pendientes de revisión: ábrelas en Facturas, verás la imagen al lado y qué falta revisar.'}
+                : `Todas quedaron pendientes de revisión: ábrelas en ${modulo.nombre}, verás la imagen al lado y qué falta revisar.`}
+            </p>
+          )}
+          {delOtroModulo > 0 && (
+            <p className="flex max-w-md flex-wrap items-center justify-center gap-x-1.5 gap-y-1 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-900 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-200 dark:ring-amber-400/20">
+              <Info className="h-4 w-4 shrink-0" />
+              <span>
+                <strong className="font-semibold">{delOtroModulo} {delOtroModulo === 1 ? `era ${otroTipo}` : `eran ${otroModulo.plural}`}</strong>: {delOtroModulo === 1 ? 'quedó' : 'quedaron'} en {otroModulo.nombre}.
+              </span>
+              <Link href={rutaEmpresa(cliente.id, otroModulo.seccion)} className="inline-flex items-center gap-1 font-semibold underline">
+                Ir a {otroModulo.nombre} <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
             </p>
           )}
           <div className="flex flex-wrap justify-center gap-2 pt-1">
@@ -662,7 +677,7 @@ export default function LotePage() {
                 Aprobar las {sinObservaciones.length} sin observaciones
               </button>
             )}
-            <Link href={rutaEmpresa(cliente.id, 'facturas')} className={BTN_PRIMARY}>Ver las facturas</Link>
+            <Link href={rutaEmpresa(cliente.id, modulo.seccion)} className={BTN_PRIMARY}>Ver las facturas</Link>
           </div>
         </div>
       )}

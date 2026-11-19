@@ -6,9 +6,9 @@ import { documentosDeEmpresa, exigirDeEmpresa, exigirIdDeEmpresa } from '@/lib/d
 import type { ClienteFiscal, DocumentoFiscal } from '@/types'
 
 // Datos de UNA empresa: la que el contador eligió en "Tus empresas". Las
-// pantallas de trabajo (Resumen, Facturas, Subir lote, Reportes) solo usan
-// este contexto, nunca `useDatos` directo, así no pueden ver ni guardar
-// facturas de otra empresa (ver src/lib/datos/empresa.ts).
+// pantallas de trabajo (Dashboard, Ingresos, Costos y gastos, Subir lote,
+// Reportes) solo usan este contexto, nunca `useDatos` directo, así no pueden
+// ver ni guardar facturas de otra empresa (ver src/lib/datos/empresa.ts).
 
 export interface DatosEmpresaCtx {
   listo: boolean

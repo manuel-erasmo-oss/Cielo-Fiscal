@@ -62,6 +62,9 @@ interface FacturaModalProps {
   clientes: readonly ClienteFiscal[]
   documentos: readonly DocumentoFiscal[]
   clienteIdInicial?: string
+  // Tipo con que arranca una factura nueva (el del módulo desde el que se
+  // abre). La lectura del OCR o del QR puede cambiarlo.
+  tipoInicial?: TipoDocumento
   // `archivo`: la imagen o PDF recién subido, para guardarlo con la factura.
   onGuardar: (documento: DocumentoFiscal, archivo?: Blob) => Promise<void>
   // Imagen guardada de una factura existente (null si no tiene).
@@ -136,6 +139,7 @@ export function FacturaModal({
   clientes,
   documentos,
   clienteIdInicial,
+  tipoInicial = 'compra',
   onGuardar,
   obtenerArchivo,
   onClose,
@@ -144,7 +148,7 @@ export function FacturaModal({
   // La empresa no se elige aquí: es la empresa en la que se entró (y una
   // factura no se puede pasar a otra empresa).
   const clienteId = documento?.clienteId ?? clienteIdInicial ?? clientes[0]?.id ?? ''
-  const [tipo, setTipo] = useState<TipoDocumento>(documento?.tipo ?? 'compra')
+  const [tipo, setTipo] = useState<TipoDocumento>(documento?.tipo ?? tipoInicial)
   const [valores, setValores] = useState<Valores>(documento ? aValores(documento) : VACIO)
   const [origen, setOrigen] = useState<DocumentoFiscal['origen']>(documento?.origen ?? 'manual')
   const [confianza, setConfianza] = useState(documento?.confianzaOCR ?? 0)

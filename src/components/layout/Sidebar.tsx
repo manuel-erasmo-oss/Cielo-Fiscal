@@ -190,6 +190,7 @@ export function Sidebar() {
                 key={item.href}
                 href={item.href}
                 title={wide ? undefined : item.label}
+                aria-current={active ? 'page' : undefined}
                 className={cn(
                   'flex items-center py-2.5 text-sm transition-colors border-l-[3px]',
                   wide ? 'gap-3 px-4' : 'justify-center px-0',
