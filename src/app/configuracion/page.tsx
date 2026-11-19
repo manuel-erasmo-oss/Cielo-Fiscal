@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { HardDrive, ScanText } from 'lucide-react'
+import Link from 'next/link'
+import { FlaskConical, HardDrive, ScanText } from 'lucide-react'
 import { Pagina } from '@/components/layout/Pagina'
 import { Toast } from '@/components/ui/Toast'
-import { CARD_CLASS, INPUT_CLASS, LABEL_CLASS } from '@/components/ui/clases'
+import { BTN_SECONDARY, CARD_CLASS, INPUT_CLASS, LABEL_CLASS } from '@/components/ui/clases'
 import { guardarCodigoOCR, leerCodigoOCR } from '@/lib/config-local'
 import { useDatos } from '@/lib/datos/datos-context'
 import { BTN_PRIMARY, cn } from '@/lib/utils'
@@ -65,6 +66,14 @@ export default function ConfiguracionPage() {
             ? 'Hay un código guardado en este navegador. Se comprueba al leer la próxima factura.'
             : 'No hay código guardado en este navegador.'}
         </p>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 px-5 py-4 dark:border-[#1d2035]">
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            ¿Qué modelo de IA conviene? Lee las mismas facturas con dos modelos y compara precisión y costo.
+          </p>
+          <Link href="/configuracion/comparar" className={BTN_SECONDARY}>
+            <FlaskConical className="h-4 w-4" /> Comparar modelos
+          </Link>
+        </div>
       </div>
 
       <div className={cn(CARD_CLASS, 'max-w-2xl')}>

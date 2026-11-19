@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { FORMA_PAGO_606, TIPO_BIENES_SERVICIOS_606 } from '@/lib/dgii-formatos'
 import { interpretarLectura } from '@/lib/ocr-interpretar'
 import { LecturaSchema, lecturaDesdeModelo } from '@/lib/ocr-esquema'
+import { MODELO_OCR_POR_DEFECTO, modeloOCR } from '@/lib/ocr-modelos'
 import {
   ENCABEZADO_CODIGO,
   MAXIMO_TRAMOS,
@@ -42,7 +43,6 @@ import { soloDigitos } from '@/lib/utils'
 export const runtime = 'nodejs'
 export const maxDuration = 120
 
-const MODELO_OCR = 'claude-opus-5-5'
 
 const TipoSchema = z.enum(['compra', 'venta'])
 
@@ -162,6 +162,10 @@ export async function POST(request: Request) {
   const rncCrudo = form.get('rncCliente')
   const rncDigitos = typeof rncCrudo === 'string' ? soloDigitos(rncCrudo) : ''
   const rncCliente = rncDigitos.length === 9 || rncDigitos.length === 11 ? rncDigitos : null
+  // Modelo: solo uno de la lista (`MODELOS_OCR`). Sin indicar, el de siempre.
+  const modeloPedido = form.get('modelo')
+  const modelo = modeloOCR(typeof modeloPedido === 'string' && modeloPedido ? modeloPedido : MODELO_OCR_POR_DEFECTO)
+  if (!modelo) return error(400, 'Modelo de IA no admitido.')
 
   // ── 3. Lectura con Claude ─────────────────────────────────────────────────
   const adjuntos: Anthropic.Beta.BetaContentBlockParam[] = []
@@ -175,12 +179,11 @@ export async function POST(request: Request) {
   let respuesta
   try {
     respuesta = await new Anthropic().beta.messages.parse({
-      model: MODELO_OCR,
+      model: modelo.id,
       max_tokens: 16000,
       // Si el modelo declina por política, la API reintenta en el modelo de
-      // respaldo dentro de la misma llamada.
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
+      // respaldo dentro de la misma llamada (Haiku 5.5 no tiene respaldo).
+      ...(modelo.conRespaldo ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
       output_config: {
         effort: 'medium',
         format: betaZodOutputFormat(LecturaSchema),
@@ -223,7 +226,14 @@ export async function POST(request: Request) {
 
   // ── 4. De la lectura del modelo a los campos de la factura ────────────────
   return NextResponse.json<ResultadoOCR>(
-    interpretarLectura(lecturaDesdeModelo(crudo), { tipoPorDefecto: tipoLeido.data, rncCliente }),
+    {
+      ...interpretarLectura(lecturaDesdeModelo(crudo), { tipoPorDefecto: tipoLeido.data, rncCliente }),
+      uso: {
+        modelo: respuesta.model,
+        tokensEntrada: respuesta.usage.input_tokens,
+        tokensSalida: respuesta.usage.output_tokens,
+      },
+    },
     { headers: ENCABEZADOS },
   )
 }
