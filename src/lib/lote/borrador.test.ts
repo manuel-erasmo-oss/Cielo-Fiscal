@@ -10,6 +10,50 @@ const qr = (o: { emisor?: string; comprador?: string | null; encf?: string; tota
   `&ENCF=${o.encf ?? 'E310000007629'}&FechaEmision=01-07-2026&MontoTotal=${o.total ?? '2440.24'}&CodigoSeguridad=x`
 const ctx = (cambios: Partial<ContextoLote> = {}): ContextoLote => ({ cliente: CLIENTE, tipoPorDefecto: 'compra', existentes: [], ...cambios })
 
+describe('cada módulo, solo su tipo (decisión del usuario, 2026-11-19)', () => {
+  const lect = (cambios: Partial<ResultadoOCR> = {}, campos: Partial<ResultadoOCR['extraccion']> = {}): ResultadoOCR => ({
+    esComprobante: true, tipo: 'compra', coincideCliente: true, confianzaOCR: 0.9, camposDudosos: [],
+    extraccion: { ...CAMPOS_VACIOS, rncCedulaContraparte: '101123451', ncf: 'B0100000123', fechaComprobante: '2026-07-01', montoServicios: 0, montoBienes: 1000, itbisFacturado: 180, montoTotal: 1180, tipoBienesServicios: '09', ...campos },
+    ...cambios,
+  })
+
+  it('QR de una compra subida en Ingresos: se descarta (otro_modulo), no se puede incluir', () => {
+    const b = interpretarPagina(qr(), ctx({ tipoPorDefecto: 'venta', tipoModulo: 'venta' }))
+    expect(b).toMatchObject({ estado: 'otro_modulo', tipo: 'compra' })
+    expect(b.nota).toMatch(/en Ingresos solo se registran ventas/)
+    // La IA ya no la toca.
+    expect(fusionarConLectura(b, lect(), ctx({ tipoModulo: 'venta' })).estado).toBe('otro_modulo')
+  })
+
+  it('QR de una venta subida en Costos y gastos: se descarta', () => {
+    const b = interpretarPagina(qr({ emisor: '401007551', comprador: '101123451' }), ctx({ tipoModulo: 'compra' }))
+    expect(b).toMatchObject({ estado: 'otro_modulo', tipo: 'venta' })
+    expect(b.nota).toMatch(/en Costos y gastos solo se registran compras/)
+  })
+
+  it('sin QR, la IA dice que es del otro tipo: se descarta', () => {
+    const b = fusionarConLectura(interpretarPagina(null, ctx({ tipoPorDefecto: 'venta' })), lect({ tipo: 'compra' }), ctx({ tipoPorDefecto: 'venta', tipoModulo: 'venta' }))
+    expect(b.estado).toBe('otro_modulo')
+  })
+
+  it('venta que la IA no pudo confirmar como emitida por la empresa: el NCF queda para revisión', () => {
+    const venta = lect({ tipo: 'venta', coincideCliente: null }, { ncf: 'B0200000001', rncCedulaContraparte: null, montoBienes: null, montoServicios: null, montoFacturado: 1000, tipoBienesServicios: null })
+    const b = fusionarConLectura(interpretarPagina(null, ctx({ tipoPorDefecto: 'venta' })), venta, ctx({ tipoPorDefecto: 'venta', tipoModulo: 'venta' }))
+    expect(b.estado).toBe('sin_qr')
+    expect(b.nota).toMatch(/emitió esta empresa/)
+    expect(b.dudosos).toContain('ncf')
+  })
+
+  it('venta sin cliente: con B02 no hay observación del cliente; con B01, sí (no es consumidor final)', () => {
+    const base = { tipo: 'venta' as const, coincideCliente: true }
+    const campos = { rncCedulaContraparte: null, montoBienes: null, montoServicios: null, montoFacturado: 1000, tipoBienesServicios: null }
+    const consumo = fusionarConLectura(interpretarPagina(null, ctx({ tipoPorDefecto: 'venta' })), lect(base, { ...campos, ncf: 'B0200000001' }), ctx({ tipoPorDefecto: 'venta' }))
+    const credito = fusionarConLectura(interpretarPagina(null, ctx({ tipoPorDefecto: 'venta' })), lect(base, { ...campos, ncf: 'B0100000001' }), ctx({ tipoPorDefecto: 'venta' }))
+    expect(observaciones(consumo, CLIENTE.rncCedula)).not.toContain('rncCedulaContraparte')
+    expect(observaciones(credito, CLIENTE.rncCedula)).toContain('rncCedulaContraparte')
+  })
+})
+
 describe('interpretarPagina', () => {
   it('QR de una compra del cliente: contraparte = emisor, con e-NCF, fecha y total', () => {
     const b = interpretarPagina(qr(), ctx())

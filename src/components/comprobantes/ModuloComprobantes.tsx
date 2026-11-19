@@ -16,6 +16,7 @@ import {
   ESTADOS_FILA, ETIQUETA_ESTADO_FILA, FILTROS_VACIOS, ORDEN_INICIAL, agruparPorContraparte,
   csvDeComprobantes, esAprobable, filtrarComprobantes, hayFiltros as hayFiltrosEn, ordenarComprobantes,
   fechaCorta, ordenarContrapartes, paginar, resumenPorEstado, signoDe, totalDe, totalesDe,
+  exigirTipoDeModulo, nombreClienteVenta, nombreDeGrupo,
   type CampoOrden, type CampoOrdenContraparte, type EstadoFila, type FiltroClasificacion, type Filtros, type Orden,
 } from '@/lib/comprobantes'
 import { rutaEmpresa, useEmpresaActiva } from '@/lib/datos/empresa-context'
@@ -230,12 +231,12 @@ export function ModuloComprobantes({ tipo }: { tipo: TipoDocumento }) {
   }
 
   async function handleGuardar(documento: DocumentoFiscal, archivo?: Blob) {
+    // Cada módulo registra solo su tipo (guardia en los datos, no solo en
+    // la pantalla): lanza TipoEquivocadoError si llegara otro tipo.
+    exigirTipoDeModulo(tipo, [documento])
     await guardarDocumento(documento, archivo)
     setEnEdicion(undefined)
-    const otro = MODULO_DE[documento.tipo]
-    setAviso(documento.tipo !== tipo
-      ? { mensaje: `Se guardó como ${documento.tipo}: está en ${otro.nombre}`, tipo: 'success' }
-      : { mensaje: documento.estadoRevision === 'revisado' ? 'Factura guardada como revisada' : 'Factura guardada como pendiente', tipo: 'success' })
+    setAviso({ mensaje: documento.estadoRevision === 'revisado' ? 'Factura guardada como revisada' : 'Factura guardada como pendiente', tipo: 'success' })
   }
 
   function verFacturasDe(clave: string) {
@@ -244,8 +245,7 @@ export function ModuloComprobantes({ tipo }: { tipo: TipoDocumento }) {
   }
 
   const etiquetaFila = (d: DocumentoFiscal) => `factura ${d.ncf ?? 'sin NCF'}`
-  const nombreDe = (d: DocumentoFiscal) =>
-    d.nombreContraparte ?? (!compra && !d.rncCedulaContraparte ? 'Consumidor final' : null)
+  const nombreDe = (d: DocumentoFiscal) => (compra ? d.nombreContraparte : nombreClienteVenta(d))
 
   return (
     <Pagina
@@ -330,7 +330,7 @@ export function ModuloComprobantes({ tipo }: { tipo: TipoDocumento }) {
                 )}
                 {filtros.contraparte && (
                   <span className="inline-flex h-10 max-w-full items-center gap-1.5 rounded-xl bg-[#eef0fb] pl-3 pr-1.5 text-sm font-medium text-[#1B2980] dark:bg-indigo-950/50 dark:text-indigo-300">
-                    <span className="truncate">{modulo.contraparte}: {contraparteFiltrada?.nombre ?? (contraparteFiltrada?.rnc ? formatCedula(contraparteFiltrada.rnc) : compra ? 'Sin identificar' : 'Consumidor final')}</span>
+                    <span className="truncate">{modulo.contraparte}: {contraparteFiltrada?.nombre ?? (contraparteFiltrada?.rnc ? formatCedula(contraparteFiltrada.rnc) : nombreDeGrupo(filtros.contraparte, tipo))}</span>
                     <button type="button" onClick={() => cambiar({ contraparte: '' })} aria-label={`Quitar filtro de ${modulo.contraparte.toLowerCase()}`} className="rounded-md p-1 hover:bg-white/70 dark:hover:bg-indigo-900/50">
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -576,7 +576,7 @@ export function ModuloComprobantes({ tipo }: { tipo: TipoDocumento }) {
                       </thead>
                       <tbody className="divide-y divide-zinc-100 dark:divide-[#1d2035]">
                         {filasContrapartes.map(c => {
-                          const nombre = c.nombre ?? (c.clave === 'sin-identificar' ? (compra ? 'Sin identificar' : 'Consumidor final') : null)
+                          const nombre = c.nombre ?? nombreDeGrupo(c.clave, tipo)
                           return (
                             <tr key={c.clave} onClick={() => verFacturasDe(c.clave)} className="group cursor-pointer transition-colors hover:bg-[#f7f8fd] dark:hover:bg-[#171a2a]">
                               <td className="max-w-[12rem] py-3 pl-4 pr-3 sm:max-w-[18rem] sm:pl-5">
@@ -618,6 +618,7 @@ export function ModuloComprobantes({ tipo }: { tipo: TipoDocumento }) {
           documentos={documentos}
           clienteIdInicial={empresa.id}
           tipoInicial={tipo}
+          tipoFijo={tipo}
           onGuardar={handleGuardar}
           obtenerArchivo={obtenerArchivo}
           onClose={() => setEnEdicion(undefined)}

@@ -65,6 +65,10 @@ interface FacturaModalProps {
   // Tipo con que arranca una factura nueva (el del módulo desde el que se
   // abre). La lectura del OCR o del QR puede cambiarlo.
   tipoInicial?: TipoDocumento
+  // Módulo desde el que se abre: el tipo no se puede cambiar, y una factura
+  // del otro tipo se descarta con aviso (Ingresos solo ventas, Costos y
+  // gastos solo compras; decisión del usuario, 2026-11-19).
+  tipoFijo?: TipoDocumento
   // `archivo`: la imagen o PDF recién subido, para guardarlo con la factura.
   onGuardar: (documento: DocumentoFiscal, archivo?: Blob) => Promise<void>
   // Imagen guardada de una factura existente (null si no tiene).
@@ -140,6 +144,7 @@ export function FacturaModal({
   documentos,
   clienteIdInicial,
   tipoInicial = 'compra',
+  tipoFijo,
   onGuardar,
   obtenerArchivo,
   onClose,
@@ -148,7 +153,10 @@ export function FacturaModal({
   // La empresa no se elige aquí: es la empresa en la que se entró (y una
   // factura no se puede pasar a otra empresa).
   const clienteId = documento?.clienteId ?? clienteIdInicial ?? clientes[0]?.id ?? ''
-  const [tipo, setTipo] = useState<TipoDocumento>(documento?.tipo ?? tipoInicial)
+  const [tipo, setTipo] = useState<TipoDocumento>(documento?.tipo ?? tipoFijo ?? tipoInicial)
+  // Tipo real de una factura que la IA o el QR identificaron como del otro
+  // módulo: no se registra; se avisa para que la persona la revise y descarte.
+  const [descartada, setDescartada] = useState<TipoDocumento | null>(null)
   const [valores, setValores] = useState<Valores>(documento ? aValores(documento) : VACIO)
   const [origen, setOrigen] = useState<DocumentoFiscal['origen']>(documento?.origen ?? 'manual')
   const [confianza, setConfianza] = useState(documento?.confianzaOCR ?? 0)
@@ -271,17 +279,31 @@ export function FacturaModal({
     setPaso('extrayendo')
     setQrUrl(undefined)
     setVerificacion(undefined)
+    setDescartada(null)
     try {
       // Primero el QR (en el navegador, sin costo); si falla, se sigue sin él.
       const url = await buscarQrDelArchivo(seleccionado)
       if (!vivo.current) return
       const delCliente = clientes.find(c => c.id === clienteId)
-      const resultado = await extraerFactura(seleccionado, tipo, { rncCliente: delCliente?.rncCedula, actividad: delCliente?.actividad })
+      let resultado = await extraerFactura(seleccionado, tipo, { rncCliente: delCliente?.rncCedula, actividad: delCliente?.actividad })
       if (!vivo.current) return
       if (!resultado.esComprobante) {
         setErrorOCR(new OCRError('El sistema no reconoce esto como una factura. Si lo es, captúrala a mano.'))
         setPaso('origen')
         return
+      }
+      if (tipoFijo) {
+        // El QR (exacto) manda sobre la IA para saber si es compra o venta.
+        const delQr = url && delCliente ? interpretarPagina(url, { cliente: delCliente, tipoPorDefecto: tipoFijo, existentes: [] }) : null
+        const tipoReal = delQr?.conQr && delQr.estado !== 'ajena' ? delQr.tipo : resultado.tipo
+        if (tipoReal !== tipoFijo) {
+          setDescartada(tipoReal)
+          setPaso('origen')
+          return
+        }
+        // El QR dice que sí es de este módulo, pero la IA la leyó al revés:
+        // sus montos están en los campos equivocados y no se usan.
+        if (resultado.tipo !== tipoFijo) resultado = { ...resultado, tipo: tipoFijo, extraccion: { ...CAMPOS_VACIOS } }
       }
       // Si la factura dice que es una venta (o una compra), manda la factura.
       setTipo(resultado.tipo)
@@ -306,6 +328,13 @@ export function FacturaModal({
       // e-CF cuyo QR no se pudo leer: como un dato borroso, el NCF queda
       // marcado para que una persona verifique la factura en la DGII.
       if (!url && esECF(extraccion.ncf)) dudas.add('ncf')
+      // Una venta es de la empresa solo si la emitió ella: si la IA no pudo
+      // confirmarlo, el NCF queda para que una persona lo revise.
+      const ventaSinConfirmar = resultado.tipo === 'venta' && resultado.coincideCliente !== true
+      if (ventaSinConfirmar) {
+        dudas.add('ncf')
+        setErrorOCR(new OCRError('No se pudo confirmar en la factura que la emitió esta empresa: revísala antes de guardarla.'))
+      }
       setValores(aValores(extraccion))
       setDudosos(dudas)
       if (url) {
@@ -535,6 +564,12 @@ export function FacturaModal({
             </div>
             <div className="flex flex-col gap-1.5">
               <span className={LABEL_CLASS}>Tipo</span>
+              {tipoFijo ? (
+                <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 dark:border-[#252840] dark:bg-[#1a1d2e] dark:text-zinc-300">
+                  <span className="font-semibold">{tipoFijo === 'venta' ? 'Venta' : 'Compra'}</span>
+                  <span className="text-zinc-500 dark:text-zinc-400"> · aquí solo se registran {tipoFijo === 'venta' ? 'ventas' : 'compras'}</span>
+                </p>
+              ) : (
               <div className="grid grid-cols-2 gap-2">
                 {(['compra', 'venta'] as const).map(t => (
                   <button
@@ -553,6 +588,7 @@ export function FacturaModal({
                   </button>
                 ))}
               </div>
+              )}
             </div>
           </div>
 
@@ -575,6 +611,23 @@ export function FacturaModal({
             onChange={e => { void handleArchivo(e.target.files?.[0]); e.target.value = '' }}
           />
 
+          {descartada && tipoFijo && (
+            <div role="alert" className="space-y-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>
+                  <strong className="font-semibold">Esta factura es de {descartada === 'compra' ? 'compra (gasto)' : 'venta'}.</strong>{' '}
+                  {tipoFijo === 'venta'
+                    ? 'En Ingresos solo se registran ventas, así que no se registra aquí. Revísala y, si es una compra, súbela en Costos y gastos.'
+                    : 'En Costos y gastos solo se registran compras, así que no se registra aquí. Revísala y, si es una venta, súbela en Ingresos.'}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={onClose} className="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-700">Descartar</button>
+                <button type="button" onClick={() => setDescartada(null)} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-rose-700 hover:bg-rose-100 dark:text-rose-300 dark:hover:bg-rose-900/40">Elegir otro archivo</button>
+              </div>
+            </div>
+          )}
           {errorOCR && (
             <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3.5 py-3 text-sm text-rose-700 dark:text-rose-300">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -678,7 +731,7 @@ export function FacturaModal({
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor="factura-tipo-edit" className={LABEL_CLASS}>Tipo</label>
-                  <select id="factura-tipo-edit" value={tipo} onChange={e => setTipo(e.target.value as TipoDocumento)} className={INPUT_CLASS}>
+                  <select id="factura-tipo-edit" value={tipo} disabled={!!tipoFijo} onChange={e => setTipo(e.target.value as TipoDocumento)} className={cn(INPUT_CLASS, tipoFijo && 'cursor-not-allowed opacity-70')}>
                     <option value="compra">Compra</option>
                     <option value="venta">Venta</option>
                   </select>
