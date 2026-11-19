@@ -30,7 +30,7 @@ import { BTN_PRIMARY, cn } from '@/lib/utils'
 // que costó cada uno. No guarda nada.
 
 // Tope de páginas: cada una se paga dos veces.
-const MAXIMO_PAGINAS = 20
+const MAXIMO_PAGINAS = 50
 // Páginas que se leen a la vez (cada una con los dos modelos).
 const SIMULTANEAS = 2
 

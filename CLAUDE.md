@@ -802,7 +802,7 @@ medir.
 
 **Herramienta "Comparar modelos"** (pedida con la opción recomendada,
 2026-11-19: "comparar antes de cambiar"): `/configuracion/comparar`. Lee
-las mismas páginas (hasta 20) con dos modelos de `MODELOS_OCR`
+las mismas páginas (hasta 50; eran 20 hasta que el usuario pidió subirlo el mismo día) con dos modelos de `MODELOS_OCR`
 (`src/lib/ocr-modelos.ts`: Opus 5.5, Sonnet 5.5, Haiku 5.5, con sus precios
 de lista). Muestra por modelo el costo estimado (tokens de `uso` × precio),
 el tiempo, las páginas con error y **cuántos datos del QR acertó** (NCF,
