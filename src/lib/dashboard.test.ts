@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { CAMPOS_VACIOS } from './documentos'
 import {
-  composicionCompras, marcasEje, montoCompacto, periodo606EnCurso, periodosDisponibles,
-  principalesProveedores, proximosVencimientos, resumenPeriodo, serieMensual, sumarMeses,
+  arcosDona, composicionCompras, cuentaRegresiva, marcasEje, mesesConFacturas, montoRDCompacto, urgenciaDe, montoCompacto, obligacionesDelMes, periodo606EnCurso, periodosDisponibles,
+  principalesProveedores, proximosVencimientos, resumenPeriodo, semanasDelMes, serieMensual, sumarMeses,
   ultimosPeriodos, variacion,
 } from './dashboard'
 import type { DocumentoFiscal } from '@/types'
@@ -72,11 +72,15 @@ describe('resumen del período', () => {
   })
 
   it('serie de los últimos meses, con ceros donde no hay facturas', () => {
-    expect(serieMensual(docs, '2026-10', 3)).toEqual([
+    expect(serieMensual(docs, '2026-10', 3).map(({ periodo, compras, ventas }) => ({ periodo, compras, ventas }))).toEqual([
       { periodo: '2026-08', compras: 0, ventas: 0 },
       { periodo: '2026-09', compras: 9999, ventas: 0 },
       { periodo: '2026-10', compras: 1800, ventas: 3000 },
     ])
+    // El ITBIS de cada mes sale del mismo resumen (la nota de crédito resta).
+    const oct = serieMensual(docs, '2026-10', 1)[0]
+    const r = resumenPeriodo(docs, '2026-10')
+    expect([oct.itbisCompras, oct.itbisVentas]).toEqual([r.compras.itbis, r.ventas.itbis])
   })
 })
 
@@ -125,6 +129,30 @@ describe('vencimientos', () => {
   })
 })
 
+describe('calendario fiscal', () => {
+  it('noviembre 2026: IR-17, 606 e IT-1 de octubre, con días que faltan o pasaron', () => {
+    const o = obligacionesDelMes('2026-11', '2026-11-18')
+    expect(o.map(x => [x.clave, x.periodo, x.fecha, x.faltan, x.finDeSemana])).toEqual([
+      ['IR-17', '2026-10', '2026-11-10', -8, false],
+      ['606', '2026-10', '2026-11-15', -3, true], // domingo
+      ['IT-1', '2026-10', '2026-11-20', 2, false],
+    ])
+  })
+
+  it('enero mira al período de diciembre del año anterior', () => {
+    expect(obligacionesDelMes('2027-01', '2026-12-31').map(x => x.periodo)).toEqual(['2026-12', '2026-12', '2026-12'])
+  })
+
+  it('semanas de lunes a domingo: noviembre 2026 empieza en domingo', () => {
+    const s = semanasDelMes('2026-11')
+    expect(s[0]).toEqual([null, null, null, null, null, null, '2026-11-01'])
+    expect(s.length).toBe(6)
+    expect(s[5][0]).toBe('2026-11-30')
+    expect(s.flat().filter(Boolean).length).toBe(30)
+    expect(semanasDelMes('2027-02').flat().filter(Boolean).length).toBe(28)
+  })
+})
+
 describe('ejes y montos compactos', () => {
   it('marcas redondas', () => {
     expect(marcasEje(0)).toEqual([0])
@@ -138,5 +166,50 @@ describe('ejes y montos compactos', () => {
     expect(montoCompacto(12_500)).toBe('13K')
     expect(montoCompacto(1_250_000)).toBe('1.3M')
     expect(montoCompacto(-2000)).toBe('-2K')
+  })
+})
+
+describe('piezas del dashboard rediseñado', () => {
+  it('serie de 3 y 12 meses que termina en el período elegido', () => {
+    const docs = [compra('2026-10-05', 1000, 180), venta('2026-01-10', 500, 90), compra('2025-11-30', 300, 54)]
+    const tres = serieMensual(docs, '2026-10', 3)
+    expect(tres.map(p => p.periodo)).toEqual(['2026-08', '2026-09', '2026-10'])
+    expect(tres[2].compras).toBe(1000)
+    const doce = serieMensual(docs, '2026-10', 12)
+    expect(doce).toHaveLength(12)
+    expect(doce[0].periodo).toBe('2025-11')
+    expect(doce[0].compras).toBe(300)
+    expect(doce.find(p => p.periodo === '2026-01')!.ventas).toBe(500)
+  })
+
+  it('cuenta los meses con facturas, sin las descartadas', () => {
+    const docs = [compra('2026-10-05', 1, 0), compra('2026-10-09', 1, 0), venta('2026-09-01', 1, 0), compra('2026-08-01', 1, 0, { estadoRevision: 'descartado' })]
+    expect(mesesConFacturas(docs)).toBe(2)
+    expect(mesesConFacturas([])).toBe(0)
+  })
+
+  it('tramos de la dona: proporcionales, en orden, y nada para ceros o negativos', () => {
+    expect(arcosDona([1, 3])).toEqual([{ inicio: 0, fin: 0.25 }, { inicio: 0.25, fin: 1 }])
+    const a = arcosDona([2, 0, -5, 2])
+    expect(a[1].inicio).toBe(a[1].fin)
+    expect(a[2].inicio).toBe(a[2].fin)
+    expect(a[3]).toEqual({ inicio: 0.5, fin: 1 })
+    expect(arcosDona([0, 0])).toEqual([{ inicio: 0, fin: 0 }, { inicio: 0, fin: 0 }])
+  })
+
+  it('texto y urgencia de una obligación: nunca dice "Cumplida"', () => {
+    expect(cuentaRegresiva(2)).toBe('Faltan 2 días')
+    expect(cuentaRegresiva(1)).toBe('Falta 1 día')
+    expect(cuentaRegresiva(0)).toBe('Vence hoy')
+    expect(cuentaRegresiva(-1)).toBe('Venció ayer')
+    expect(cuentaRegresiva(-8)).toBe('Venció hace 8 días')
+    expect([urgenciaDe(-1), urgenciaDe(0), urgenciaDe(3), urgenciaDe(4)]).toEqual(['vencida', 'hoy', 'pronto', 'futura'])
+  })
+
+  it('cifra compacta en pesos', () => {
+    expect(montoRDCompacto(151_234)).toBe('RD$151K')
+    expect(montoRDCompacto(1_250_000)).toBe('RD$1.3M')
+    expect(montoRDCompacto(-3_400)).toBe('-RD$3.4K')
+    expect(montoRDCompacto(0)).toBe('RD$0')
   })
 })

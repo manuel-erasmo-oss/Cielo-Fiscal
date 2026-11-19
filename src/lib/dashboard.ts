@@ -69,6 +69,11 @@ export function periodosDisponibles(docs: readonly DocumentoFiscal[], incluir: P
   return [...s].sort().reverse()
 }
 
+// Cuántos meses distintos tienen al menos una factura que cuenta.
+export function mesesConFacturas(docs: readonly DocumentoFiscal[]): number {
+  return new Set(vigentes(docs).map(d => periodoDe(d)).filter(Boolean)).size
+}
+
 export interface Totales {
   cantidad: number
   monto: number
@@ -137,12 +142,14 @@ export interface PuntoMensual {
   periodo: Periodo
   compras: number
   ventas: number
+  itbisCompras: number
+  itbisVentas: number
 }
 
 export function serieMensual(docs: readonly DocumentoFiscal[], final: Periodo, n = 6): PuntoMensual[] {
   return ultimosPeriodos(final, n).map(p => {
     const r = resumenPeriodo(docs, p)
-    return { periodo: p, compras: r.compras.monto, ventas: r.ventas.monto }
+    return { periodo: p, compras: r.compras.monto, ventas: r.ventas.monto, itbisCompras: r.compras.itbis, itbisVentas: r.ventas.itbis }
   })
 }
 
@@ -167,6 +174,19 @@ export function composicionCompras(docs: readonly DocumentoFiscal[], periodo: Pe
     c.cantidad++
   }
   return orden.map(p => ({ ...acc.get(p)!, monto: r2(acc.get(p)!.monto) }))
+}
+
+// Tramos de una dona, como fracciones de la vuelta (0 a 1), en el mismo
+// orden de `valores`. Los valores en cero o negativos (p. ej. una parte
+// donde pesan más las notas de crédito) no dibujan nada: inicio === fin.
+export function arcosDona(valores: readonly number[]): { inicio: number; fin: number }[] {
+  const total = valores.reduce((s, v) => s + Math.max(0, v), 0)
+  let acc = 0
+  return valores.map(v => {
+    const inicio = acc
+    if (total > 0) acc += Math.max(0, v) / total
+    return { inicio, fin: total > 0 ? acc : inicio }
+  })
 }
 
 export interface Proveedor {
@@ -208,6 +228,20 @@ export interface Vencimiento {
   faltan: number
 }
 
+// Obligaciones mensuales que el sistema conoce con fuente verificada (ver
+// dgii-fiscal.ts): IR-17 día 10, 606 día 15, IT-1 día 20 del mes siguiente
+// al período. Otras (IR-3, anticipos, TSS, declaraciones anuales) no se
+// listan hasta tener su fuente (lección 2 de CLAUDE.md).
+const OBLIGACIONES: { clave: Vencimiento['clave']; nombre: string; fecha: (anio: number, mes: number) => string }[] = [
+  { clave: 'IR-17', nombre: `Retenciones IR-17 (día ${DIA_LIMITE_IR17})`, fecha: fechaLimiteIR17 },
+  { clave: '606', nombre: 'Formato 606 (día 15)', fecha: fechaLimite606607 },
+  { clave: 'IT-1', nombre: `ITBIS IT-1 (día ${DIA_LIMITE_IT1})`, fecha: fechaLimiteIT1 },
+]
+
+function diasEntre(desdeISO: string, hastaISO: string): number {
+  return Math.round((parseFechaLocal(hastaISO).getTime() - parseFechaLocal(desdeISO).getTime()) / 86_400_000)
+}
+
 // Próximo vencimiento de cada obligación mensual: la del mes pasado vence
 // en el mes en curso; si ese día ya pasó, la próxima es la del mes en curso.
 // Fechas locales (lección 1 de CLAUDE.md). Ordenados por fecha.
@@ -215,21 +249,69 @@ export function proximosVencimientos(hoyISO: string): Vencimiento[] {
   const hoy = parseFechaLocal(hoyISO)
   const actual = periodoDeAnioMes(hoy.getFullYear(), hoy.getMonth() + 1)
   const anterior = sumarMeses(actual, -1)
-  const obligaciones: { clave: Vencimiento['clave']; nombre: string; fecha: (anio: number, mes: number) => string }[] = [
-    { clave: 'IR-17', nombre: `Retenciones IR-17 (día ${DIA_LIMITE_IR17})`, fecha: fechaLimiteIR17 },
-    { clave: '606', nombre: 'Formato 606 (día 15)', fecha: fechaLimite606607 },
-    { clave: 'IT-1', nombre: `ITBIS IT-1 (día ${DIA_LIMITE_IT1})`, fecha: fechaLimiteIT1 },
-  ]
-  return obligaciones
+  return OBLIGACIONES
     .map(o => {
       const a = anioMes(anterior)
       const periodo = hoyISO <= o.fecha(a.anio, a.mes) ? anterior : actual
       const { anio, mes } = anioMes(periodo)
       const fecha = o.fecha(anio, mes)
-      const faltan = Math.round((parseFechaLocal(fecha).getTime() - hoy.getTime()) / 86_400_000)
-      return { clave: o.clave, nombre: o.nombre, periodo, fecha, faltan }
+      return { clave: o.clave, nombre: o.nombre, periodo, fecha, faltan: diasEntre(hoyISO, fecha) }
     })
     .sort((a, b) => a.fecha.localeCompare(b.fecha))
+}
+
+// ─── Calendario fiscal ───────────────────────────────────────────────────────
+
+// Lo que vence en el mes `mes` (el del calendario): las obligaciones del
+// período anterior. `faltan` cuenta desde `hoyISO` (negativo = ya venció).
+// `finDeSemana`: la fecha nominal cae sábado o domingo; el sistema no la
+// corre al siguiente día laborable (⚠️ SIN VERIFICAR la regla oficial).
+export interface ObligacionDelMes extends Vencimiento {
+  finDeSemana: boolean
+}
+
+export function obligacionesDelMes(mes: Periodo, hoyISO: string): ObligacionDelMes[] {
+  const { anio, mes: m } = anioMes(sumarMeses(mes, -1))
+  return OBLIGACIONES
+    .map(o => {
+      const fecha = o.fecha(anio, m)
+      const dia = parseFechaLocal(fecha).getDay()
+      return { clave: o.clave, nombre: o.nombre, periodo: sumarMeses(mes, -1), fecha, faltan: diasEntre(hoyISO, fecha), finDeSemana: dia === 0 || dia === 6 }
+    })
+    .sort((a, b) => a.fecha.localeCompare(b.fecha))
+}
+
+// Semanas del mes para dibujar el calendario, de lunes a domingo: cada
+// semana trae 7 casillas con la fecha "YYYY-MM-DD" o null (fuera del mes).
+export function semanasDelMes(mes: Periodo): (string | null)[][] {
+  const { anio, mes: m } = anioMes(mes)
+  const diasEnMes = new Date(anio, m, 0).getDate()
+  // getDay(): 0 = domingo. Con lunes primero, el domingo es la columna 6.
+  const primera = (new Date(anio, m - 1, 1).getDay() + 6) % 7
+  const casillas: (string | null)[] = [
+    ...Array.from({ length: primera }, () => null),
+    ...Array.from({ length: diasEnMes }, (_, i) => `${mes}-${String(i + 1).padStart(2, '0')}`),
+  ]
+  while (casillas.length % 7 !== 0) casillas.push(null)
+  return Array.from({ length: casillas.length / 7 }, (_, i) => casillas.slice(i * 7, i * 7 + 7))
+}
+
+// Urgencia de una obligación del calendario y su texto. El sistema no sabe
+// si ya se presentó (no hay "marcar como declarado" todavía), así que una
+// fecha pasada dice "Venció", nunca "Cumplida".
+export type Urgencia = 'vencida' | 'hoy' | 'pronto' | 'futura'
+
+export function urgenciaDe(faltan: number): Urgencia {
+  if (faltan < 0) return 'vencida'
+  if (faltan === 0) return 'hoy'
+  if (faltan <= 3) return 'pronto'
+  return 'futura'
+}
+
+export function cuentaRegresiva(faltan: number): string {
+  if (faltan < 0) return faltan === -1 ? 'Venció ayer' : `Venció hace ${-faltan} días`
+  if (faltan === 0) return 'Vence hoy'
+  return faltan === 1 ? 'Falta 1 día' : `Faltan ${faltan} días`
 }
 
 // Período del 606 que se está preparando: el del próximo vencimiento.
@@ -245,6 +327,11 @@ export function marcasEje(max: number, pasos = 4): number[] {
   const paso = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= bruto)!
   const n = Math.ceil(max / paso)
   return Array.from({ length: n + 1 }, (_, i) => r2(i * paso))
+}
+
+// Cifra grande de una tarjeta: RD$151K · RD$1.2M · -RD$3.4K.
+export function montoRDCompacto(n: number): string {
+  return `${n < 0 ? '-' : ''}RD$${montoCompacto(Math.abs(n))}`
 }
 
 // Monto compacto para ejes y figuras: 950 · 12.5K · 1.2M.
