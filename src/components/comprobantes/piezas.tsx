@@ -151,7 +151,7 @@ export function ThOrden({ children, activo, dir, onClick, alinear = 'left', clas
       <button
         type="button"
         onClick={onClick}
-        className={cn('group/orden inline-flex items-center gap-1 uppercase tracking-[0.1em] transition-colors hover:text-zinc-900 dark:hover:text-zinc-100', activo && 'text-[#1B2980] dark:text-indigo-300', alinear === 'right' && 'flex-row-reverse')}
+        className={cn('group/orden inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-[0.1em] transition-colors hover:text-zinc-900 dark:hover:text-zinc-100', activo && 'text-[#1B2980] dark:text-indigo-300', alinear === 'right' && 'flex-row-reverse')}
       >
         {children}
         <Icono className={cn('h-3 w-3', !activo && 'opacity-40 group-hover/orden:opacity-100')} aria-hidden="true" />

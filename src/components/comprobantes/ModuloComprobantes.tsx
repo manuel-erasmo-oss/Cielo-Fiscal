@@ -566,9 +566,9 @@ export function ModuloComprobantes({ tipo }: { tipo: TipoDocumento }) {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-zinc-100 dark:border-[#1d2035]">
-                          <ThOrden activo={ordenContraparte.campo === 'nombre'} dir={ordenContraparte.dir} onClick={() => ordenarContrapartesPor('nombre')} className="pl-5 pr-3">{modulo.contraparte}</ThOrden>
+                          <ThOrden activo={ordenContraparte.campo === 'nombre'} dir={ordenContraparte.dir} onClick={() => ordenarContrapartesPor('nombre')} className="pl-4 pr-3 sm:pl-5">{modulo.contraparte}</ThOrden>
                           <ThOrden activo={ordenContraparte.campo === 'cantidad'} dir={ordenContraparte.dir} onClick={() => ordenarContrapartesPor('cantidad')} alinear="right" className="hidden px-3 sm:table-cell">Facturas</ThOrden>
-                          <ThOrden activo={ordenContraparte.campo === 'monto'} dir={ordenContraparte.dir} onClick={() => ordenarContrapartesPor('monto')} alinear="right" className="px-3">Monto sin impuestos</ThOrden>
+                          <ThOrden activo={ordenContraparte.campo === 'monto'} dir={ordenContraparte.dir} onClick={() => ordenarContrapartesPor('monto')} alinear="right" className="px-3"><span className="sm:hidden">Monto</span><span className="hidden sm:inline">Monto sin impuestos</span></ThOrden>
                           <ThOrden activo={ordenContraparte.campo === 'itbis'} dir={ordenContraparte.dir} onClick={() => ordenarContrapartesPor('itbis')} alinear="right" className="hidden px-3 sm:table-cell">ITBIS</ThOrden>
                           <ThOrden activo={ordenContraparte.campo === 'ultimaFecha'} dir={ordenContraparte.dir} onClick={() => ordenarContrapartesPor('ultimaFecha')} className="hidden px-3 sm:table-cell">Última factura</ThOrden>
                           <ThOrden activo={ordenContraparte.campo === 'porRevisar'} dir={ordenContraparte.dir} onClick={() => ordenarContrapartesPor('porRevisar')} alinear="right" className="hidden pl-3 pr-5 md:table-cell">Por revisar</ThOrden>
@@ -579,9 +579,9 @@ export function ModuloComprobantes({ tipo }: { tipo: TipoDocumento }) {
                           const nombre = c.nombre ?? (c.clave === 'sin-identificar' ? (compra ? 'Sin identificar' : 'Consumidor final') : null)
                           return (
                             <tr key={c.clave} onClick={() => verFacturasDe(c.clave)} className="group cursor-pointer transition-colors hover:bg-[#f7f8fd] dark:hover:bg-[#171a2a]">
-                              <td className="max-w-[18rem] py-3 pl-5 pr-3">
+                              <td className="max-w-[12rem] py-3 pl-4 pr-3 sm:max-w-[18rem] sm:pl-5">
                                 <p className="truncate font-medium text-zinc-900 group-hover:text-[#1B2980] dark:text-zinc-100 dark:group-hover:text-indigo-300">{nombre ?? <span className="font-normal text-zinc-400">Sin nombre</span>}</p>
-                                <p className="truncate text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+                                <p className="text-xs tabular-nums text-zinc-500 dark:text-zinc-400 sm:truncate">
                                   {c.rnc ? formatCedula(c.rnc) : 'Sin RNC'}
                                   <span className="sm:hidden"> · {c.cantidad} {c.cantidad === 1 ? 'factura' : 'facturas'}{c.porRevisar > 0 && ` · ${c.porRevisar} por revisar`}</span>
                                 </p>
