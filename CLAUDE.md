@@ -330,10 +330,13 @@ cuentas todavía**; el inicio de sesión llega con la migración a la nube
 - Se quitaron los selectores de cliente de Facturas, Subir lote, Reportes y
   del formulario de factura (ahí la empresa es un campo de solo lectura):
   una factura no se puede pasar a otra empresa.
-- Siempre visible dentro de una empresa: franja "Trabajando en <empresa>
-  <RNC> · Cambiar de empresa" en el encabezado (único lugar para cambiar
-  de empresa, también en móvil) y bloque "Empresa activa" en el menú
-  lateral (solo muestra la empresa, sin enlace).
+- Siempre visible dentro de una empresa, **en un solo lugar**: en
+  computadora, el bloque "Empresa activa" del menú lateral (nombre, RNC y
+  "Cambiar de empresa"; con el menú colapsado, el monograma lleva a "Tus
+  empresas"); en móvil, que no tiene menú lateral, una línea compacta
+  arriba con el nombre, el RNC y "Cambiar". La franja "Trabajando en …"
+  del encabezado **se quitó el 2026-11-18** por redundante (pedido del
+  usuario: "quita esto, no hay que redundar").
 - Al entrar a una empresa se ve su **Dashboard** (antes "Resumen" y luego
   "Tablero"; ver "Dashboard de la empresa", abajo).
 - Refuerzo que ya existía: en la captura por lotes, una factura cuyo QR
@@ -385,7 +388,8 @@ que dicen "tablero" se refieren a esa misma pantalla.
   `src/lib/dashboard.ts`, lógica pura con 12 pruebas; gráficos en
   `src/components/dashboard/Graficos.tsx`, SVG/HTML a mano, sin librería
   nueva). De arriba abajo:
-  - Encabezado de marca **solo con los tres próximos vencimientos**. Al
+  - (Reemplazado el mismo día por el **calendario fiscal**, ver su
+    sección.) Encabezado de marca **solo con los tres próximos vencimientos**. Al
     principio traía la empresa (monograma, nombre, RNC, tipo, actividad) y
     accesos; se quitaron porque el nombre y el RNC ya están en la franja de
     arriba y en el menú (pedido del usuario: "quita esa repetición"), y el
@@ -444,6 +448,39 @@ que dicen "tablero" se refieren a esa misma pantalla.
   mes abre en el período del 606 en curso, y el resumen del reporte trae
   estado "Completo" o "Incompleto", vencimiento y totales.
 
+### Calendario fiscal en el Dashboard (pedido por el usuario el 2026-11-18)
+
+> "En el dashboard agrega un calendario fiscal que resalte las obligaciones
+> fiscales por días, acorde al mes."
+
+- `src/components/dashboard/CalendarioFiscal.tsx`; cálculos en
+  `src/lib/dashboard.ts` (`obligacionesDelMes`, `semanasDelMes`, con
+  pruebas). Va arriba del Dashboard y **reemplaza la franja "Próximos
+  vencimientos"** (no se repite: la agenda del calendario trae lo mismo).
+- Mes en curso por defecto, flechas para otros meses y "Hoy" para volver.
+  Cuadrícula de lunes a domingo; hoy en un círculo azul; los días con una
+  obligación resaltados con su etiqueta (IR-17, 606, IT-1). Color por
+  urgencia, siempre con el texto: azul si falta más de 3 días, rojo claro
+  a 3 días o menos, rojo lleno el mismo día, gris si ya pasó.
+- Agenda a la derecha (debajo en móvil): cada obligación con su fecha,
+  período ("Período octubre de 2026") y "Faltan N días" / "Vence hoy" /
+  "Venció hace N días". Como no existe "marcar como declarado", una fecha
+  pasada dice "Venció", nunca "Cumplida".
+- **Solo las obligaciones con fuente verificada**: IR-17 (día 10), 606
+  (día 15) e IT-1 (día 20) del período anterior. IR-3, anticipos de ISR,
+  TSS y las declaraciones anuales **no** están: se agregan cuando el
+  usuario entregue sus fuentes (lección 2).
+- Fechas nominales, sin correr por fin de semana ni feriado (⚠️ SIN
+  VERIFICAR la regla de prórroga). Si una cae sábado o domingo, la agenda
+  avisa: "Cae domingo: confirma si se corre al siguiente día laborable"
+  (pasa con el 606 de octubre 2026, el domingo 15 de noviembre).
+- Comprobado en navegador: 19/19 del Dashboard (nuevas: calendario de
+  noviembre con 3 obligaciones; días 10, 15 y 20 resaltan IR-17, 606 e
+  IT-1; "Faltan 2 días" para el IT-1; mes siguiente muestra diciembre con
+  el período noviembre; "Hoy" vuelve; la empresa sale una sola vez y no
+  hay franja "Trabajando en") y 27/27, 16/16, 9/9, 15/15 y 26/26 de los
+  demás. Capturas en claro, oscuro y móvil, sin desplazamiento horizontal.
+
 ### Cada opción una sola vez (pedido por el usuario el 2026-11-18) — MANDA
 
 > "Hay opciones que se repiten en distintos lugares demasiado, subir lote se
@@ -466,8 +503,9 @@ Decidido con las opciones recomendadas:
   lote / Facturas / Reportes del encabezado del Tablero; el botón "Subir
   lote" junto a "Nueva factura" (los dos se volvieron "Agregar facturas");
   el botón del estado vacío de Facturas (el texto remite a "Agregar
-  facturas"); "Cambiar de empresa" del menú lateral y "Cambiar" de la barra
-  móvil (queda solo en la franja de arriba).
+  facturas"); "Cambiar" de la barra móvil. (Después, al quitar la franja
+  "Trabajando en", "Cambiar de empresa" volvió al menú lateral: es el único
+  lugar en computadora.)
 - Comprobado en navegador real: 14/14 del tablero (dos nuevas: el tablero no
   repite el menú; el menú lateral es exactamente Tablero, Facturas,
   Reportes), 27/27 de la separación por empresa (nuevas: Subir lote desde
@@ -475,10 +513,9 @@ Decidido con las opciones recomendadas:
   empresa"; en móvil la barra trae Tablero, Facturas y Reportes y "Cambiar"
   aparece una vez), y 16/16, 9/9, 15/15 y 26/26 adaptadas a "Agregar
   facturas". Sin desplazamiento horizontal en móvil.
-- **La empresa tampoco se repite**: su nombre y RNC salen en la franja
-  "Trabajando en" y en el bloque "Empresa activa" del menú, y en ninguna
-  otra parte del Dashboard (comprobado: el nombre aparece exactamente 2
-  veces y ninguna dentro del contenido). Con el renombre a "Dashboard":
+- **La empresa tampoco se repite**: su nombre y RNC salen solo en el
+  bloque "Empresa activa" del menú (en móvil, en la línea de arriba), y en
+  ninguna otra parte del Dashboard. Con el renombre a "Dashboard":
   15/15, 27/27, 16/16, 9/9, 15/15 y 26/26.
 
 ## Verificación en la DGII (pedida por el usuario el 2026-11-18) — construida
@@ -1049,7 +1086,8 @@ que envía "lo otro" en otro lote):
   premium en Facturas, Subir lote y Reportes) y PR #9 (su comprobación en
   producción) el 2026-11-18; PR #10 ("Cada opción una sola vez", sin
   repetir la empresa, "Tablero" pasa a "Dashboard") y PR #11 (su
-  comprobación en producción) el mismo día.
+  comprobación en producción) el mismo día. En la rama de desarrollo:
+  calendario fiscal y sin franja "Trabajando en".
 
 ## Nombre del producto
 

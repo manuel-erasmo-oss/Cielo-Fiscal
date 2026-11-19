@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { CAMPOS_VACIOS } from './documentos'
 import {
-  arcosDona, composicionCompras, cuentaRegresiva, marcasEje, mesesConFacturas, montoRDCompacto, urgenciaDe, montoCompacto, obligacionesDelMes, periodo606EnCurso, periodosDisponibles,
+  arcosDona, composicionCompras, cuentaRegresiva, marcasEje, mesesConFacturas, montoCompacto, montoRDCompacto,
+  obligacionesDelMes, periodo606EnCurso, periodosDisponibles, urgenciaDe,
   principalesProveedores, proximosVencimientos, resumenPeriodo, semanasDelMes, serieMensual, sumarMeses,
   ultimosPeriodos, variacion,
 } from './dashboard'
