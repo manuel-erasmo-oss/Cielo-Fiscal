@@ -313,8 +313,9 @@ cuentas todavía**; el inicio de sesión llega con la migración a la nube
   eliminar con aviso de que se borran sus facturas). Reemplaza al Inicio y
   a la pantalla de Clientes de antes.
 - **Los módulos solo existen dentro de una empresa**: `/empresa/<id>`
-  (Dashboard), `/empresa/<id>/facturas`, `/empresa/<id>/lote` (se entra desde
-  Facturas, ver "Cada opción una sola vez") y `/empresa/<id>/reportes`. La empresa va en la dirección, no en un estado
+  (Dashboard), `/empresa/<id>/ingresos` y `/empresa/<id>/costos-gastos`
+  (cada uno con su captura por lotes en `/lote`; ver "Ingresos y Costos y
+  gastos") y `/empresa/<id>/reportes`. La empresa va en la dirección, no en un estado
   oculto: cada pestaña queda atada a una empresa. Las direcciones viejas
   (`/clientes`, `/facturas`, `/lote`, `/reportes`) llevan a "Tus empresas"
   (`next.config.mjs`). Una dirección con un id que no existe muestra "Esta
@@ -448,7 +449,96 @@ que dicen "tablero" se refieren a esa misma pantalla.
   mes abre en el período del 606 en curso, y el resumen del reporte trae
   estado "Completo" o "Incompleto", vencimiento y totales.
 
-### Calendario fiscal en el Dashboard (pedido por el usuario el 2026-11-18)
+### Ingresos y Costos y gastos (pedido por el usuario el 2026-11-18, construido el 2026-11-19) — MANDA
+
+> "Vamos a hacer un cambio con el módulo facturas, en vez de eso tendremos
+> uno que se llame Ingresos y otro que se llame Costos y Gastos. En costos y
+> gastos se suben las facturas del 606 y en ingresos las que forman parte
+> del reporte de ventas. Quiero que te inspires y parezca realmente los
+> módulos de ERP profesionales como QuickBooks."
+
+- **"Facturas" ya no existe.** Menú de una empresa: **Dashboard, Ingresos,
+  Costos y gastos, Reportes** (`src/lib/nav-items.ts`, `src/lib/modulos.ts`).
+  Rutas `/empresa/<id>/ingresos` (ventas) y `/empresa/<id>/costos-gastos`
+  (compras del 606), cada una con su `/lote`. Las viejas redirigen
+  (`next.config.mjs`): `/empresa/<id>/facturas` → costos-gastos y
+  `/empresa/<id>/lote` → `costos-gastos/lote`.
+- Un solo componente para los dos: `src/components/comprobantes/
+  ModuloComprobantes.tsx` (+ `piezas.tsx`), con la lógica pura en
+  `src/lib/comprobantes.ts` (agrupar por contraparte, ordenar, paginar, CSV,
+  totales por estado; 14 pruebas). Toda la lógica de antes se conserva
+  (verificar en la DGII, aprobar en bloque, `FacturaModal`, borrar).
+- Estilo ERP inspirado en QuickBooks (sin copiarlo):
+  - **Barra de estados con montos** (Por revisar, Verificar en la DGII,
+    Rechazadas, Revisadas): total con impuestos y cantidad; tocar un bloque
+    filtra, tocarlo otra vez quita el filtro.
+  - **Pestañas** "Facturas" y "Proveedores" (o "Clientes"): tabla agrupada
+    por RNC con cantidad, monto, ITBIS, última factura y por revisar; tocar
+    una fila filtra las facturas de esa contraparte.
+  - Barra de herramientas: búsqueda (nombre, RNC con o sin guiones, NCF),
+    estado, mes y, en Costos y gastos, clasificación (Costo / Gasto /
+    Activo / Sin clasificar).
+  - Tabla con selección y **acciones en grupo** ("Aprobar (N aprobables)",
+    con las mismas reglas de "Aprobar las N"; "Exportar CSV"; "Eliminar",
+    con confirmación), columnas ordenables, **25 por página**, menú ⋮ por
+    fila y totales del filtro. Un solo estado por fila, el más grave. Las
+    notas de crédito salen en negativo y restan. En móvil, tarjetas.
+  - "Agregar facturas ▾" → "Una factura" (el formulario abre con Compra o
+    Venta según el módulo: `FacturaModal.tipoInicial`) o "Un lote".
+- **La IA sigue decidiendo compra o venta** ("Objetivo del sistema"): si en
+  un lote de Costos y gastos aparece una venta (o al revés), se guarda con
+  su tipo real, la tarjeta del lote dice "Venta · va a Ingresos" y la
+  pantalla final "1 era venta: quedó en Ingresos" con enlace. Con una
+  factura suelta, el aviso "Se guardó como venta: está en Ingresos". En la
+  captura por lotes ya no se elige el tipo por defecto: lo da el módulo.
+- **CSV** (decisión del agente, sin confirmar con el usuario): UTF-8 con
+  BOM, separado por comas, CRLF, RNC/NCF como `="…"` para que Excel no
+  quite ceros (otras herramientas lo verán literal); exporta las
+  seleccionadas. Una venta sin nombre ni RNC sale como "Consumidor final".
+- Hecho por un agente en paralelo y revisado: 74/74 comprobaciones en
+  navegador (menú y activo en `/lote`, cada módulo solo su tipo, otra
+  empresa nunca aparece, barra de estados, búsqueda, orden, paginación
+  1–25 / 26–47, aprobar en grupo solo las aprobables, CSV leído de vuelta,
+  eliminar 2 con confirmación, proveedores, "Una factura" con el tipo
+  correcto, lote con una venta dentro de Costos y gastos, redirecciones,
+  móvil sin desbordar). No probado contra la DGII real el botón
+  "Verificar en la DGII" de los módulos (misma lógica de antes).
+
+### Dashboard en tarjetas (pedido por el usuario el 2026-11-18, construido el 2026-11-19)
+
+> "No me gustó ese calendario tan grande en el dashboard, mira la diferencia
+> con el de Cielo Nómina, se ve mucho más profesional con gráficos y todo."
+
+- Inspirado en el Dashboard de Cielo Nómina (captura del usuario): fila de
+  encabezado "Resumen fiscal" con un solo bloque de filtros (período,
+  rango **3M / 6M / 12M** para los gráficos de evolución y botón "Tabla"
+  para ver cada valor sin tooltip), y cuadrícula de tarjetas (3 columnas en
+  computadora, 2 en tableta, 1 en móvil; alturas parejas por fila):
+  - **Costos y gastos**: compras del período, variación, columnas por mes.
+  - **Composición de compras**: dona Costo / Gasto / Activo / Sin
+    clasificar con leyenda de montos y % (la guía de visualización prefiere
+    una barra segmentada; se usó dona porque el usuario pidió ese estilo, y
+    la leyenda deja cada valor a la vista).
+  - **Ingresos**: línea con área, punto final y línea vertical que sigue al
+    cursor.
+  - **ITBIS del período**: diferencia orientativa ("No es la IT-1"),
+    barras de ITBIS en ventas y en compras, y columnas por mes.
+  - **Agenda fiscal** (`src/components/dashboard/AgendaFiscal.tsx`):
+    calendario compacto con un punto por urgencia bajo los días 10, 15 y
+    20, hoy en círculo, y la lista IR-17 / 606 / IT-1 con "Faltan N días" /
+    "Venció hace N días" y aviso de fin de semana. Reemplaza al calendario
+    grande, que se borró.
+  - **Principales proveedores** (iniciales, RNC, monto, "Ver todos →" a
+    Costos y gastos), **Listo para el 606** y **Requieren tu atención**
+    (cada fila va a Ingresos o a Costos y gastos según su tipo).
+- Hecho por un agente en paralelo y revisado: 37/37 comprobaciones en
+  navegador (cifras contra un cálculo aparte, 3M/6M/12M, tooltips con
+  cursor y teclado, agenda, enlaces, filas parejas a 1440 y 1024 px,
+  empresa vacía, iPhone 13 sin desbordar). `dashboard.ts` suma
+  `arcosDona`, `mesesConFacturas`, `montoRDCompacto`, `cuentaRegresiva`,
+  `urgenciaDe` y el ITBIS por mes en `serieMensual` (20 pruebas).
+
+### Calendario fiscal en el Dashboard (2026-11-18) — reemplazado por la Agenda fiscal compacta
 
 > "En el dashboard agrega un calendario fiscal que resalte las obligaciones
 > fiscales por días, acorde al mes."
@@ -493,8 +583,10 @@ Decidido con las opciones recomendadas:
   siguiente paso de esa pantalla (por ejemplo, "Subir el primer lote" en el
   tablero de una empresa sin facturas, o "Revisar las pendientes" en
   "Listo para el 606"). No volver a poner accesos que repitan el menú.
-- **Menú de una empresa: Dashboard, Facturas y Reportes.** "Subir lote" ya no
-  es un módulo: es parte de Facturas. En Facturas hay un solo botón,
+- **Menú de una empresa: Dashboard, Facturas y Reportes** (desde el
+  2026-11-19: Dashboard, Ingresos, Costos y gastos, Reportes; "Agregar
+  facturas" está en cada uno). "Subir lote" ya no es un módulo: es parte de
+  Facturas. En Facturas hay un solo botón,
   **"Agregar facturas"**, con dos opciones: "Una factura" (foto o PDF de una
   factura, o a mano) y "Un lote" (PDF con muchas facturas o varias fotos),
   que lleva a `/empresa/<id>/lote`. Ahí "Facturas" queda marcada en el menú
@@ -1086,8 +1178,10 @@ que envía "lo otro" en otro lote):
   premium en Facturas, Subir lote y Reportes) y PR #9 (su comprobación en
   producción) el 2026-11-18; PR #10 ("Cada opción una sola vez", sin
   repetir la empresa, "Tablero" pasa a "Dashboard") y PR #11 (su
-  comprobación en producción) el mismo día. En la rama de desarrollo:
-  calendario fiscal y sin franja "Trabajando en".
+  comprobación en producción) el mismo día. En la rama de desarrollo
+  (2026-11-19): sin franja "Trabajando en", Dashboard en tarjetas con
+  Agenda fiscal compacta, y "Facturas" dividido en Ingresos y Costos y
+  gastos (dos agentes en paralelo, fusionados y revisados).
 
 ## Nombre del producto
 
@@ -1117,9 +1211,9 @@ verificación automática en la DGII.
 - **Pantallas** (`src/app`), desde el 2026-11-18 (ver "Separación por
   empresa"): `/` Tus empresas (lista, búsqueda, alta, edición, borrado en
   cascada, "Entrar"); dentro de una empresa: `/empresa/[id]` Dashboard,
-  `/empresa/[id]/facturas` (filtros por tipo/mes/estado, totales, alta por
-  OCR o a mano, edición, borrado, verificación en la DGII),
-  `/empresa/[id]/lote` (captura por lotes), `/empresa/[id]/reportes` (TXT
+  `/empresa/[id]/ingresos` y `/empresa/[id]/costos-gastos` (módulos estilo
+  ERP; cada uno con `/lote`, la captura por lotes, que vive en
+  `src/components/lote/CapturaLote.tsx`), `/empresa/[id]/reportes` (TXT
   del 606 y Excel; reporte de ingresos en Excel); `/configuracion` (código
   de acceso, global).
 - **Servidor**: `src/app/api/ocr/route.ts` y `src/app/api/verificar-dgii/route.ts`.
@@ -1138,7 +1232,9 @@ verificación automática en la DGII.
   venta, contraparte, dudas), `lote/leer-paginas.ts` (páginas y QR),
   `lote/borrador.ts` (combina QR + IA y calcula observaciones),
   `lote/tramos.ts` (parte los recibos largos),
-  `dashboard.ts` (cálculos del Dashboard), `dgii-fiscal.ts` (motor fiscal), `utils.ts` (fechas locales, montos),
+  `dashboard.ts` (cálculos del Dashboard), `comprobantes.ts` (lógica de
+  los módulos Ingresos y Costos y gastos), `modulos.ts` (nombre y ruta de
+  cada módulo), `dgii-fiscal.ts` (motor fiscal), `utils.ts` (fechas locales, montos),
   `ocr-tipos.ts` (contrato servidor↔navegador), `ocr-cliente.ts` (prepara
   el archivo y llama a la ruta), `config-local.ts`.
 - **Scripts**: `scripts/copiar-estaticos.mjs`.
@@ -1149,8 +1245,9 @@ verificación automática en la DGII.
   selector de empresa ni logout, Header, BottomNav, Pagina), `ui/`
   (Toast, Badge, EmptyState, ThemeToggle y StatCard copiados de Nómina;
   Modal y ConfirmDialog nuevos; `Monograma` y `premium.tsx` del diseño
-  premium), `dashboard/Graficos`, `clientes/ClienteModal`,
-  `facturas/FacturaModal`.
+  premium), `dashboard/Graficos` y `dashboard/AgendaFiscal`,
+  `comprobantes/ModuloComprobantes` y `piezas`, `lote/CapturaLote`,
+  `clientes/ClienteModal`, `facturas/FacturaModal`.
 - Copiados byte a byte de `manuel-erasmo-oss/tyui` (commit `1555027`):
   `src/app/globals.css`, `postcss.config.mjs`, `tsconfig.json`,
   `.gitignore`. `tailwind.config.ts` es igual salvo una línea añadida al
@@ -1221,7 +1318,8 @@ verificación automática en la DGII.
   `/api/ocr` y, desde el 2026-11-18, `/api/verificar-dgii` dinámicas).
 - `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (185
   de 185 desde el 2026-11-18, con las reglas de comprobantes, la Ley 30-26
-  y la verificación en la DGII; 197 de 197 con el tablero) — fechas
+  y la verificación en la DGII; 197 de 197 con el tablero; **219 de 219**
+  el 2026-11-19 con el Dashboard en tarjetas y los módulos nuevos) — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
   comparados carácter por carácter, dígito verificador, duplicados.
@@ -1311,6 +1409,12 @@ verificación automática en la DGII.
   26/26 (la de la DGII, con la DGII real; el servidor de prueba necesita
   `OCR_CODIGO_ACCESO`). Capturas revisadas de las cuatro pantallas en
   claro, oscuro y móvil (iPhone 13), sin desplazamiento horizontal.
+- Dashboard en tarjetas + Ingresos y Costos y gastos (2026-11-19), ya
+  fusionados, navegador real contra `next start`: 37/37 del Dashboard y
+  74/74 de los módulos; las anteriores, adaptadas a los módulos nuevos
+  (Costos y gastos en lugar de Facturas, ventas creadas desde Ingresos,
+  menú ⋮ en lugar del lápiz, agenda en lugar del calendario): 27/27,
+  16/16, 9/9, 15/15 y 26/26 (la de la DGII, con la DGII real).
 - Dato de control del dígito verificador: el algoritmo de la macro da
   correcto el RNC `401007551`.
 - Ruta OCR contra el servidor real: sin código o código incorrecto → 401;
