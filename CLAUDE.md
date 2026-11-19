@@ -1184,6 +1184,12 @@ que envía "lo otro" en otro lote):
   publicado, con datos inventados en el navegador de la prueba: 37/37 del
   Dashboard y 74/74 de los módulos (estas simulan `/api/ocr` y
   `/api/verificar-dgii`).
+- **Comprobado en producción el 2026-11-19, tras fusionar el PR #14**
+  (módulos independientes y consumidor final): las pantallas responden 200
+  y, contra el sitio publicado, pasan 75/75 de los módulos (incluido el
+  descarte de una factura del otro tipo, en la factura suelta y en el
+  lote) y 37/37 del Dashboard, con datos inventados en el navegador de la
+  prueba y la IA y la DGII simuladas.
 - Para activar la IA: en Vercel, Settings → Environment Variables, agregar
   `ANTHROPIC_API_KEY` (key propia del producto, nunca personal) y
   `OCR_CODIGO_ACCESO` (frase larga elegida por el usuario), ambas en
@@ -1222,8 +1228,9 @@ que envía "lo otro" en otro lote):
   en", Dashboard en tarjetas con Agenda fiscal compacta, y "Facturas"
   dividido en Ingresos y Costos y gastos, hechos por dos agentes en
   paralelo, fusionados y revisados) y PR #13 (su comprobación en
-  producción) el 2026-11-19. En la rama de desarrollo: módulos
-  independientes (cada uno solo su tipo) y regla de consumidor final.
+  producción) el 2026-11-19; PR #14 (módulos independientes, cada uno
+  solo su tipo, y regla de consumidor final) y PR #15 (su comprobación en
+  producción) el mismo día.
 
 ## Nombre del producto
 
