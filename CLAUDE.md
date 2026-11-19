@@ -1144,6 +1144,14 @@ que envía "lo otro" en otro lote):
   botones repetidos, empresa solo en la franja y el menú, vencimientos,
   período, gráfico, tabla) pasaron contra el sitio publicado, con datos
   inventados en el navegador de la prueba.
+- **Comprobado en producción el 2026-11-19, tras fusionar el PR #12**:
+  publicado en ~60 s; `/`, `/empresa/<id>`, `/ingresos`, `/costos-gastos`,
+  sus dos `/lote`, `/reportes` y `/configuracion` responden 200;
+  `/empresa/<id>/facturas` → `costos-gastos`, `/empresa/<id>/lote` →
+  `costos-gastos/lote` y `/facturas` → `/` (307). Contra el sitio
+  publicado, con datos inventados en el navegador de la prueba: 37/37 del
+  Dashboard y 74/74 de los módulos (estas simulan `/api/ocr` y
+  `/api/verificar-dgii`).
 - Para activar la IA: en Vercel, Settings → Environment Variables, agregar
   `ANTHROPIC_API_KEY` (key propia del producto, nunca personal) y
   `OCR_CODIGO_ACCESO` (frase larga elegida por el usuario), ambas en
@@ -1178,10 +1186,11 @@ que envía "lo otro" en otro lote):
   premium en Facturas, Subir lote y Reportes) y PR #9 (su comprobación en
   producción) el 2026-11-18; PR #10 ("Cada opción una sola vez", sin
   repetir la empresa, "Tablero" pasa a "Dashboard") y PR #11 (su
-  comprobación en producción) el mismo día. En la rama de desarrollo
-  (2026-11-19): sin franja "Trabajando en", Dashboard en tarjetas con
-  Agenda fiscal compacta, y "Facturas" dividido en Ingresos y Costos y
-  gastos (dos agentes en paralelo, fusionados y revisados).
+  comprobación en producción) el mismo día; PR #12 (sin franja "Trabajando
+  en", Dashboard en tarjetas con Agenda fiscal compacta, y "Facturas"
+  dividido en Ingresos y Costos y gastos, hechos por dos agentes en
+  paralelo, fusionados y revisados) y PR #13 (su comprobación en
+  producción) el 2026-11-19.
 
 ## Nombre del producto
 
