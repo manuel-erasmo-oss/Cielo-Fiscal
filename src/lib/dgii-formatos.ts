@@ -492,6 +492,14 @@ export function validarVentaIngresos(doc: CamposDocumento): Problema[] {
   if (doc.tipoIngreso && !enCatalogo(TIPO_INGRESO_607, doc.tipoIngreso)) {
     p.push(err('tipoIngreso', 'Tipo de ingreso no válido.'))
   }
+  // Una venta sin cliente identificado solo es de "consumidor final" si su
+  // comprobante es de consumo (B02/E32; Guía de NCF). Con otro comprobante
+  // (p. ej. crédito fiscal B01/E31) hay que identificar al cliente
+  // (decisión del usuario, 2026-11-19). Aviso: la identificación sigue
+  // siendo opcional en el reporte de ingresos.
+  if (!id && doc.ncf && !esFacturaDeConsumo(doc.ncf)) {
+    p.push(aviso('rncCedulaContraparte', 'Falta el cliente. Solo una factura de consumo (B02 o E32) puede ir sin cliente, como consumidor final.'))
+  }
   const cobrado = redondear2(COBROS_607.reduce((s, c) => s + (doc[c] ?? 0), 0))
   if (cobrado > 0 && doc.montoTotal !== null && Math.abs(cobrado - doc.montoTotal) > 0.01) {
     p.push(aviso('cobroEfectivo', 'La suma de las formas de cobro no coincide con el total de la factura.'))

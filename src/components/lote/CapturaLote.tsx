@@ -27,6 +27,7 @@ import { esECF } from '@/lib/dgii-formatos'
 import { ETIQUETA_ESTADO_DGII } from '@/lib/verificacion-dgii'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD } from '@/lib/utils'
 import type { CampoExtraido, DocumentoFiscal, TipoDocumento } from '@/types'
+import { exigirTipoDeModulo } from '@/lib/comprobantes'
 import { MODULO_DE } from '@/lib/modulos'
 
 // Captura por lotes: un PDF de muchas páginas (o varias fotos) → una factura
@@ -66,10 +67,12 @@ const ETIQUETA_ESTADO: Record<EstadoPagina, { texto: string; variante: 'success'
   ajena: { texto: 'De otro contribuyente', variante: 'danger' },
   duplicada: { texto: 'Duplicada', variante: 'warning' },
   no_factura: { texto: 'No es factura', variante: 'neutral' },
+  otro_modulo: { texto: 'Descartada', variante: 'danger' },
 }
 
-// Una página duplicada o de otro contribuyente no se puede incluir.
-const esIncluible = (p: PaginaLote) => p.borrador.estado !== 'ajena' && p.borrador.estado !== 'duplicada'
+// Una página duplicada, de otro contribuyente o del otro tipo (una compra en
+// Ingresos, una venta en Costos y gastos) no se puede incluir.
+const esIncluible = (p: PaginaLote) => !['ajena', 'duplicada', 'otro_modulo'].includes(p.borrador.estado)
 // Las que no pasan por la IA: no aportan nada y costarían igual.
 const leerConIA = (p: PaginaLote) => esIncluible(p) && !p.borrador.leidaConIA
 // Las que tienen un QR de e-CF y todavía no se consultaron en la DGII.
@@ -144,7 +147,7 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
         rncCedulaContraparte: p.borrador.campos.rncCedulaContraparte, estadoRevision: 'pendiente_revision',
       })
     }
-    return { cliente, tipoPorDefecto, existentes }
+    return { cliente, tipoPorDefecto, tipoModulo: tipoPorDefecto, existentes }
   }
 
   // Paso 2: consulta en la DGII el estado de los e-CF con QR (gratis). Una
@@ -224,7 +227,7 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
             borrador,
             errorIA: undefined,
             // Lo que la IA descarta (no factura, duplicada) deja de estar marcado.
-            incluir: borrador.estado === 'no_factura' || borrador.estado === 'duplicada' ? false : p.incluir,
+            incluir: ['no_factura', 'duplicada', 'otro_modulo', 'ajena'].includes(borrador.estado) ? false : p.incluir,
           }))
         } catch (e) {
           const err = e instanceof OCRError ? e : new OCRError('La lectura con IA falló.')
@@ -305,6 +308,7 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
       invalidasDGII: paginas.filter(p => p.borrador.dgii && ['rechazado', 'no_encontrado'].includes(p.borrador.dgii.verificacion.estado)).length,
       noFactura: por('no_factura'),
       ajenas: por('ajena'),
+      otroModulo: por('otro_modulo'),
       duplicadas: por('duplicada'),
       incluidas: validas.length,
       listas: validas.filter(p => observaciones(p.borrador, rnc).length === 0).length,
@@ -327,6 +331,9 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
         documento: documentoDesdePagina(crypto.randomUUID(), p.borrador, cliente, { nombre: p.archivoNombre, pagina: p.paginaEnArchivo }, ahora),
         archivo: p.imagen,
       }))
+      // Cada módulo guarda solo su tipo: si algo del otro tipo llegara hasta
+      // aquí, no se guarda nada.
+      exigirTipoDeModulo(tipoPorDefecto, lote.map(l => l.documento))
       await guardarLote(lote)
       setGuardados(lote.map(l => l.documento))
       setFase('guardado')
@@ -339,8 +346,6 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
 
   // Facturas guardadas a las que la IA les llenó todo sin dudas.
   const sinObservaciones = guardados.filter(d => d.camposIncompletos.length === 0)
-  // Las que la IA o el QR leyeron como del otro tipo: quedaron en el otro módulo.
-  const delOtroModulo = guardados.filter(d => d.tipo !== tipoPorDefecto).length
 
   async function aprobarSinObservaciones() {
     const ahora = new Date().toISOString()
@@ -430,7 +435,7 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
               {tipoPorDefecto === 'compra'
                 ? 'La IA lee cada página y llena los campos del 606: RNC, nombre, NCF, fecha, montos en bienes y servicios, ITBIS, otros impuestos y el tipo de gasto, costo o activo.'
                 : 'La IA lee cada página y llena los campos del reporte de ingresos: cliente, NCF, fecha, monto sin impuestos, ITBIS y otros impuestos.'}
-              {' '}También decide si cada factura es compra o venta (si es una {otroTipo}, queda en {otroModulo.nombre}) y
+              {' '}También decide si cada factura es compra o venta: aquí solo se registran {modulo.plural}; si encuentra una {otroTipo}, la descarta y te avisa para que la subas en {otroModulo.nombre}. También
               descarta las páginas que no son facturas. Del código QR de los comprobantes electrónicos se toman, exactos, el
               RNC, el e-NCF, la fecha y el total. Tú solo revisas las facturas con observaciones.
             </span>
@@ -546,6 +551,17 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
               <span>{conteo.invalidasDGII} factura(s) rechazada(s) por la DGII o que no existen allí. No se pueden aprobar ni entrar al 606.</span>
             </p>
           )}
+          {conteo.otroModulo > 0 && (
+            <div role="alert" className="flex flex-wrap items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span className="min-w-[200px] flex-1">
+                <strong className="font-semibold">{conteo.otroModulo} {conteo.otroModulo === 1 ? `es una factura de ${otroTipo}` : `son facturas de ${otroTipo}`}</strong> y se {conteo.otroModulo === 1 ? 'descartó' : 'descartaron'}: en {modulo.nombre} solo se registran {modulo.plural}. {conteo.otroModulo === 1 ? 'Revísala (está marcada como "Descartada") y, si corresponde, súbela' : 'Revísalas (están marcadas como "Descartada") y, si corresponde, súbelas'} en {otroModulo.nombre}.
+              </span>
+              <Link href={rutaEmpresa(cliente.id, otroModulo.seccion)} className="inline-flex items-center gap-1 font-semibold underline">
+                Ir a {otroModulo.nombre} <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          )}
           {conteo.ajenas > 0 && (
             <p className="flex items-start gap-2 text-xs text-rose-700 dark:text-rose-300">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -575,9 +591,7 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
                     {p.borrador.conQr && <Badge variant="default"><QrCode className="mr-1 h-3 w-3" />QR</Badge>}
                     {p.borrador.leidaConIA && <Badge variant="default"><Sparkles className="mr-1 h-3 w-3" />IA</Badge>}
                     {p.borrador.estado !== 'no_factura' && !sinDatos && (
-                      p.borrador.tipo === tipoPorDefecto
-                        ? <Badge variant="neutral">{p.borrador.tipo === 'compra' ? 'Compra' : 'Venta'}</Badge>
-                        : <Badge variant="warning">{p.borrador.tipo === 'compra' ? 'Compra' : 'Venta'} · va a {otroModulo.nombre}</Badge>
+                      <Badge variant={p.borrador.estado === 'otro_modulo' ? 'danger' : 'neutral'}>{p.borrador.tipo === 'compra' ? 'Compra' : 'Venta'}</Badge>
                     )}
                   </div>
                   {sinDatos ? (
@@ -656,17 +670,6 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
               {sinObservaciones.length > 0
                 ? `${sinObservaciones.length} no tienen observaciones: la IA llenó todo y cuadra. Puedes aprobarlas ahora; las demás quedan pendientes para que las revises con la imagen al lado.`
                 : `Todas quedaron pendientes de revisión: ábrelas en ${modulo.nombre}, verás la imagen al lado y qué falta revisar.`}
-            </p>
-          )}
-          {delOtroModulo > 0 && (
-            <p className="flex max-w-md flex-wrap items-center justify-center gap-x-1.5 gap-y-1 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-900 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-950/30 dark:text-amber-200 dark:ring-amber-400/20">
-              <Info className="h-4 w-4 shrink-0" />
-              <span>
-                <strong className="font-semibold">{delOtroModulo} {delOtroModulo === 1 ? `era ${otroTipo}` : `eran ${otroModulo.plural}`}</strong>: {delOtroModulo === 1 ? 'quedó' : 'quedaron'} en {otroModulo.nombre}.
-              </span>
-              <Link href={rutaEmpresa(cliente.id, otroModulo.seccion)} className="inline-flex items-center gap-1 font-semibold underline">
-                Ir a {otroModulo.nombre} <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
             </p>
           )}
           <div className="flex flex-wrap justify-center gap-2 pt-1">

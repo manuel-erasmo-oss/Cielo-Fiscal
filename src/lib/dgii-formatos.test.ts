@@ -267,8 +267,17 @@ describe('validarVentaIngresos (reporte interno; el 607 ya no se envía)', () =>
 
   it('solo exige NCF, fecha, monto e ITBIS', () => {
     expect(errores(validarVentaIngresos({ ...CAMPOS_VACIOS })).sort()).toEqual(['fechaComprobante', 'itbisFacturado', 'montoFacturado', 'ncf'])
-    const minima = venta({ rncCedulaContraparte: null, tipoIdentificacion: null, tipoIngreso: null, cobroEfectivo: null, montoTotal: null })
+    const minima = venta({ ncf: 'B0200000001', rncCedulaContraparte: null, tipoIdentificacion: null, tipoIngreso: null, cobroEfectivo: null, montoTotal: null })
     expect(validarVentaIngresos(minima)).toEqual([])
+  })
+
+  it('sin cliente solo pasa limpia una factura de consumo (B02/E32); con otro comprobante, aviso (no bloquea)', () => {
+    const sinCliente = { rncCedulaContraparte: null, tipoIdentificacion: null }
+    expect(validarVentaIngresos(venta({ ...sinCliente, ncf: 'E320000000001' }))).toEqual([])
+    for (const ncf of ['B0100000001', 'E310000000001']) {
+      const p = validarVentaIngresos(venta({ ...sinCliente, ncf }))
+      expect(p.map(x => [x.campo, x.nivel]), ncf).toEqual([['rncCedulaContraparte', 'aviso']])
+    }
   })
 
   it('admite e-NCF y series B hasta el tipo 17', () => {

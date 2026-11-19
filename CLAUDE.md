@@ -485,16 +485,48 @@ que dicen "tablero" se refieren a esa misma pantalla.
     notas de crédito salen en negativo y restan. En móvil, tarjetas.
   - "Agregar facturas ▾" → "Una factura" (el formulario abre con Compra o
     Venta según el módulo: `FacturaModal.tipoInicial`) o "Un lote".
-- **La IA sigue decidiendo compra o venta** ("Objetivo del sistema"): si en
-  un lote de Costos y gastos aparece una venta (o al revés), se guarda con
-  su tipo real, la tarjeta del lote dice "Venta · va a Ingresos" y la
-  pantalla final "1 era venta: quedó en Ingresos" con enlace. Con una
-  factura suelta, el aviso "Se guardó como venta: está en Ingresos". En la
-  captura por lotes ya no se elige el tipo por defecto: lo da el módulo.
-- **CSV** (decisión del agente, sin confirmar con el usuario): UTF-8 con
-  BOM, separado por comas, CRLF, RNC/NCF como `="…"` para que Excel no
-  quite ceros (otras herramientas lo verán literal); exporta las
-  seleccionadas. Una venta sin nombre ni RNC sale como "Consumidor final".
+- **Cada módulo registra solo su tipo — MANDA** (decisión del usuario,
+  2026-11-19: "en ingresos solo se registren facturas de ventas, si la IA
+  identifica una factura de gasto subida por este módulo necesito que sea
+  descartada, que mande la alerta para que el usuario revise y descarte ...
+  todo tiene que quedar independiente"). Reemplaza lo que hizo el agente
+  el mismo día (guardar la factura del otro tipo en el otro módulo):
+  - La IA y el QR siguen decidiendo si es compra o venta, pero una factura
+    del otro tipo **no se guarda**. En el lote queda "Descartada"
+    (`EstadoPagina` `otro_modulo`, `ContextoLote.tipoModulo`), no se puede
+    incluir, no se envía a la IA si el QR ya lo dijo, y arriba sale el
+    aviso "1 es una factura de venta y se descartó: en Costos y gastos solo
+    se registran compras…" con enlace al otro módulo.
+  - Factura suelta: el formulario abre con el tipo fijo
+    (`FacturaModal.tipoFijo`; sin botones Compra/Venta, y en edición el
+    tipo no se cambia). Si la IA o el QR dicen que es del otro tipo, aviso
+    "Esta factura es de compra (gasto). En Ingresos solo se registran
+    ventas…" con "Descartar" (cierra sin guardar) y "Elegir otro archivo".
+    Si el QR dice que sí es del módulo y la IA la leyó al revés, se usan
+    solo los datos del QR.
+  - Guardia en los datos: `exigirTipoDeModulo` / `TipoEquivocadoError`
+    (`src/lib/comprobantes.ts`, probadas) antes de guardar en el módulo y
+    en el lote.
+- **Ventas: consumidor final y pertenencia** (decisión del usuario,
+  2026-11-19: "no debes registrar ventas como consumidor final por el mero
+  hecho de no ver nombre ni RNC; primero comprobar que la venta pertenezca
+  a la empresa, luego que tenga un comprobante para consumidores finales,
+  E32 si es electrónico y B02 si no lo es"):
+  - Pertenencia: una venta es de la empresa solo si la emitió ella (QR
+    `RncEmisor`, o la IA leyó el RNC de la empresa como emisor). Si la IA
+    no pudo confirmarlo, el NCF queda en observación con la nota "No se
+    pudo confirmar en la factura que la emitió esta empresa".
+  - "Consumidor final" **solo** con comprobante de consumo (B02/E32;
+    `nombreClienteVenta`, grupo aparte en la pestaña Clientes). Sin nombre
+    ni RNC y con otro comprobante: "Cliente sin identificar", observación
+    en el RNC del cliente (no entra en la aprobación en bloque:
+    `faltaClienteEnVenta`) y aviso en `validarVentaIngresos` ("Solo una
+    factura de consumo (B02 o E32) puede ir sin cliente"). Es aviso, no
+    error: la identificación del cliente sigue siendo opcional en el
+    reporte de ingresos (decisión del 2026-11-15).
+- **CSV**: UTF-8 con BOM, separado por comas, CRLF, RNC/NCF como `="…"`
+  para que Excel no quite ceros (**confirmado por el usuario el
+  2026-11-19**); exporta las seleccionadas.
 - Hecho por un agente en paralelo y revisado: 74/74 comprobaciones en
   navegador (menú y activo en `/lote`, cada módulo solo su tipo, otra
   empresa nunca aparece, barra de estados, búsqueda, orden, paginación
@@ -1190,7 +1222,8 @@ que envía "lo otro" en otro lote):
   en", Dashboard en tarjetas con Agenda fiscal compacta, y "Facturas"
   dividido en Ingresos y Costos y gastos, hechos por dos agentes en
   paralelo, fusionados y revisados) y PR #13 (su comprobación en
-  producción) el 2026-11-19.
+  producción) el 2026-11-19. En la rama de desarrollo: módulos
+  independientes (cada uno solo su tipo) y regla de consumidor final.
 
 ## Nombre del producto
 
@@ -1418,6 +1451,17 @@ verificación automática en la DGII.
   26/26 (la de la DGII, con la DGII real; el servidor de prueba necesita
   `OCR_CODIGO_ACCESO`). Capturas revisadas de las cuatro pantallas en
   claro, oscuro y móvil (iPhone 13), sin desplazamiento horizontal.
+- Módulos independientes y consumidor final (2026-11-19): `npm test`
+  **229/229** (nuevas: descarte en el lote por QR y por IA en los dos
+  sentidos, venta sin confirmar, B02 sin cliente pasa y B01 no,
+  `nombreClienteVenta`, grupos consumidor final / sin identificar,
+  `esAprobable`, `exigirTipoDeModulo`, aviso de `validarVentaIngresos`).
+  Navegador: 75/75 de los módulos (nuevas: el formulario abre con el tipo
+  fijo en cada módulo; una compra subida en Ingresos muestra el aviso y
+  "Descartar" cierra sin guardar; en un lote de Costos y gastos la venta
+  sale "Descartada" con aviso, solo se guarda la compra y la venta no
+  queda en ningún lado), 37/37 del Dashboard, y 27/27, 16/16, 9/9, 15/15 y
+  26/26 de los anteriores.
 - Dashboard en tarjetas + Ingresos y Costos y gastos (2026-11-19), ya
   fusionados, navegador real contra `next start`: 37/37 del Dashboard y
   74/74 de los módulos; las anteriores, adaptadas a los módulos nuevos

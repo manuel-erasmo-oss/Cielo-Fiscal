@@ -3,10 +3,12 @@ import {
   TIPO_BIENES_SERVICIOS_606,
   TIPO_INGRESO_607,
   clasificacionContable,
+  esFacturaDeConsumo,
   esNotaDeCredito,
   type ClasificacionContable,
 } from '@/lib/dgii-formatos'
 import { requiereVerificacionHumana } from '@/lib/verificacion-dgii'
+import { faltaClienteEnVenta } from '@/lib/lote/borrador'
 import { redondear2, soloDigitos } from '@/lib/utils'
 import type { DocumentoFiscal, TipoDocumento } from '@/types'
 
@@ -55,12 +57,39 @@ export function esAprobable(d: DocumentoFiscal, rncCliente: string): boolean {
   return d.estadoRevision === 'pendiente_revision' &&
     d.camposIncompletos.length === 0 &&
     !requiereVerificacionHumana(d) &&
+    !faltaClienteEnVenta(d) &&
     puedeMarcarseRevisada(d.tipo, d, rncCliente)
 }
 
 // ─── Montos ──────────────────────────────────────────────────────────────────
 
 // Las notas de crédito (B04/E34) restan en todos los totales.
+// Nombre que se muestra para el cliente de una venta sin nombre: "Consumidor
+// final" SOLO si el comprobante es de consumo (B02/E32); si no, el cliente
+// falta (decisión del usuario, 2026-11-19: no se llama consumidor final a
+// una venta por el mero hecho de no ver nombre ni RNC).
+export const CLIENTE_SIN_IDENTIFICAR = 'Cliente sin identificar'
+export function nombreClienteVenta(d: Pick<DocumentoFiscal, 'nombreContraparte' | 'rncCedulaContraparte' | 'ncf'>): string | null {
+  if (d.nombreContraparte) return d.nombreContraparte
+  if (d.rncCedulaContraparte) return null
+  return esFacturaDeConsumo(d.ncf) ? 'Consumidor final' : CLIENTE_SIN_IDENTIFICAR
+}
+
+// Cada módulo registra solo su tipo (decisión del usuario, 2026-11-19:
+// "todo tiene que quedar independiente"): Ingresos solo ventas, Costos y
+// gastos solo compras. Guardia en los datos, no solo en la pantalla.
+export class TipoEquivocadoError extends Error {
+  constructor(public readonly tipoModulo: TipoDocumento) {
+    super(tipoModulo === 'venta'
+      ? 'En Ingresos solo se registran facturas de venta.'
+      : 'En Costos y gastos solo se registran facturas de compra.')
+    this.name = 'TipoEquivocadoError'
+  }
+}
+export function exigirTipoDeModulo(tipoModulo: TipoDocumento, docs: readonly Pick<DocumentoFiscal, 'tipo'>[]): void {
+  if (docs.some(d => d.tipo !== tipoModulo)) throw new TipoEquivocadoError(tipoModulo)
+}
+
 export const signoDe = (d: Pick<DocumentoFiscal, 'ncf'>): 1 | -1 => (esNotaDeCredito(d) ? -1 : 1)
 
 // Total de la factura: el impreso; si no se leyó, la suma del monto sin
@@ -111,13 +140,23 @@ export function fechaCorta(iso: string): string {
 const sinAcentos = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 
 // Clave con la que se agrupa a un proveedor o cliente: su RNC/cédula; si no
-// lo tiene, su nombre; si tampoco, "sin identificar" (en ventas, el
-// consumidor final).
-export function claveContraparte(d: Pick<DocumentoFiscal, 'rncCedulaContraparte' | 'nombreContraparte'>): string {
+// lo tiene, su nombre; si tampoco, "consumidor final" (solo ventas con
+// comprobante de consumo, B02/E32) o "sin identificar".
+export const CLAVE_CONSUMIDOR_FINAL = 'consumidor-final'
+export const CLAVE_SIN_IDENTIFICAR = 'sin-identificar'
+export function claveContraparte(d: Pick<DocumentoFiscal, 'rncCedulaContraparte' | 'nombreContraparte'> & Partial<Pick<DocumentoFiscal, 'tipo' | 'ncf'>>): string {
   const rnc = soloDigitos(d.rncCedulaContraparte ?? '')
   if (rnc) return `rnc:${rnc}`
   const nombre = sinAcentos(d.nombreContraparte ?? '').replace(/\s+/g, ' ')
-  return nombre ? `nombre:${nombre}` : 'sin-identificar'
+  if (nombre) return `nombre:${nombre}`
+  return d.tipo === 'venta' && esFacturaDeConsumo(d.ncf ?? null) ? CLAVE_CONSUMIDOR_FINAL : CLAVE_SIN_IDENTIFICAR
+}
+
+// Nombre de un grupo de la pestaña Proveedores/Clientes que no trae nombre.
+export function nombreDeGrupo(clave: string, tipo: TipoDocumento): string | null {
+  if (clave === CLAVE_CONSUMIDOR_FINAL) return 'Consumidor final'
+  if (clave === CLAVE_SIN_IDENTIFICAR) return tipo === 'venta' ? CLIENTE_SIN_IDENTIFICAR : 'Sin identificar'
+  return null
 }
 
 export interface FilaContraparte {
@@ -325,7 +364,7 @@ export function csvDeComprobantes(docs: readonly DocumentoFiscal[], tipo: TipoDo
     return compra
       ? [...comunes, d.nombreContraparte ?? '', nombreCatalogo(TIPO_BIENES_SERVICIOS_606, d.tipoBienesServicios), clasificacionContable(d.tipoBienesServicios) ?? '',
         numero(d.montoServicios, s), numero(d.montoBienes, s), numero(montoFacturadoDe(d), s), numero(d.itbisFacturado, s), numero(totalDe(d), s), estado, dgii]
-      : [...comunes, d.nombreContraparte ?? (d.rncCedulaContraparte ? '' : 'Consumidor final'), nombreCatalogo(TIPO_INGRESO_607, d.tipoIngreso),
+      : [...comunes, nombreClienteVenta(d) ?? '', nombreCatalogo(TIPO_INGRESO_607, d.tipoIngreso),
         numero(montoFacturadoDe(d), s), numero(d.itbisFacturado, s), numero(totalDe(d), s), estado, dgii]
   })
   // El RNC ya viene con sus comillas de fórmula: no se vuelve a escapar.

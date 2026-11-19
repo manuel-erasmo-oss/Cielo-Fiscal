@@ -1,6 +1,6 @@
 import { CAMPOS_EXTRAIDOS, CAMPOS_VACIOS, buscarDuplicado, normalizarNcf, problemasDeRevision, type CamposDocumento } from '@/lib/documentos'
 import type { ResultadoOCR } from '@/lib/ocr-tipos'
-import { vaConRncDelCliente } from '@/lib/dgii-formatos'
+import { esFacturaDeConsumo, vaConRncDelCliente } from '@/lib/dgii-formatos'
 import { leerQrEcf, pertenenciaSegunQr } from '@/lib/qr-ecf'
 import { esUrlConsultaDGII, requiereVerificacionHumana, type RespuestaDGII } from '@/lib/verificacion-dgii'
 import { CONTADOR_LOCAL, type CampoExtraido, type ClienteFiscal, type DocumentoFiscal, type TipoDocumento, type VerificacionDGII } from '@/types'
@@ -24,6 +24,10 @@ export type EstadoPagina =
   // La IA dice que la página no es una factura (una declaración, una
   // portada, una hoja en blanco).
   | 'no_factura'
+  // Es del otro tipo que el módulo donde se subió (una compra en Ingresos o
+  // una venta en Costos y gastos): no se guarda. Cada módulo registra solo
+  // su tipo (decisión del usuario, 2026-11-19).
+  | 'otro_modulo'
 
 export interface BorradorPagina {
   estado: EstadoPagina
@@ -57,11 +61,19 @@ export interface ContextoLote {
   cliente: Pick<ClienteFiscal, 'id' | 'rncCedula'>
   // Tipo de las páginas cuyo QR no permite saberlo.
   tipoPorDefecto: TipoDocumento
+  // Módulo donde se sube el lote: las páginas del otro tipo se descartan.
+  tipoModulo?: TipoDocumento
   // Facturas ya guardadas, más las de páginas anteriores de este lote.
   existentes: readonly Pick<DocumentoFiscal, 'id' | 'clienteId' | 'tipo' | 'ncf' | 'rncCedulaContraparte' | 'estadoRevision'>[]
 }
 
 const NOTA_DUPLICADA = 'Este comprobante ya está registrado o está repetido en el lote.'
+
+export function notaOtroModulo(tipoModulo: TipoDocumento): string {
+  return tipoModulo === 'venta'
+    ? 'Es una factura de compra (gasto): en Ingresos solo se registran ventas. No se guarda aquí; súbela en Costos y gastos.'
+    : 'Es una factura de venta: en Costos y gastos solo se registran compras. No se guarda aquí; súbela en Ingresos.'
+}
 
 export function interpretarPagina(textoQr: string | null, ctx: ContextoLote): BorradorPagina {
   const qr = textoQr ? leerQrEcf(textoQr) : null
@@ -88,6 +100,9 @@ export function interpretarPagina(textoQr: string | null, ctx: ContextoLote): Bo
 
   if (pertenencia === 'ajena') {
     return { ...base, estado: 'ajena', tipo, campos, conQr: true, nota: 'El código QR dice que esta factura es de otro contribuyente, no de este cliente.' }
+  }
+  if (ctx.tipoModulo && tipo !== ctx.tipoModulo) {
+    return { ...base, estado: 'otro_modulo', tipo, campos, conQr: true, nota: notaOtroModulo(ctx.tipoModulo) }
   }
   const repetida = buscarDuplicado(
     { id: '', clienteId: ctx.cliente.id, tipo, ncf: campos.ncf, rncCedulaContraparte: campos.rncCedulaContraparte },
@@ -118,15 +133,24 @@ function cuadra(tipo: TipoDocumento, c: CamposDocumento): boolean | null {
 // la IA aporta todo lo demás. Si las partes no suman el total, los montos
 // quedan marcados para revisión.
 export function fusionarConLectura(borrador: BorradorPagina, lectura: ResultadoOCR, ctx: ContextoLote): BorradorPagina {
-  if (borrador.estado === 'ajena' || borrador.estado === 'duplicada') return borrador
+  if (borrador.estado === 'ajena' || borrador.estado === 'duplicada' || borrador.estado === 'otro_modulo') return borrador
   const leida = { ...borrador, leidaConIA: true, confianzaOCR: lectura.confianzaOCR }
 
   if (!borrador.conQr) {
     if (!lectura.esComprobante) {
       return { ...leida, estado: 'no_factura', nota: 'La IA no la reconoce como una factura.' }
     }
+    if (ctx.tipoModulo && lectura.tipo !== ctx.tipoModulo) {
+      return { ...leida, estado: 'otro_modulo', tipo: lectura.tipo, campos: lectura.extraccion, nota: notaOtroModulo(ctx.tipoModulo) }
+    }
     const campos = lectura.extraccion
     const dudosos = new Set<CampoExtraido>(lectura.camposDudosos)
+    // Una venta es de la empresa solo si la emitió ella. Si la IA no pudo
+    // confirmar el RNC del emisor, una persona lo revisa (decisión del
+    // usuario, 2026-11-19: "lo primero, comprobar que la venta pertenezca a
+    // la empresa").
+    const ventaSinConfirmar = lectura.tipo === 'venta' && lectura.coincideCliente !== true
+    if (ventaSinConfirmar) dudosos.add('ncf')
     if (cuadra(lectura.tipo, campos) === false) montosDe(lectura.tipo).forEach(c => dudosos.add(c))
     const repetida = buscarDuplicado(
       { id: '', clienteId: ctx.cliente.id, tipo: lectura.tipo, ncf: campos.ncf, rncCedulaContraparte: campos.rncCedulaContraparte },
@@ -138,7 +162,9 @@ export function fusionarConLectura(borrador: BorradorPagina, lectura: ResultadoO
       tipo: lectura.tipo,
       campos,
       dudosos: CAMPOS_EXTRAIDOS.filter(c => dudosos.has(c)),
-      nota: lectura.coincideCliente === false ? 'El RNC de este cliente no aparece en la factura: comprueba que sea suya.' : undefined,
+      nota: lectura.coincideCliente === false
+        ? 'El RNC de este cliente no aparece en la factura: comprueba que sea suya.'
+        : ventaSinConfirmar ? 'No se pudo confirmar en la factura que la emitió esta empresa: revísala.' : undefined,
     }
   }
 
@@ -207,6 +233,11 @@ export function conDatosDGII(borrador: BorradorPagina): { campos: CamposDocument
 // Lo que impide dar la página por buena: campos que el formato exige y
 // faltan, los que quedaron en duda y un comprobante que la DGII rechazó o no
 // encuentra. Vacío = lista para aprobar.
+// Venta sin cliente identificado cuyo comprobante no es de consumo (B02/E32).
+export function faltaClienteEnVenta(d: Pick<DocumentoFiscal, 'tipo' | 'ncf' | 'rncCedulaContraparte'>): boolean {
+  return d.tipo === 'venta' && !d.rncCedulaContraparte && !!d.ncf && !esFacturaDeConsumo(d.ncf)
+}
+
 export function observaciones(borrador: BorradorPagina, rncCliente: string): CampoExtraido[] {
   const { campos, dudosos } = conDatosDGII(borrador)
   const pendientes = new Set<CampoExtraido>(dudosos)
@@ -217,6 +248,9 @@ export function observaciones(borrador: BorradorPagina, rncCliente: string): Cam
   // e-CF sin verificar en la DGII (QR ilegible o consulta fallida): como un
   // dato borroso, lo tiene que verificar una persona.
   if (requiereVerificacionHumana({ ncf: campos.ncf, verificacionDGII })) pendientes.add('ncf')
+  // Venta sin cliente que no es de consumo (B02/E32): no es "consumidor
+  // final"; una persona identifica al cliente.
+  if (faltaClienteEnVenta({ tipo: borrador.tipo, ...campos })) pendientes.add('rncCedulaContraparte')
   return CAMPOS_EXTRAIDOS.filter(c => pendientes.has(c))
 }
 

@@ -3,7 +3,7 @@ import { CAMPOS_VACIOS } from './documentos'
 import {
   FILTROS_VACIOS, agruparPorContraparte, claveContraparte, coincideBusqueda, csvDeComprobantes, esAprobable,
   estadoDeFila, fechaCorta, filtrarComprobantes, hayFiltros, ordenarComprobantes, ordenarContrapartes, paginar,
-  resumenPorEstado, totalDe, totalesDe,
+  resumenPorEstado, totalDe, totalesDe, nombreClienteVenta, exigirTipoDeModulo, TipoEquivocadoError,
 } from './comprobantes'
 import type { DocumentoFiscal } from '@/types'
 
@@ -26,6 +26,32 @@ const venta = (p: Partial<DocumentoFiscal> = {}) =>
   compra({ tipo: 'venta', montoBienes: null, tipoBienesServicios: null, montoFacturado: 2000, itbisFacturado: 360, montoTotal: 2360, ...p })
 
 const rechazo = { estado: 'rechazado' as const, texto: 'Rechazado', consultadoEn: '2026-03-03T00:00:00Z' }
+
+describe('cliente de una venta sin nombre y módulos independientes (2026-11-19)', () => {
+  it('"Consumidor final" solo con comprobante de consumo (B02/E32)', () => {
+    expect(nombreClienteVenta({ nombreContraparte: null, rncCedulaContraparte: null, ncf: 'B0200000001' })).toBe('Consumidor final')
+    expect(nombreClienteVenta({ nombreContraparte: null, rncCedulaContraparte: null, ncf: 'E320000000001' })).toBe('Consumidor final')
+    expect(nombreClienteVenta({ nombreContraparte: null, rncCedulaContraparte: null, ncf: 'B0100000001' })).toBe('Cliente sin identificar')
+    expect(nombreClienteVenta({ nombreContraparte: null, rncCedulaContraparte: '101123451', ncf: 'B0100000001' })).toBeNull()
+    expect(nombreClienteVenta({ nombreContraparte: 'Ana SRL', rncCedulaContraparte: null, ncf: 'B0100000001' })).toBe('Ana SRL')
+  })
+
+  it('se agrupan aparte el consumidor final y los clientes sin identificar', () => {
+    expect(claveContraparte(venta({ rncCedulaContraparte: null, nombreContraparte: null, ncf: 'B0200000001' }))).toBe('consumidor-final')
+    expect(claveContraparte(venta({ rncCedulaContraparte: null, nombreContraparte: null, ncf: 'B0100000001' }))).toBe('sin-identificar')
+  })
+
+  it('una venta de crédito fiscal sin cliente no se aprueba en bloque', () => {
+    expect(esAprobable(venta({ rncCedulaContraparte: null, nombreContraparte: null, ncf: 'B0100000099' }), RNC_CLIENTE)).toBe(false)
+    expect(esAprobable(venta({ rncCedulaContraparte: null, nombreContraparte: null, ncf: 'B0200000099' }), RNC_CLIENTE)).toBe(true)
+  })
+
+  it('cada módulo guarda solo su tipo', () => {
+    expect(() => exigirTipoDeModulo('venta', [venta()])).not.toThrow()
+    expect(() => exigirTipoDeModulo('venta', [venta(), compra()])).toThrow(TipoEquivocadoError)
+    expect(() => exigirTipoDeModulo('compra', [venta()])).toThrow('En Costos y gastos solo se registran facturas de compra.')
+  })
+})
 
 describe('estado de una fila', () => {
   it('uno solo, el más grave: rechazada > revisada > verificar en la DGII > por revisar', () => {
