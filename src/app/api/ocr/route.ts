@@ -109,8 +109,13 @@ function clasificacion606(actividad: string): string {
   La misma compra puede ser costo para un negocio y gasto o activo para otro: lo que un negocio revende o incorpora a su producto es costo; lo mismo comprado para usarlo es gasto si se consume pronto y activo si dura más de un período. Elige la opción más probable; si la factura no da ninguna base para decidir, null. Si dudas entre dos categorías, devuelve la más probable y lista tipoBienesServicios en camposDudosos.`
 }
 
+// Commit que está corriendo (público: el repositorio lo es). Sirve para
+// comprobar desde fuera qué versión publicó Vercel.
+const VERSION = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'local'
+const ENCABEZADOS = { 'x-cielo-version': VERSION }
+
 function error(status: number, mensaje: string) {
-  return NextResponse.json<ErrorOCR>({ error: mensaje }, { status })
+  return NextResponse.json<ErrorOCR>({ error: mensaje }, { status, headers: ENCABEZADOS })
 }
 
 // Comparación en tiempo constante (sobre hashes, para igualar longitudes).
@@ -219,5 +224,6 @@ export async function POST(request: Request) {
   // ── 4. De la lectura del modelo a los campos de la factura ────────────────
   return NextResponse.json<ResultadoOCR>(
     interpretarLectura(lecturaDesdeModelo(crudo), { tipoPorDefecto: tipoLeido.data, rncCliente }),
+    { headers: ENCABEZADOS },
   )
 }
