@@ -793,6 +793,30 @@ de ~4,500 tokens de entrada y ~1,500 de salida por página):
 
 No usar estos números para fijar precios: reemplazarlos por los medidos.
 
+**Primera medición real (2026-11-19, dicha por el usuario)**: con Opus 5.5
+y `effort: medium`, unas 120 lecturas gastaron US$1.36 de un saldo de
+US$5 (quedaron US$3.64). Son **~US$0.011 por lectura**, menos que el
+estimado de arriba. Es aproximada: el número de lecturas es del usuario, y
+una lectura puede llevar varios tramos de un recibo. Precisión aún sin
+medir.
+
+**Herramienta "Comparar modelos"** (pedida con la opción recomendada,
+2026-11-19: "comparar antes de cambiar"): `/configuracion/comparar`. Lee
+las mismas páginas (hasta 20) con dos modelos de `MODELOS_OCR`
+(`src/lib/ocr-modelos.ts`: Opus 5.5, Sonnet 5.5, Haiku 5.5, con sus precios
+de lista). Muestra por modelo el costo estimado (tokens de `uso` × precio),
+el tiempo, las páginas con error y **cuántos datos del QR acertó** (NCF,
+RNC de la contraparte, fecha y total; el QR lo firmó el emisor, es la
+referencia exacta). Por página, los campos en que difieren, con ✗ en el que
+no coincide con el QR. No guarda nada. La ruta acepta `modelo` (solo de la
+lista; otro → 400) y devuelve `uso` (modelo que respondió y tokens). Haiku
+5.5 va sin `fallbacks` (no tiene respaldo de servidor). La aplicación sigue
+leyendo con `MODELO_OCR_POR_DEFECTO` (Opus 5.5) hasta que el usuario
+decida. Comprobado en navegador con la IA simulada: 15/15 (4 llamadas para
+2 páginas, costos US$0.080 vs US$0.0020, QR 4/4 vs 3/4, ✗ en el NCF
+equivocado, coincidencia 85%, nada guardado, móvil sin desbordar, la ruta
+real rechaza un modelo fuera de la lista). Regresión del lote: 15/15.
+
 **Propuesta pendiente de medir (no decidida):** lectura escalonada — leer
 cada página con el modelo barato y volver a leer con uno más fuerte solo
 las que fallen validaciones automáticas (monto + ITBIS ≠ total, RNC de
@@ -1509,10 +1533,12 @@ verificación automática en la DGII.
   puede deducir), y opcionales `rncCliente` y `actividad`. Hasta 4 MB en
   total. Si faltan `ANTHROPIC_API_KEY` u `OCR_CODIGO_ACCESO` responde 503
   en vez de quedar abierta.
-- Modelo `claude-opus-5-5`, salida estructurada con Zod, `effort: medium`,
-  con fallback de servidor (`fallbacks: 'default'`). Cambiar de modelo es
-  una constante (`MODELO_OCR`) — decisión de costo/precisión pendiente de
-  medir con facturas reales.
+- Modelo `claude-opus-5-5` por defecto (`MODELO_OCR_POR_DEFECTO` en
+  `src/lib/ocr-modelos.ts`), salida estructurada con Zod, `effort: medium`,
+  con fallback de servidor (`fallbacks: 'default'`). El campo opcional
+  `modelo` elige otro de `MODELOS_OCR` (lo usa "Comparar modelos"). La
+  respuesta trae `uso` (modelo y tokens). Decisión de costo/precisión
+  pendiente de la comparación con facturas reales.
 - **Límite de complejidad del esquema (arreglado el 2026-11-19)**: la API
   admite como máximo 16 parámetros con tipo unión y 24 opcionales por
   solicitud con salida estructurada (documentación de Anthropic, "Schema

@@ -1,4 +1,5 @@
 import type { CampoExtraido, DocumentoFiscal, TipoDocumento } from '@/types'
+import type { UsoOCR } from '@/lib/ocr-modelos'
 
 // Contrato compartido entre la route `/api/ocr` (servidor) y quien la llama
 // (navegador). Sin dependencias de servidor ni de DOM.
@@ -43,6 +44,8 @@ export interface ResultadoOCR {
   // Lo que FALTA lo calcula quien recibe la respuesta, con las reglas del
   // formato (necesita saber de qué cliente es la factura).
   camposDudosos: CampoExtraido[]
+  // Modelo que respondió y tokens que gastó (para estimar el costo).
+  uso?: UsoOCR
 }
 
 export interface ErrorOCR {
