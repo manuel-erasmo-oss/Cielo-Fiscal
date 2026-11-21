@@ -32,6 +32,7 @@ import {
 import { interpretarPagina } from '@/lib/lote/borrador'
 import { leerPaginas } from '@/lib/lote/leer-paginas'
 import { OCRError, esArchivoSoportado, extraerFactura } from '@/lib/ocr-cliente'
+import { CAMPOS_QUE_LEE_LA_IA, MOTIVO_YA_AGOTADA, huellaDe, leerEscalonado, motivosRelectura, type ResultadoEscalonado } from '@/lib/lectura-escalonada'
 import { verificarEnDGII } from '@/lib/verificacion-cliente'
 import { ETIQUETA_ESTADO_DGII, esUrlConsultaDGII, requiereVerificacionHumana } from '@/lib/verificacion-dgii'
 import { MIME_PDF } from '@/lib/ocr-tipos'
@@ -42,8 +43,7 @@ import {
   type ClienteFiscal,
   type DocumentoFiscal,
   type TipoDocumento,
-  type VerificacionDGII,
-} from '@/types'
+  type VerificacionDGII, type LecturaIA } from '@/types'
 
 // Empresa de la factura, solo lectura: se trabaja dentro de una empresa a la
 // vez (separación de datos pedida por el usuario el 2026-11-18).
@@ -177,6 +177,10 @@ export function FacturaModal({
   const [verificando, setVerificando] = useState(false)
   const [errorVerificacion, setErrorVerificacion] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
+  // Lectura escalonada (Haiku → una relectura con Sonnet → captura manual) y
+  // huella del archivo leído (decisión del usuario, 2026-11-21).
+  const [lecturaIA, setLecturaIA] = useState<LecturaIA | undefined>(documento?.lecturaIA)
+  const [huella, setHuella] = useState<string | undefined>(documento?.huellaArchivo)
   const inputArchivo = useRef<HTMLInputElement>(null)
   // Descarta la respuesta del OCR si el modal se cerró mientras llegaba.
   const vivo = useRef(true)
@@ -268,6 +272,19 @@ export function FacturaModal({
     return redondear2(campos.montoTotal - base - campos.itbisFacturado - cargos)
   }, [campos, tipo])
 
+  // Lee con Haiku y, si no pasa las validaciones, UNA vez con Sonnet. `qr` es
+  // la dirección del QR del archivo, si se leyó.
+  async function leerConEscalonado(archivoALeer: File, tipoALeer: TipoDocumento, qr: string | undefined): Promise<ResultadoEscalonado> {
+    const delCliente = clientes.find(c => c.id === clienteId)
+    const ctx = { cliente: { id: clienteId, rncCedula: delCliente?.rncCedula ?? '' }, tipoPorDefecto: tipoALeer, existentes: [] }
+    const base = interpretarPagina(qr ?? null, ctx)
+    return leerEscalonado(
+      modelo => extraerFactura(archivoALeer, tipoALeer, { rncCliente: delCliente?.rncCedula, actividad: delCliente?.actividad, modelo }),
+      lectura => motivosRelectura(base, lectura, ctx, delCliente?.rncCedula ?? ''),
+      e => e instanceof OCRError && (e.esDeCodigo || e.sinServicio),
+    )
+  }
+
   async function handleArchivo(seleccionado: File | undefined) {
     if (!seleccionado) return
     if (!esArchivoSoportado(seleccionado)) {
@@ -285,9 +302,25 @@ export function FacturaModal({
       const url = await buscarQrDelArchivo(seleccionado)
       if (!vivo.current) return
       const delCliente = clientes.find(c => c.id === clienteId)
-      let resultado = await extraerFactura(seleccionado, tipo, { rncCliente: delCliente?.rncCedula, actividad: delCliente?.actividad })
+      // El mismo documento ya agotó la lectura con IA (quedó para captura
+      // manual): no se permite volver a leerlo.
+      const huellaArchivo = await huellaDe(seleccionado)
       if (!vivo.current) return
-      if (!resultado.esComprobante) {
+      if (documentos.some(d => d.huellaArchivo === huellaArchivo && d.lecturaIA?.manual)) {
+        setErrorOCR(new OCRError(`${MOTIVO_YA_AGOTADA} Captúrala a mano.`))
+        setPaso('origen')
+        return
+      }
+      setHuella(huellaArchivo)
+      const escalonado = await leerConEscalonado(seleccionado, tipoFijo ?? tipo, url)
+      if (!vivo.current) return
+      const lecturaFinal: LecturaIA = { modelo: escalonado.modelo, releida: escalonado.releida, manual: escalonado.manual, motivos: escalonado.motivos }
+      // Ninguna de las dos lecturas respondió: captura manual desde cero (con
+      // lo del QR, si lo hay).
+      let resultado = escalonado.lectura ?? {
+        esComprobante: true, tipo: tipoFijo ?? tipo, coincideCliente: null, confianzaOCR: 0, camposDudosos: [], extraccion: { ...CAMPOS_VACIOS },
+      }
+      if (!resultado.esComprobante && !escalonado.manual) {
         setErrorOCR(new OCRError('El sistema no reconoce esto como una factura. Si lo es, captúrala a mano.'))
         setPaso('origen')
         return
@@ -335,6 +368,16 @@ export function FacturaModal({
         dudas.add('ncf')
         setErrorOCR(new OCRError('No se pudo confirmar en la factura que la emitió esta empresa: revísala antes de guardarla.'))
       }
+      // Captura manual: todo lo que llena la IA queda en duda, salvo lo del QR.
+      if (lecturaFinal.manual) {
+        const delQrExactos = new Set<CampoExtraido>()
+        if (url && delCliente) {
+          const b = interpretarPagina(url, { cliente: delCliente, tipoPorDefecto: resultado.tipo, existentes: [] })
+          if (b.conQr) for (const c of ['rncCedulaContraparte', 'ncf', 'fechaComprobante', 'montoTotal'] as const) if (b.campos[c] !== null) delQrExactos.add(c)
+        }
+        for (const c of CAMPOS_QUE_LEE_LA_IA[resultado.tipo]) if (!delQrExactos.has(c)) dudas.add(c)
+      }
+      setLecturaIA(lecturaFinal)
       setValores(aValores(extraccion))
       setDudosos(dudas)
       if (url) {
@@ -356,13 +399,24 @@ export function FacturaModal({
   // exactos) no se toca.
   async function leerGuardadaConIA() {
     if (!guardado) return
+    // Ya agotó la lectura con IA: no se permite otra (decisión del usuario).
+    if (lecturaIA?.manual) {
+      setErrorOCR(new OCRError(MOTIVO_YA_AGOTADA))
+      return
+    }
     setErrorOCR(null)
     setLeyendo(true)
     try {
       const comoArchivo = new File([guardado], documento?.archivoNombre ?? 'factura.jpg', { type: guardado.type || 'image/jpeg' })
-      const delCliente = clientes.find(c => c.id === clienteId)
-      const resultado = await extraerFactura(comoArchivo, tipo, { rncCliente: delCliente?.rncCedula, actividad: delCliente?.actividad })
+      const escalonado = await leerConEscalonado(comoArchivo, tipo, qrUrl)
       if (!vivo.current) return
+      setLecturaIA({ modelo: escalonado.modelo, releida: escalonado.releida, manual: escalonado.manual, motivos: escalonado.motivos })
+      if (!huella) setHuella(await huellaDe(guardado))
+      const resultado = escalonado.lectura
+      if (!resultado) {
+        setErrorOCR(new OCRError('La IA no pudo leer esta factura. Complétala a mano.'))
+        return
+      }
       if (!resultado.esComprobante) {
         setErrorOCR(new OCRError('El sistema no reconoce esta imagen como una factura. Si lo es, complétala a mano.'))
         return
@@ -386,6 +440,9 @@ export function FacturaModal({
         const sig = new Set(prev)
         for (const c of nuevos) sig.delete(c)
         for (const c of resultado.camposDudosos) if (nuevos.includes(c)) sig.add(c)
+        // Captura manual: lo que llenó la IA queda en duda para que una
+        // persona lo valide campo por campo.
+        if (escalonado.manual) for (const c of nuevos) sig.add(c)
         return sig
       })
       setConfianza(resultado.confianzaOCR)
@@ -447,6 +504,8 @@ export function FacturaModal({
         archivoPath: documento?.archivoPath,
         qrUrl,
         verificacionDGII: verificacion,
+        lecturaIA,
+        huellaArchivo: huella,
         ...finales,
         confianzaOCR: confianza,
         camposIncompletos: comoRevisada ? [] : CAMPOS_EXTRAIDOS.filter(c => pendientes.has(c)),
@@ -680,14 +739,28 @@ export function FacturaModal({
             onSubmit={e => { e.preventDefault(); void guardar(true) }}
             className="space-y-4 px-5 py-4"
           >
-            {documento && guardado && (
+            {lecturaIA?.manual && (
+              <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200">
+                <p className="font-semibold">Requiere captura manual: es crucial que una persona valide esta factura.</p>
+                <p className="mt-1 text-xs">
+                  La IA no pudo leerla con seguridad, ni en la primera lectura ni en la relectura. No se permite volver a leerla con IA:
+                  digita y comprueba cada campo contra la imagen (los campos en ámbar).
+                </p>
+                {lecturaIA.motivos.length > 0 && (
+                  <ul className="mt-1.5 list-disc pl-5 text-xs">
+                    {lecturaIA.motivos.map(m => <li key={m}>{m}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+            {documento && guardado && !lecturaIA?.manual && (
               <div className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 dark:border-[#252840] bg-zinc-50 dark:bg-[#1a1d2e] px-3.5 py-2.5">
                 <p className="min-w-[200px] flex-1 text-xs text-zinc-600 dark:text-zinc-400">
                   {documento.origen === 'qr'
                     ? 'RNC, NCF, fecha y total salieron del código QR. Completa lo que falta mirando la imagen, o deja que el sistema lo lea.'
                     : 'Completa los datos mirando la imagen, o deja que el sistema los lea.'}
                 </p>
-                <button type="button" onClick={() => void leerGuardadaConIA()} disabled={leyendo} className={BTN_SECONDARY}>
+                <button type="button" onClick={() => void leerGuardadaConIA()} disabled={leyendo || !!lecturaIA?.manual} title={lecturaIA?.manual ? MOTIVO_YA_AGOTADA : undefined} className={BTN_SECONDARY}>
                   {leyendo ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ScanText className="h-4 w-4" />}
                   {leyendo ? 'Leyendo…' : 'Leer con IA lo que falta'}
                 </button>

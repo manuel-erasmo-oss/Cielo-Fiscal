@@ -13,7 +13,7 @@ function lectura(cambios: Partial<ResultadoOCR['extraccion']> = {}, resto: Parti
 
 describe('modelos y costo', () => {
   it('el modelo por defecto está en la lista y uno desconocido no', () => {
-    expect(modeloOCR(MODELO_OCR_POR_DEFECTO)?.nombre).toBe('Opus 5.5')
+    expect(modeloOCR(MODELO_OCR_POR_DEFECTO)?.nombre).toBe('Haiku 5.5')
     expect(modeloOCR('gpt-4')).toBeNull()
     expect(modeloOCR(undefined)).toBeNull()
   })
@@ -23,6 +23,9 @@ describe('modelos y costo', () => {
     expect(costoUSD({ modelo: 'claude-opus-5-5', tokensEntrada: 4500, tokensSalida: 1500 })).toBeCloseTo(0.048, 6)
     expect(costoUSD({ modelo: 'claude-haiku-5-5', tokensEntrada: 4500, tokensSalida: 1500 })).toBeCloseTo(0.0012, 6)
     expect(costoUSD({ modelo: 'otro', tokensEntrada: 1, tokensSalida: 1 })).toBeNull()
+    // Caché: 2,000 leídos cuestan como 200 de entrada; 2,000 escritos como 2,500.
+    expect(costoUSD({ modelo: 'claude-sonnet-5-5', tokensEntrada: 0, tokensSalida: 0, tokensCacheLeidos: 2000 })).toBeCloseTo(0.0004, 6)
+    expect(costoUSD({ modelo: 'claude-sonnet-5-5', tokensEntrada: 0, tokensSalida: 0, tokensCacheEscritos: 2000 })).toBeCloseTo(0.005, 6)
   })
 })
 

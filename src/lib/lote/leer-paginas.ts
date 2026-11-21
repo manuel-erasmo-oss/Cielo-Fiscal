@@ -1,5 +1,6 @@
 import { prepareZXingModule, readBarcodes } from 'zxing-wasm/reader'
 import { esMimeImagen, MIME_PDF } from '@/lib/ocr-tipos'
+import { cajaDeContenido } from '@/lib/lote/recorte'
 
 // Captura por lotes, lado del navegador: convierte los archivos subidos (un
 // PDF de muchas páginas, o varias fotos) en páginas sueltas — una imagen JPEG
@@ -95,6 +96,21 @@ export async function buscarQr(canvas: HTMLCanvasElement): Promise<string | null
   return null
 }
 
+// Copia de la página sin los márgenes blancos (ver `recorte.ts`): la imagen
+// que se guarda y se envía a la IA. El QR se busca en la página entera.
+function sinMargenes(canvas: HTMLCanvasElement, destino: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return canvas
+  const caja = cajaDeContenido(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height)
+  if (!caja) return canvas
+  destino.width = caja.ancho
+  destino.height = caja.alto
+  const ctxDestino = destino.getContext('2d')
+  if (!ctxDestino) return canvas
+  ctxDestino.drawImage(canvas, caja.x, caja.y, caja.ancho, caja.alto, 0, 0, caja.ancho, caja.alto)
+  return destino
+}
+
 function aJpeg(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(blob => (blob ? resolve(blob) : reject(new LoteError('No se pudo preparar la imagen de una página.'))), 'image/jpeg', 0.85)
@@ -134,6 +150,7 @@ export async function leerPaginas(
   // Primero se cuentan las páginas, para rechazar el lote antes de procesar nada.
   const fuentes: { archivo: File; pdf: DocumentoPdf | null; paginas: number; cerrar: () => void }[] = []
   const canvas = document.createElement('canvas')
+  const recortado = document.createElement('canvas')
   let numero = 0
   try {
     for (const archivo of archivos) {
@@ -173,13 +190,14 @@ export async function leerPaginas(
           bitmap.close()
         }
         numero += 1
+        const final = sinMargenes(canvas, recortado)
         alLeer({
           numero,
           archivoNombre: archivo.name,
           paginaEnArchivo: p,
-          imagen: await aJpeg(canvas),
-          ancho: canvas.width,
-          alto: canvas.height,
+          imagen: await aJpeg(final),
+          ancho: final.width,
+          alto: final.height,
           textoQr: await buscarQr(canvas).catch(() => null),
         }, total)
         await respirar()

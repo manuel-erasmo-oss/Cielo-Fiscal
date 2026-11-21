@@ -13,6 +13,7 @@ import { OCRError, extraerFactura } from '@/lib/ocr-cliente'
 import {
   MODELOS_OCR,
   MODELO_OCR_POR_DEFECTO,
+  MODELO_OCR_RELECTURA,
   aciertosContraQr,
   compararLecturas,
   costoUSD,
@@ -54,6 +55,12 @@ const ETIQUETA: Record<CampoComparado, string> = {
   esComprobante: 'Es una factura',
 }
 
+function etiquetaRol(id: string): string {
+  if (id === MODELO_OCR_POR_DEFECTO) return ' (principal)'
+  if (id === MODELO_OCR_RELECTURA) return ' (relectura)'
+  return ''
+}
+
 function usd(valor: number): string {
   return `US$${valor.toFixed(valor < 0.01 ? 4 : 3)}`
 }
@@ -62,7 +69,7 @@ export default function CompararModelosPage() {
   const { clientes } = useDatos()
   const [clienteId, setClienteId] = useState('')
   const [modeloA, setModeloA] = useState(MODELO_OCR_POR_DEFECTO)
-  const [modeloB, setModeloB] = useState('claude-haiku-5-5')
+  const [modeloB, setModeloB] = useState(MODELO_OCR_RELECTURA)
   const [archivos, setArchivos] = useState<File[]>([])
   const [paginas, setPaginas] = useState<PaginaComparada[]>([])
   const [estado, setEstado] = useState<'inicio' | 'leyendo' | 'listo'>('inicio')
@@ -181,13 +188,13 @@ export default function CompararModelosPage() {
           <div className="flex flex-col gap-1.5">
             <label htmlFor="modelo-a" className={LABEL_CLASS}>Modelo A</label>
             <select id="modelo-a" value={modeloA} onChange={e => setModeloA(e.target.value)} className={INPUT_CLASS} disabled={estado === 'leyendo'}>
-              {MODELOS_OCR.map(m => <option key={m.id} value={m.id}>{m.nombre}{m.id === MODELO_OCR_POR_DEFECTO ? ' (el actual)' : ''}</option>)}
+              {MODELOS_OCR.map(m => <option key={m.id} value={m.id}>{m.nombre}{etiquetaRol(m.id)}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="modelo-b" className={LABEL_CLASS}>Modelo B</label>
             <select id="modelo-b" value={modeloB} onChange={e => setModeloB(e.target.value)} className={INPUT_CLASS} disabled={estado === 'leyendo'}>
-              {MODELOS_OCR.map(m => <option key={m.id} value={m.id}>{m.nombre}{m.id === MODELO_OCR_POR_DEFECTO ? ' (el actual)' : ''}</option>)}
+              {MODELOS_OCR.map(m => <option key={m.id} value={m.id}>{m.nombre}{etiquetaRol(m.id)}</option>)}
             </select>
           </div>
         </div>

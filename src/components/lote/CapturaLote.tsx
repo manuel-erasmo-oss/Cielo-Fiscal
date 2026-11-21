@@ -13,7 +13,6 @@ import { ETIQUETA_CAMPO } from '@/lib/documentos'
 import {
   aplicarVerificacion,
   documentoDesdePagina,
-  fusionarConLectura,
   interpretarPagina,
   observaciones,
   type BorradorPagina,
@@ -22,8 +21,11 @@ import {
 } from '@/lib/lote/borrador'
 import { LoteError, MAXIMO_PAGINAS_LOTE, leerPaginas, type PaginaLeida } from '@/lib/lote/leer-paginas'
 import { OCRError, extraerFactura } from '@/lib/ocr-cliente'
+import { MOTIVO_YA_AGOTADA, aplicarResultado, huellaDe, leerEscalonado, motivosRelectura } from '@/lib/lectura-escalonada'
+import { MODELO_OCR_POR_DEFECTO, MODELO_OCR_RELECTURA, modeloOCR } from '@/lib/ocr-modelos'
 import { VerificacionError, verificarEnDGII } from '@/lib/verificacion-cliente'
 import { esECF } from '@/lib/dgii-formatos'
+import { MIME_PDF } from '@/lib/ocr-tipos'
 import { ETIQUETA_ESTADO_DGII } from '@/lib/verificacion-dgii'
 import { BTN_PRIMARY, cn, formatCedula, formatDate, formatRD } from '@/lib/utils'
 import type { CampoExtraido, DocumentoFiscal, TipoDocumento } from '@/types'
@@ -82,6 +84,8 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
   // El lote es siempre de la empresa en la que se entró (ver empresa-context).
   const { errorCarga, empresa, documentos, guardarLote, guardarDocumentos } = useEmpresaActiva()
   const modulo = MODULO_DE[tipoPorDefecto]
+  // Archivos subidos, por nombre (para la huella de las fotos).
+  const originales = useRef(new Map<string, File>())
   const otroTipo: TipoDocumento = tipoPorDefecto === 'compra' ? 'venta' : 'compra'
   const otroModulo = MODULO_DE[otroTipo]
 
@@ -219,9 +223,34 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
         const pagina = cola.shift()!
         try {
           const archivo = new File([pagina.imagen], `${pagina.archivoNombre}-p${pagina.paginaEnArchivo}.jpg`, { type: 'image/jpeg' })
-          const lectura = await extraerFactura(archivo, pagina.borrador.tipo, { rncCliente: cliente.rncCedula, actividad: cliente.actividad })
           const vigente = actual.find(p => p.numero === pagina.numero) ?? pagina
-          const borrador = fusionarConLectura(vigente.borrador, lectura, contexto(actual, pagina.numero))
+          // Huella: de una foto, la del archivo original (la misma que calcula el
+          // formulario de una factura suelta); de una página de PDF, la de la
+          // imagen de la página.
+          const original = originales.current.get(pagina.archivoNombre)
+          const huella = await huellaDe(original && original.type !== MIME_PDF ? original : pagina.imagen)
+          const base: BorradorPagina = { ...vigente.borrador, huella }
+          const ctxPagina = contexto(actual, pagina.numero)
+          // El mismo documento (misma imagen) ya está guardado: no se vuelve a
+          // leer ni a pagar. Si ya había agotado la lectura con IA, se avisa.
+          const previo = documentos.find(d => d.huellaArchivo === huella)
+          const borrador: BorradorPagina = previo
+            ? {
+                ...base,
+                estado: 'duplicada',
+                nota: previo.lecturaIA?.manual
+                  ? `${MOTIVO_YA_AGOTADA} Ya está registrada: complétala a mano en ${modulo.nombre}.`
+                  : 'Este mismo documento ya está registrado.',
+              }
+            : aplicarResultado(
+                base,
+                await leerEscalonado(
+                  modelo => extraerFactura(archivo, base.tipo, { rncCliente: cliente.rncCedula, actividad: cliente.actividad, modelo }),
+                  lectura => motivosRelectura(base, lectura, ctxPagina, cliente.rncCedula),
+                  e => e instanceof OCRError && (e.esDeCodigo || e.sinServicio),
+                ),
+                ctxPagina,
+              )
           actualizar(pagina.numero, p => ({
             ...p,
             borrador,
@@ -253,6 +282,7 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
   async function procesar(lista: FileList | null) {
     if (!cliente || !lista || lista.length === 0) return
     const archivos = Array.from(lista)
+    originales.current = new Map(archivos.map(a => [a.name, a]))
     reiniciar()
     setFase('leyendo')
 
@@ -310,6 +340,8 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
       ajenas: por('ajena'),
       otroModulo: por('otro_modulo'),
       duplicadas: por('duplicada'),
+      manuales: paginas.filter(p => p.borrador.lecturaIA?.manual).length,
+      releidas: paginas.filter(p => p.borrador.lecturaIA?.releida).length,
       incluidas: validas.length,
       listas: validas.filter(p => observaciones(p.borrador, rnc).length === 0).length,
     }
@@ -562,6 +594,16 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
               </Link>
             </div>
           )}
+          {conteo.manuales > 0 && (
+            <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                <strong className="font-semibold">{conteo.manuales} {conteo.manuales === 1 ? 'factura requiere' : 'facturas requieren'} captura manual.</strong>{' '}
+                Ni {modeloOCR(MODELO_OCR_POR_DEFECTO)?.nombre} ni la relectura con {modeloOCR(MODELO_OCR_RELECTURA)?.nombre} pudieron leerlas con seguridad.
+                No se permite volver a leerlas con IA: una persona tiene que digitarlas y validarlas (están marcadas como &quot;Requiere captura manual&quot;).
+              </span>
+            </div>
+          )}
           {conteo.ajenas > 0 && (
             <p className="flex items-start gap-2 text-xs text-rose-700 dark:text-rose-300">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -623,6 +665,15 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
                     <p className="text-[11px] text-rose-600 dark:text-rose-400">{p.borrador.nota}</p>
                   )}
                   {p.errorIA && <p className="text-[11px] text-rose-600 dark:text-rose-400">La IA no pudo leerla: {p.errorIA}</p>}
+                  {p.borrador.lecturaIA?.manual && (
+                    <div className="rounded-lg bg-rose-50 px-2 py-1.5 text-[11px] text-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
+                      <p className="font-semibold">Requiere captura manual</p>
+                      {p.borrador.lecturaIA.motivos.slice(0, 2).map(m => <p key={m}>· {m}</p>)}
+                    </div>
+                  )}
+                  {p.borrador.lecturaIA?.releida && !p.borrador.lecturaIA.manual && (
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Releída con {modeloOCR(p.borrador.lecturaIA.modelo)?.nombre ?? 'otro modelo'}</p>
+                  )}
                   {p.borrador.dgii && (
                     <p className={cn('flex items-center gap-1 text-[11px] font-semibold',
                       ['aceptado', 'aceptado_condicional'].includes(p.borrador.dgii.verificacion.estado)
