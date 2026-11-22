@@ -28,9 +28,12 @@ export const MODELOS_OCR: readonly ModeloOCR[] = [
   { id: 'claude-haiku-5-5', nombre: 'Haiku 5.5', usdEntradaPorMillon: 0.1, usdSalidaPorMillon: 0.5, conRespaldo: false },
 ]
 
-// El que usa la aplicación (lotes y facturas sueltas) mientras no se decida
-// otro con la comparación.
-export const MODELO_OCR_POR_DEFECTO = 'claude-opus-5-5'
+// Lectura escalonada (decisión del usuario, 2026-11-21, tras la evaluación
+// de costos): Haiku lee todas las facturas; si su lectura no pasa las
+// validaciones, Sonnet la relee UNA vez; si tampoco pasa, captura manual.
+// Opus quedó fuera por costo (~US$0.05 por factura calculado).
+export const MODELO_OCR_POR_DEFECTO = 'claude-haiku-5-5'
+export const MODELO_OCR_RELECTURA = 'claude-sonnet-5-5'
 
 export function modeloOCR(id: string | null | undefined): ModeloOCR | null {
   return MODELOS_OCR.find(m => m.id === id) ?? null
@@ -41,6 +44,10 @@ export interface UsoOCR {
   modelo: string
   tokensEntrada: number
   tokensSalida: number
+  // Instrucciones servidas desde la caché (cobradas a 0.1×) y escritas en
+  // ella (1.25×, la primera vez). No están incluidas en `tokensEntrada`.
+  tokensCacheLeidos?: number
+  tokensCacheEscritos?: number
 }
 
 // Costo estimado en US$ de una lectura, o null si el modelo no está en la
@@ -48,7 +55,8 @@ export interface UsoOCR {
 export function costoUSD(uso: UsoOCR): number | null {
   const m = modeloOCR(uso.modelo)
   if (!m) return null
-  return (uso.tokensEntrada * m.usdEntradaPorMillon + uso.tokensSalida * m.usdSalidaPorMillon) / 1_000_000
+  const entrada = uso.tokensEntrada + (uso.tokensCacheLeidos ?? 0) * 0.1 + (uso.tokensCacheEscritos ?? 0) * 1.25
+  return (entrada * m.usdEntradaPorMillon + uso.tokensSalida * m.usdSalidaPorMillon) / 1_000_000
 }
 
 // ── Comparación de dos lecturas de la misma página ─────────────────────────

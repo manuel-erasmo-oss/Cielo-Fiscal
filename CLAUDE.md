@@ -827,6 +827,109 @@ si Haiku lee bien fotos malas, papel térmico o manuscritas; eso es lo que
 la medición tiene que responder, campo por campo (un dígito mal en un RNC
 o NCF es un error fiscal, no un detalle).
 
+## Lectura escalonada: Haiku → Sonnet → captura manual (decisión del usuario, 2026-11-21) — MANDA
+
+> "Me voy con tus recomendaciones, habiendo de Haiku el modelo principal y
+> si falla la relectura se hace con Sonnet; si Sonnet falla obligatoriamente
+> el usuario tiene que digitalizar manual la factura, solo un intento con
+> Sonnet, no se permite reintento de leer el mismo documento y se le pone una
+> alerta de que no es permitido y es crucial que ese documento en específico
+> sea validado por un humano."
+
+**Por qué** (evaluación con 5 agentes expertos en paralelo, pedida por el
+usuario: costos de Anthropic, proveedores alternativos, OCR sin IA,
+arquitectura, fiscal/negocio; Claude arbitró):
+- Opus calculado con la documentación de tokens de imagen (cada página
+  ~4,700 tokens de imagen con el tope de los modelos 4.7 o posteriores,
+  ~2,500 de instrucciones y el razonamiento) sale a **~US$0.05 por factura**,
+  no US$0.011. El US$0.011 medido estaba subestimado: las lecturas con error
+  400 no se cobran. Con Opus, 1,000 facturas costarían ~US$50 al mes: no hay
+  negocio. Es una cifra calculada; la real sale ahora del `uso` de cada
+  lectura.
+- Haiku 5.5 sale a **~US$0.0013–0.0015** por factura (unas 40 veces menos).
+  Es el más barato junto con OpenAI gpt-6-luna, con el mismo proveedor y las
+  mismas condiciones de privacidad. Gemini Flash-Lite cuesta unas 4 veces
+  más; queda como plan B si Haiku falla la medición. Los lectores de
+  facturas de AWS, Azure y Google se descartaron: cuestan igual o más y no
+  razonan (no clasifican costo / gasto / activo). Tesseract se descartó
+  (medido con recibos de prueba inventados: en papel desteñido con sello
+  acertó 3 de 40 facturas completas).
+- Un error que se escapa en el 606 cuesta ~US$40 (recargo de la Ley 30-26,
+  intereses, corrección). Por eso hay red de seguridad: validaciones
+  automáticas, relectura y persona.
+- Costo estimado: 1,500 facturas al mes ≈ US$2–2.50 solo Haiku, y ~US$7.50
+  si Sonnet relee el 25%. Sin medir todavía con facturas reales.
+
+**Cómo funciona** (`src/lib/lectura-escalonada.ts`, lógica pura con 18
+pruebas):
+1. `MODELO_OCR_POR_DEFECTO` = Haiku 5.5 lee la factura.
+2. `motivosRelectura` revisa su lectura:
+   - lo que la IA leyó distinto al QR (NCF, RNC, fecha o total), o la
+     factura entendida al revés;
+   - montos que no suman el total (con el ITBIS de la DGII si lo hay);
+   - errores del formato en los campos que llena la IA (obligatorio vacío,
+     formato inválido);
+   - el dígito verificador del RNC o la cédula.
+   No cuenta lo exacto (QR, DGII) ni lo que una relectura no arregla. No se
+   usa la confianza del modelo.
+3. Si hay motivos: **una sola** relectura con `MODELO_OCR_RELECTURA` =
+   Sonnet 5.5. Un error de servicio de Haiku también pasa a Sonnet.
+4. Si Sonnet tampoco pasa, o falla: **captura manual**
+   (`LecturaIA.manual`). Todo lo que llena la IA, salvo lo exacto del QR y
+   la DGII, queda en ámbar.
+   - En el lote: tarjeta "Requiere captura manual" con los motivos, y aviso
+     arriba.
+   - En el formulario: alerta roja "es crucial que una persona valide esta
+     factura", y no se ofrece "Leer con IA lo que falta".
+   - `esAprobable` la excluye siempre de la aprobación en bloque: se valida
+     una por una.
+5. **No se vuelve a leer el mismo documento**: `huellaArchivo` (SHA-256).
+   - Para una foto es la del archivo original; para una página de PDF, la de
+     la imagen de la página.
+   - En el lote, una página con la huella de una factura guardada queda como
+     duplicada sin llamar a la IA. Si esa factura era de captura manual, se
+     avisa que no se permite volver a leerla.
+   - En una factura suelta, un archivo con la huella de una de captura
+     manual no se lee.
+   - Límite: si la factura se borra, su huella se va con ella.
+   - Límite: un PDF subido como factura suelta y luego en un lote tiene
+     huellas distintas.
+6. Errores de servicio (falta el código, la IA no está configurada) no
+   cuentan como lectura fallida: la página queda sin leer y se puede
+   reintentar.
+
+**También**:
+- Las instrucciones fijas van en `system` con `cache_control`. Lo que cambia
+  por factura (actividad, tramos) va en el mensaje.
+- `uso` trae los tokens de caché, y `costoUSD` los cobra a 0.1× (lectura) y
+  1.25× (escritura).
+- Las páginas se guardan y se envían sin los márgenes blancos
+  (`src/lib/lote/recorte.ts`, con pruebas). El QR se sigue buscando en la
+  página entera.
+- "Comparar modelos" trae por defecto Haiku (principal) contra Sonnet
+  (relectura).
+
+**Comprobado** (IA y DGII simuladas):
+- `npm test`: 260/260.
+- Navegador, 18/18 del flujo nuevo:
+  - una factura que pasa usa solo Haiku;
+  - una que no cuadra se relee con Sonnet y queda "Lista";
+  - una que falla dos veces queda de captura manual, sin tercer intento;
+  - "Aprobar las 2" deja fuera la manual;
+  - se guardan `lecturaIA` y la huella;
+  - la manual abre con la alerta y sin "Leer con IA lo que falta";
+  - volver a subirla, en el lote o suelta, no llama a la IA;
+  - una suelta con RNC de dígito verificador malo termina en captura manual.
+- Regresión: 15/15 comparar, 15/15 lote (una expectativa cambió a propósito:
+  una lectura que no coincide con el QR dos veces termina en captura manual),
+  75/75 módulos, 37/37 Dashboard.
+
+**Pendiente**:
+- Medir con facturas reales cuántas pasan con Haiku, cuántas relee Sonnet y
+  cuántas quedan manuales; con eso, el costo real por factura.
+- Verificar que la caché realmente se use: `tokensCacheLeidos` > 0 en
+  lecturas seguidas.
+
 ## Formatos 606 y 607 (fuentes recibidas del usuario el 2026-11-15)
 
 El usuario entregó las dos herramientas de envío de la DGII (Excel con
@@ -1533,12 +1636,13 @@ verificación automática en la DGII.
   puede deducir), y opcionales `rncCliente` y `actividad`. Hasta 4 MB en
   total. Si faltan `ANTHROPIC_API_KEY` u `OCR_CODIGO_ACCESO` responde 503
   en vez de quedar abierta.
-- Modelo `claude-opus-5-5` por defecto (`MODELO_OCR_POR_DEFECTO` en
-  `src/lib/ocr-modelos.ts`), salida estructurada con Zod, `effort: medium`,
-  con fallback de servidor (`fallbacks: 'default'`). El campo opcional
-  `modelo` elige otro de `MODELOS_OCR` (lo usa "Comparar modelos"). La
-  respuesta trae `uso` (modelo y tokens). Decisión de costo/precisión
-  pendiente de la comparación con facturas reales.
+- Modelo por defecto **Haiku 5.5** (`MODELO_OCR_POR_DEFECTO`); el
+  navegador pide Sonnet 5.5 (`MODELO_OCR_RELECTURA`) para la relectura (ver
+  "Lectura escalonada"). Salida estructurada con Zod, `effort: medium`, y
+  fallback de servidor (`fallbacks: 'default'`) solo en los modelos que lo
+  tienen (Haiku no). Instrucciones en `system` con caché. El campo opcional
+  `modelo` elige uno de `MODELOS_OCR`. La respuesta trae `uso` (modelo,
+  tokens y tokens de caché).
 - **Límite de complejidad del esquema (arreglado el 2026-11-19)**: la API
   admite como máximo 16 parámetros con tipo unión y 24 opcionales por
   solicitud con salida estructurada (documentación de Anthropic, "Schema

@@ -3,7 +3,7 @@ import type { ResultadoOCR } from '@/lib/ocr-tipos'
 import { esFacturaDeConsumo, vaConRncDelCliente } from '@/lib/dgii-formatos'
 import { leerQrEcf, pertenenciaSegunQr } from '@/lib/qr-ecf'
 import { esUrlConsultaDGII, requiereVerificacionHumana, type RespuestaDGII } from '@/lib/verificacion-dgii'
-import { CONTADOR_LOCAL, type CampoExtraido, type ClienteFiscal, type DocumentoFiscal, type TipoDocumento, type VerificacionDGII } from '@/types'
+import { CONTADOR_LOCAL, type CampoExtraido, type ClienteFiscal, type DocumentoFiscal, type LecturaIA, type TipoDocumento, type VerificacionDGII } from '@/types'
 
 // Captura por lotes, lógica pura: qué factura sale de cada página a partir de
 // su código QR y de la lectura con IA. Sin navegador ni almacenamiento, para
@@ -47,6 +47,10 @@ export interface BorradorPagina {
   qrUrl?: string
   // Lo que respondió la DGII al consultarla (ver `aplicarVerificacion`).
   dgii?: DatosDGIIPagina
+  // Cómo terminó la lectura escalonada (ver `src/lib/lectura-escalonada.ts`).
+  lecturaIA?: LecturaIA
+  // SHA-256 de la imagen enviada a la IA: reconoce el mismo documento.
+  huella?: string
 }
 
 export interface DatosDGIIPagina {
@@ -119,7 +123,7 @@ function montosDe(tipo: TipoDocumento): CampoExtraido[] {
 }
 
 // ¿Lo facturado más los impuestos da el total? null si falta algún dato.
-function cuadra(tipo: TipoDocumento, c: CamposDocumento): boolean | null {
+export function cuadra(tipo: TipoDocumento, c: CamposDocumento): boolean | null {
   const base = tipo === 'venta'
     ? c.montoFacturado
     : c.montoServicios === null && c.montoBienes === null ? null : (c.montoServicios ?? 0) + (c.montoBienes ?? 0)
@@ -267,6 +271,8 @@ export function documentoDesdePagina(
     ...conDatosDGII(borrador).campos,
     qrUrl: borrador.qrUrl,
     verificacionDGII: borrador.dgii?.verificacion,
+    lecturaIA: borrador.lecturaIA,
+    huellaArchivo: borrador.huella,
     id,
     contadorUid: CONTADOR_LOCAL,
     clienteId: cliente.id,

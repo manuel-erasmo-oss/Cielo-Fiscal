@@ -114,6 +114,22 @@ export type EstadoDGII =
   // La DGII respondió un estado que este sistema no conoce.
   | 'otro'
 
+// Resultado de la lectura escalonada: primero Haiku; si su lectura no pasa
+// las validaciones, UNA relectura con Sonnet; si tampoco pasa, la factura
+// queda para captura manual y no se permite volver a leerla con IA
+// (decisión del usuario, 2026-11-21).
+export interface LecturaIA {
+  // Modelo cuya lectura quedó en la factura.
+  modelo: string
+  // true si hubo relectura (la primera no pasó las validaciones).
+  releida: boolean
+  // true si ninguna lectura pasó las validaciones: una persona tiene que
+  // digitarla y validarla, y la IA no vuelve a leerla.
+  manual: boolean
+  // Por qué no pasó las validaciones (para mostrárselo a la persona).
+  motivos: string[]
+}
+
 export interface VerificacionDGII {
   estado: EstadoDGII
   // El texto tal como lo mostró la DGII (p. ej. "Aceptado").
@@ -199,6 +215,14 @@ export interface DocumentoFiscal {
   qrUrl?: string
   // Última respuesta de la DGII. Sin ella, la factura no se ha verificado.
   verificacionDGII?: VerificacionDGII
+
+  // ── Lectura con IA escalonada (decisión del usuario, 2026-11-21) ──
+  // Cómo terminó la lectura automática. Sin este dato, la factura no se leyó
+  // con IA (o es anterior a la lectura escalonada).
+  lecturaIA?: LecturaIA
+  // SHA-256 (hex) de la imagen que se envió a la IA. Sirve para reconocer el
+  // mismo documento si se vuelve a subir y no leerlo otra vez.
+  huellaArchivo?: string
 
   // ── Confianza de la extracción (snapshot en el dato, no solo en la UI) ──
   // 0..1, autorreportada por el modelo — orientativa, no una probabilidad

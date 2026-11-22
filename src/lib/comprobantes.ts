@@ -55,6 +55,9 @@ export function estadoDeFila(d: DocumentoFiscal): EstadoFila {
 // aprobar sin abrirla (misma regla que "Aprobar las N" desde el 2026-11-17).
 export function esAprobable(d: DocumentoFiscal, rncCliente: string): boolean {
   return d.estadoRevision === 'pendiente_revision' &&
+    // La IA no pudo leerla con seguridad (lectura escalonada): la valida una
+    // persona, una por una (decisión del usuario, 2026-11-21).
+    !d.lecturaIA?.manual &&
     d.camposIncompletos.length === 0 &&
     !requiereVerificacionHumana(d) &&
     !faltaClienteEnVenta(d) &&
