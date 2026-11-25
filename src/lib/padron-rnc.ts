@@ -115,3 +115,16 @@ export async function consultarPadron(rncOCedula: string): Promise<ResultadoPadr
   if (!prefijo) return { registro: null, fechaPadron: fechaArchivo }
   return { registro: buscarEnPedazo(await cargarPedazo(prefijo), rnc, actividades), fechaPadron: fechaArchivo }
 }
+
+// Actividad económica de un RNC según el padrón, para dársela a la IA como
+// pista. undefined si no hay RNC, no está o no se pudo consultar: es solo una
+// ayuda y nunca debe frenar la lectura.
+export async function actividadDelPadron(rnc: string | null | undefined): Promise<string | undefined> {
+  const digitos = soloDigitos(rnc ?? '')
+  if (digitos.length !== 9 && digitos.length !== 11) return undefined
+  try {
+    return (await consultarPadron(digitos)).registro?.actividad || undefined
+  } catch {
+    return undefined
+  }
+}

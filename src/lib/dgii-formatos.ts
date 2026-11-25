@@ -210,6 +210,13 @@ export function esFacturaDeConsumo(ncf: string | null): boolean {
 // comprobantes serie B se sigan dejando pasar.
 export const FIN_CALENDARIO_ECF = '2026-05-17'
 
+// Aviso de comprobante serie B emitido después de ese plazo: APAGADO por
+// decisión del usuario (2026-11-25: "quita las alertas correspondientes a las
+// facturas B1 hasta que se indique que definitivamente no se aceptarán").
+// Para volver a avisar, poner en true; la regla sigue en
+// `avisoComprobanteNoElectronico`.
+export const AVISAR_SERIE_B_VENCIDA = false
+
 // NCF de 19 posiciones (series A, P y Q, anteriores a mayo de 2018): solo
 // podían emitirse hasta el 30-04-2018 (Norma General 06-2018, art. 10). El
 // usuario decidió (2026-11-18) que el sistema NO los acepte, aunque la macro
@@ -321,9 +328,17 @@ function avisosDeComprobanteCompra(doc: CamposDocumento, tipo: string, p: Proble
   // emisor estaba en contingencia notificada) y art. 8 (prórroga única de
   // hasta 6 meses). No se sabe a qué grupo pertenece cada emisor ni si tuvo
   // prórroga, así que solo se avisa desde el último plazo.
-  if (!esECF(doc.ncf) && doc.fechaComprobante && doc.fechaComprobante >= FIN_CALENDARIO_ECF) {
-    p.push(aviso('ncf', 'Comprobante no electrónico emitido después de mayo de 2026, cuando venció el último plazo para facturar en electrónico. Solo vale para costos, gastos y crédito de ITBIS si el emisor tenía una prórroga vigente o estaba en contingencia notificada a la DGII. Verifícalo.'))
+  if (AVISAR_SERIE_B_VENCIDA) {
+    const a = avisoComprobanteNoElectronico(doc)
+    if (a) p.push(a)
   }
+}
+
+export function avisoComprobanteNoElectronico(doc: { ncf: string | null; fechaComprobante: string | null }): Problema | null {
+  if (!esECF(doc.ncf) && doc.fechaComprobante && doc.fechaComprobante >= FIN_CALENDARIO_ECF) {
+    return aviso('ncf', 'Comprobante no electrónico emitido después de mayo de 2026, cuando venció el último plazo para facturar en electrónico. Solo vale para costos, gastos y crédito de ITBIS si el emisor tenía una prórroga vigente o estaba en contingencia notificada a la DGII. Verifícalo.')
+  }
+  return null
 }
 
 // Decreto 293-11 (Reglamento del ITBIS), art. 25 párrafo I: cuando una

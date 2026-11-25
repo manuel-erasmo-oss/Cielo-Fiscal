@@ -88,6 +88,9 @@ export interface ContextoCliente {
   // Modelo de IA (uno de `MODELOS_OCR`). Sin indicar, el que use el servidor
   // por defecto. Lo usa la herramienta "Comparar modelos".
   modelo?: string
+  // Actividad económica del proveedor según el padrón de RNC de la DGII:
+  // pista para el tipo de bienes y servicios.
+  actividadProveedor?: string
 }
 
 // Lee una factura con IA. `tipo` es el que se asume si la factura no deja
@@ -113,6 +116,7 @@ export async function extraerFactura(archivo: File, tipo: TipoDocumento, context
   if (contexto.rncCliente) form.set('rncCliente', contexto.rncCliente)
   if (contexto.actividad?.trim()) form.set('actividad', contexto.actividad.trim())
   if (contexto.modelo) form.set('modelo', contexto.modelo)
+  if (contexto.actividadProveedor) form.set('actividadProveedor', contexto.actividadProveedor)
 
   let respuesta: Response
   try {

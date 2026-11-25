@@ -995,6 +995,39 @@ pruebas):
 - Verificar que la caché realmente se use: `tokensCacheLeidos` > 0 en
   lecturas seguidas.
 
+## Tipo de bienes y servicios: memoria por proveedor y pista del padrón (2026-11-25) — construido
+
+El usuario vio muchas dudas de la IA en "Tipo de bienes y servicios" y
+aprobó ("dale") las dos propuestas:
+- **Memoria por proveedor** (`src/lib/memoria-proveedor.ts`, 6 pruebas):
+  - Si las últimas facturas revisadas (hasta 5) de ese proveedor en esa
+    empresa tienen todas la misma categoría, esa categoría se usa y deja
+    de estar en duda.
+  - Es por empresa porque lo mismo puede ser costo para un cliente y gasto
+    para otro.
+  - Si no coinciden, decide la IA.
+  - No guarda nada aparte: sale de las facturas revisadas.
+  - Se aplica a la lectura antes de evaluar la relectura: una categoría
+    vacía que llena la memoria ya no paga una relectura con Sonnet.
+  - En el formulario se avisa "la misma que le diste a las facturas
+    revisadas de este proveedor".
+- **Pista del padrón**: `actividadDelPadron` busca la actividad del
+  proveedor y va en el campo `actividadProveedor` de `/api/ocr`, que la
+  agrega al contexto de la lectura.
+  - Con QR, ya en la primera lectura.
+  - Sin QR, en la relectura con Sonnet, con el RNC que leyó Haiku
+    (`leerEscalonado` pasa la lectura anterior).
+  - Costo: unos 20 tokens.
+- Comprobado con la IA simulada:
+  - `npm test` 273/273.
+  - Navegador 7/7:
+    - un proveedor conocido con la categoría vacía queda "Lista" con 09,
+      con una sola llamada (Haiku);
+    - un proveedor nuevo va sin pista en la primera lectura y Sonnet recibe
+      la actividad del padrón;
+    - se guarda con la categoría recordada, y el formulario lo explica.
+  - Regresión de la lectura escalonada: 18/18.
+
 ## Formatos 606 y 607 (fuentes recibidas del usuario el 2026-11-15)
 
 El usuario entregó las dos herramientas de envío de la DGII (Excel con
@@ -1280,7 +1313,7 @@ cita en cada regla): tipo de un e-NCF = las 2 posiciones después de la E;
 E34 resta como nota de crédito; E43 y E47 exigen el RNC del cliente como
 13 y 17; avisos (no bloquean) de factura de consumo en compras, de pagos al
 exterior con bienes y de NCF no electrónico desde el 17-05-2026
-(`FIN_CALENDARIO_ECF`, día exacto ⚠️ sin verificar); el reporte de ingresos
+(`FIN_CALENDARIO_ECF`, día exacto ⚠️ sin verificar; **apagado el 2026-11-25** por pedido del usuario: "quita las alertas correspondientes a las facturas B1 hasta que se indique que definitivamente no se aceptarán". Se vuelve a encender con `AVISAR_SERIE_B_VENCIDA`); el reporte de ingresos
 admite E44-E46 y rechaza E41/E43/E47; la IA y el QR toman como compra los
 comprobantes que emite el propio comprador (11/41, 13/43, 17/47). En
 `dgii-fiscal.ts`: IT-1 día 20, ISR jurídicas 27% y tasa reducida 16% pasan

@@ -53,14 +53,19 @@ const INSTRUCCIONES = instrucciones()
 
 // Lo que cambia en cada lectura: cómo viene el documento y a qué se dedica el
 // comprador. Va después de las imágenes, fuera de la parte en caché.
-function contextoDeLectura(actividad: string, tramos: number): string {
+function contextoDeLectura(actividad: string, tramos: number, actividadProveedor: string): string {
   const comoViene = tramos > 1
     ? `Las ${tramos} imágenes adjuntas son tramos consecutivos, de arriba abajo, de UN solo documento (un recibo largo partido en partes). Algunos renglones se repiten entre un tramo y el siguiente: cuéntalos una sola vez.`
     : 'El documento adjunto es una página o una foto.'
   const negocio = actividad
     ? `El comprador se dedica a esto (dato del contador, úsalo solo como contexto para tipoBienesServicios): «${actividad}».`
     : 'No se sabe a qué se dedica el comprador; para tipoBienesServicios decide solo con lo que muestra la factura.'
-  return `${comoViene}\n${negocio}\nLee el documento según las instrucciones.`
+  // Actividad con que el proveedor está registrado en la DGII (del padrón de
+  // RNC): pista para el tipo de bienes y servicios de una compra.
+  const proveedor = actividadProveedor
+    ? `\nEl emisor del comprobante está registrado en la DGII con esta actividad económica (dato del padrón de RNC, cortado a 30 caracteres; úsalo solo como pista para tipoBienesServicios si es una compra): «${actividadProveedor}».`
+    : ''
+  return `${comoViene}\n${negocio}${proveedor}\nLee el documento según las instrucciones.`
 }
 
 function instrucciones(): string {
@@ -170,6 +175,8 @@ export async function POST(request: Request) {
   // Textos libres que van al prompt: se acotan.
   const actividadCruda = form.get('actividad')
   const actividad = typeof actividadCruda === 'string' ? actividadCruda.replace(/[«»\r\n]+/g, ' ').trim().slice(0, 300) : ''
+  const proveedorCrudo = form.get('actividadProveedor')
+  const actividadProveedor = typeof proveedorCrudo === 'string' ? proveedorCrudo.replace(/[«»\r\n]+/g, ' ').trim().slice(0, 100) : ''
   const rncCrudo = form.get('rncCliente')
   const rncDigitos = typeof rncCrudo === 'string' ? soloDigitos(rncCrudo) : ''
   const rncCliente = rncDigitos.length === 9 || rncDigitos.length === 11 ? rncDigitos : null
@@ -205,7 +212,7 @@ export async function POST(request: Request) {
       messages: [
         {
           role: 'user',
-          content: [...adjuntos, { type: 'text', text: contextoDeLectura(actividad, archivos.length) }],
+          content: [...adjuntos, { type: 'text', text: contextoDeLectura(actividad, archivos.length, actividadProveedor) }],
         },
       ],
     })
