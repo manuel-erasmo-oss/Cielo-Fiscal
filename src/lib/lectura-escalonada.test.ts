@@ -33,9 +33,21 @@ describe('motivosRelectura', () => {
     expect(m).toContain('El dígito verificador del RNC o la cédula no cuadra.')
   })
 
-  it('campo obligatorio vacío (tipo de bienes del 606) → relectura', () => {
-    const m = motivosRelectura(sinQr, buena({ tipoBienesServicios: null }), ctx(), CLIENTE.rncCedula)
-    expect(m.some(x => x.startsWith('Tipo de bienes'))).toBe(true)
+  it('solo las partidas importantes provocan relectura (decisión del usuario, 2026-11-25)', () => {
+    // Tipo de bienes vacío, nombre dudoso: NO (quedan para la persona o la memoria del proveedor).
+    expect(motivosRelectura(sinQr, buena({ tipoBienesServicios: null }), ctx(), CLIENTE.rncCedula)).toEqual([])
+    expect(motivosRelectura(sinQr, buena({}, { camposDudosos: ['nombreContraparte', 'tipoBienesServicios'] }), ctx(), CLIENTE.rncCedula)).toEqual([])
+    // ITBIS o fecha que no se ven bien: SÍ.
+    expect(motivosRelectura(sinQr, buena({}, { camposDudosos: ['itbisFacturado'] }), ctx(), CLIENTE.rncCedula)).toEqual(['ITBIS facturado: no se ve con claridad.'])
+    expect(motivosRelectura(sinQr, buena({ fechaComprobante: null }), ctx(), CLIENTE.rncCedula).some(x => x.startsWith('Fecha'))).toBe(true)
+    // NCF y total sin leer: SÍ.
+    expect(motivosRelectura(sinQr, buena({ ncf: null }), ctx(), CLIENTE.rncCedula).some(x => x.startsWith('NCF'))).toBe(true)
+    expect(motivosRelectura(sinQr, buena({ montoTotal: null }), ctx(), CLIENTE.rncCedula)).toContain('Total de la factura: no se pudo leer.')
+  })
+
+  it('con QR, lo que trae el QR no cuenta aunque la IA dude de ello', () => {
+    const conQr = interpretarPagina(QR, ctx())
+    expect(motivosRelectura(conQr, buena({ ncf: 'E310000007629' }, { camposDudosos: ['ncf', 'montoTotal'] }), ctx(), CLIENTE.rncCedula)).toEqual([])
   })
 
   it('con QR: un NCF o un total distinto al firmado → relectura; igual salvo formato → pasa', () => {
@@ -93,7 +105,7 @@ describe('leerEscalonado', () => {
     const r = await leerEscalonado(async () => { throw new Error('se cayó') }, () => [], fatal)
     expect(r.manual).toBe(true)
     expect(r.lectura).toBeNull()
-    expect(r.motivos).toEqual(['La lectura con Haiku 5.5 falló: se cayó', 'La relectura con Sonnet 5.5 falló: se cayó'])
+    expect(r.motivos).toEqual(['La primera lectura falló: se cayó', 'La relectura falló: se cayó'])
   })
 
   it('un error fatal (código de acceso, IA no configurada) se relanza: la página queda sin leer', async () => {

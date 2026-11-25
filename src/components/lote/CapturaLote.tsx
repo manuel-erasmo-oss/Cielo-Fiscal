@@ -24,7 +24,6 @@ import { OCRError, extraerFactura } from '@/lib/ocr-cliente'
 import { MOTIVO_YA_AGOTADA, aplicarResultado, huellaDe, leerEscalonado, motivosRelectura } from '@/lib/lectura-escalonada'
 import { aplicarCategoriaRecordada, categoriaRecordada } from '@/lib/memoria-proveedor'
 import { actividadDelPadron } from '@/lib/padron-rnc'
-import { MODELO_OCR_POR_DEFECTO, MODELO_OCR_RELECTURA, modeloOCR } from '@/lib/ocr-modelos'
 import { VerificacionError, verificarEnDGII } from '@/lib/verificacion-cliente'
 import { esECF } from '@/lib/dgii-formatos'
 import { MIME_PDF } from '@/lib/ocr-tipos'
@@ -203,7 +202,7 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
     const pendientes = lista.filter(leerConIA)
     if (pendientes.length === 0) return lista
     if (!leerCodigoOCR()) {
-      setAvisoIA({ mensaje: 'La lectura con IA no corrió: falta el código de acceso. Escríbelo en Configuración y vuelve a intentarlo.', deCodigo: true })
+      setAvisoIA({ mensaje: 'La lectura automática no corrió: falta el código de acceso. Escríbelo en Configuración y vuelve a subir el lote.', deCodigo: true })
       return lista
     }
     setFase('leyendo_ia')
@@ -329,11 +328,6 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
     if (vivo.current) setFase('resultado')
   }
 
-  // Las que fallaron o no se alcanzaron a leer (también tienen leidaConIA = false).
-  async function reintentarFallidas() {
-    await leerConIALasPaginas(paginas)
-    if (vivo.current) setFase('resultado')
-  }
 
   const rnc = cliente?.rncCedula ?? ''
   const pendientesDe = (p: PaginaLote): CampoExtraido[] => observaciones(p.borrador, rnc)
@@ -344,7 +338,6 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
     return {
       conQr: paginas.filter(p => p.borrador.conQr).length,
       leidasIA: paginas.filter(p => p.borrador.leidaConIA).length,
-      sinLeerIA: paginas.filter(leerConIA).length,
       sinVerificar: paginas.filter(verificarDGII).length,
       verificadas: paginas.filter(p => p.borrador.dgii).length,
       invalidasDGII: paginas.filter(p => p.borrador.dgii && ['rechazado', 'no_encontrado'].includes(p.borrador.dgii.verificacion.estado)).length,
@@ -564,12 +557,6 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
                   Verificar en la DGII las {conteo.sinVerificar} que faltan
                 </button>
               )}
-              {conteo.sinLeerIA > 0 && (
-                <button type="button" onClick={() => void reintentarFallidas()} className={BTN_SECONDARY}>
-                  <Sparkles className="h-4 w-4" />
-                  Leer con IA las {conteo.sinLeerIA} que faltan
-                </button>
-              )}
               <button type="button" onClick={() => void guardar()} disabled={guardando || conteo.incluidas === 0} className={BTN_PRIMARY}>
                 Guardar {conteo.incluidas} factura(s)
               </button>
@@ -611,7 +598,7 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
                 <strong className="font-semibold">{conteo.manuales} {conteo.manuales === 1 ? 'factura requiere' : 'facturas requieren'} captura manual.</strong>{' '}
-                Ni {modeloOCR(MODELO_OCR_POR_DEFECTO)?.nombre} ni la relectura con {modeloOCR(MODELO_OCR_RELECTURA)?.nombre} pudieron leerlas con seguridad.
+                El sistema no pudo leerlas con seguridad, ni en la primera lectura ni en la relectura automática.
                 No se permite volver a leerlas con IA: una persona tiene que digitarlas y validarlas (están marcadas como &quot;Requiere captura manual&quot;).
               </span>
             </div>
@@ -682,9 +669,6 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
                       <p className="font-semibold">Requiere captura manual</p>
                       {p.borrador.lecturaIA.motivos.slice(0, 2).map(m => <p key={m}>· {m}</p>)}
                     </div>
-                  )}
-                  {p.borrador.lecturaIA?.releida && !p.borrador.lecturaIA.manual && (
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Releída con {modeloOCR(p.borrador.lecturaIA.modelo)?.nombre ?? 'otro modelo'}</p>
                   )}
                   {p.borrador.dgii && (
                     <p className={cn('flex items-center gap-1 text-[11px] font-semibold',

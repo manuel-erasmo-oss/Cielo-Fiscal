@@ -55,12 +55,6 @@ const ETIQUETA: Record<CampoComparado, string> = {
   esComprobante: 'Es una factura',
 }
 
-function etiquetaRol(id: string): string {
-  if (id === MODELO_OCR_POR_DEFECTO) return ' (principal)'
-  if (id === MODELO_OCR_RELECTURA) return ' (relectura)'
-  return ''
-}
-
 function usd(valor: number): string {
   return `US$${valor.toFixed(valor < 0.01 ? 4 : 3)}`
 }
@@ -68,8 +62,8 @@ function usd(valor: number): string {
 export default function CompararModelosPage() {
   const { clientes } = useDatos()
   const [clienteId, setClienteId] = useState('')
-  const [modeloA, setModeloA] = useState(MODELO_OCR_POR_DEFECTO)
-  const [modeloB, setModeloB] = useState(MODELO_OCR_RELECTURA)
+  const [modeloA, setModeloA] = useState<string>(MODELO_OCR_POR_DEFECTO)
+  const [modeloB, setModeloB] = useState<string>(MODELO_OCR_RELECTURA)
   const [archivos, setArchivos] = useState<File[]>([])
   const [paginas, setPaginas] = useState<PaginaComparada[]>([])
   const [estado, setEstado] = useState<'inicio' | 'leyendo' | 'listo'>('inicio')
@@ -188,13 +182,13 @@ export default function CompararModelosPage() {
           <div className="flex flex-col gap-1.5">
             <label htmlFor="modelo-a" className={LABEL_CLASS}>Modelo A</label>
             <select id="modelo-a" value={modeloA} onChange={e => setModeloA(e.target.value)} className={INPUT_CLASS} disabled={estado === 'leyendo'}>
-              {MODELOS_OCR.map(m => <option key={m.id} value={m.id}>{m.nombre}{etiquetaRol(m.id)}</option>)}
+              {MODELOS_OCR.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="modelo-b" className={LABEL_CLASS}>Modelo B</label>
             <select id="modelo-b" value={modeloB} onChange={e => setModeloB(e.target.value)} className={INPUT_CLASS} disabled={estado === 'leyendo'}>
-              {MODELOS_OCR.map(m => <option key={m.id} value={m.id}>{m.nombre}{etiquetaRol(m.id)}</option>)}
+              {MODELOS_OCR.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
             </select>
           </div>
         </div>
@@ -228,7 +222,7 @@ export default function CompararModelosPage() {
         </div>
         <p className={cn(SUBTITULO_TARJETA, 'mt-3')}>
           Hasta {MAXIMO_PAGINAS} páginas. Cada página se lee con los dos modelos, así que se paga dos veces. Los costos son estimados con los
-          precios de lista; el exacto está en la consola de Anthropic.
+          precios de lista; el exacto está en la consola del proveedor.
         </p>
         {error && <p role="alert" className="mt-3 text-sm text-rose-600 dark:text-rose-400">{error}</p>}
       </div>

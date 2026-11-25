@@ -1,16 +1,18 @@
 import { conDatosDGII, cuadra, fusionarConLectura, type BorradorPagina, type ContextoLote } from '@/lib/lote/borrador'
 import { CAMPOS_EXTRAIDOS, ETIQUETA_CAMPO, problemasDeRevision } from '@/lib/documentos'
 import { digitoVerificadorCorrecto } from '@/lib/dgii-formatos'
-import { MODELO_OCR_POR_DEFECTO, MODELO_OCR_RELECTURA, modeloOCR } from '@/lib/ocr-modelos'
+import { MODELO_OCR_POR_DEFECTO, MODELO_OCR_RELECTURA } from '@/lib/ocr-modelos'
 import type { ResultadoOCR } from '@/lib/ocr-tipos'
 import type { CampoExtraido, TipoDocumento } from '@/types'
 
 // Lectura escalonada (decisión del usuario, 2026-11-21):
-//   1. Haiku lee la factura.
-//   2. Si su lectura no pasa las validaciones automáticas, Sonnet la relee
-//      UNA sola vez.
-//   3. Si Sonnet tampoco pasa, la factura queda para captura manual: una
+//   1. El modelo principal (Haiku) lee la factura.
+//   2. Si no se ven bien las partidas importantes (montos, ITBIS, RNC, NCF o
+//      fecha; ver CAMPOS_IMPORTANTES), el de relectura (Sonnet) la lee UNA
+//      sola vez, automáticamente: la persona nunca pide una relectura.
+//   3. Si tampoco se ven bien, la factura queda para captura manual: una
 //      persona la digita y la valida, y no se permite volver a leerla con IA.
+// El usuario no ve qué IA se usa (decisión del usuario, 2026-11-25).
 // No se usa la confianza que reporta el propio modelo para decidir (no es
 // confiable; ver CLAUDE.md, "Costo y límites").
 // Lógica pura: la llamada a la IA se recibe como función, para poder probarla.
@@ -61,6 +63,16 @@ function igual(a: unknown, b: unknown): boolean {
 
 const QR_A_COMPARAR: CampoExtraido[] = ['ncf', 'rncCedulaContraparte', 'fechaComprobante', 'montoTotal']
 
+// Partidas importantes: solo por ellas interviene el modelo de relectura
+// (decisión del usuario, 2026-11-25: "solo vamos a usar Sonnet para partidas
+// que realmente importan ... montos e ITBIS, RNC o NCF o e-CF", y "incluye la
+// fecha también"). Si la IA duda de otro campo (nombre, tipo de bienes,
+// forma de pago), queda en ámbar para la persona, sin relectura.
+export const CAMPOS_IMPORTANTES: Record<TipoDocumento, readonly CampoExtraido[]> = {
+  compra: ['rncCedulaContraparte', 'ncf', 'fechaComprobante', 'montoServicios', 'montoBienes', 'itbisFacturado', 'montoTotal'],
+  venta: ['rncCedulaContraparte', 'ncf', 'fechaComprobante', 'montoFacturado', 'itbisFacturado', 'montoTotal'],
+}
+
 // Por qué una lectura no pasa las validaciones. Vacío = pasa.
 // `base` es la página ANTES de leerla (con su QR y lo de la DGII, si los hay).
 export function motivosRelectura(base: BorradorPagina, lectura: ResultadoOCR, ctx: ContextoLote, rncCliente: string): string[] {
@@ -88,14 +100,20 @@ export function motivosRelectura(base: BorradorPagina, lectura: ResultadoOCR, ct
   const { campos } = conDatosDGII(fusion)
   if (cuadra(fusion.tipo, campos) === false) motivos.push('Los montos no suman el total de la factura.')
 
-  // 3. Lo que el formato de la DGII objeta en los campos que leyó la IA
-  //    (vacíos obligatorios, formatos inválidos). Lo exacto no cuenta.
+  // 3. Partidas importantes que no se ven: lo que el formato de la DGII
+  //    objeta en ellas (vacías u obligatorias con formato inválido), el total
+  //    sin leer, y las que la propia IA marcó como dudosas. Lo exacto (QR,
+  //    DGII) no cuenta.
   const exactos = camposExactos(fusion)
-  const leeIA = new Set(CAMPOS_QUE_LEE_LA_IA[fusion.tipo])
+  const importantes = new Set(CAMPOS_IMPORTANTES[fusion.tipo])
   for (const p of problemasDeRevision(fusion.tipo, { ...campos, qrUrl: fusion.qrUrl }, rncCliente)) {
-    if (p.nivel === 'error' && p.campo && leeIA.has(p.campo) && !exactos.has(p.campo)) {
+    if (p.nivel === 'error' && p.campo && importantes.has(p.campo) && !exactos.has(p.campo)) {
       motivos.push(`${ETIQUETA_CAMPO[p.campo]}: ${p.mensaje}`)
     }
+  }
+  if (campos.montoTotal === null && !exactos.has('montoTotal')) motivos.push(`${ETIQUETA_CAMPO.montoTotal}: no se pudo leer.`)
+  for (const c of lectura.camposDudosos) {
+    if (importantes.has(c) && !exactos.has(c)) motivos.push(`${ETIQUETA_CAMPO[c]}: no se ve con claridad.`)
   }
 
   // 4. Un RNC con el dígito verificador malo suele ser un dígito mal leído.
@@ -131,7 +149,6 @@ export interface ResultadoEscalonado {
   motivos: string[]
 }
 
-const nombre = (id: string) => modeloOCR(id)?.nombre ?? id
 const mensajeDe = (e: unknown) => (e instanceof Error ? e.message : 'error desconocido')
 
 // Haiku primero; si no pasa, UNA relectura con Sonnet; si tampoco, manual.
@@ -153,7 +170,7 @@ export async function leerEscalonado(
     if (motivos.length === 0) return { lectura: primera, modelo: MODELO_OCR_POR_DEFECTO, releida: false, manual: false, motivos: [] }
   } catch (e) {
     if (esFatal(e)) throw e
-    motivos = [`La lectura con ${nombre(MODELO_OCR_POR_DEFECTO)} falló: ${mensajeDe(e)}`]
+    motivos = [`La primera lectura falló: ${mensajeDe(e)}`]
   }
 
   let segunda: ResultadoOCR
@@ -166,7 +183,7 @@ export async function leerEscalonado(
       modelo: primera ? MODELO_OCR_POR_DEFECTO : MODELO_OCR_RELECTURA,
       releida: true,
       manual: true,
-      motivos: [...motivos, `La relectura con ${nombre(MODELO_OCR_RELECTURA)} falló: ${mensajeDe(e)}`],
+      motivos: [...motivos, `La relectura falló: ${mensajeDe(e)}`],
     }
   }
   const motivosSegunda = evaluar(segunda)
