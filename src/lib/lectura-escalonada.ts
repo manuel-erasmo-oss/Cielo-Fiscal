@@ -137,15 +137,18 @@ const mensajeDe = (e: unknown) => (e instanceof Error ? e.message : 'error desco
 // Haiku primero; si no pasa, UNA relectura con Sonnet; si tampoco, manual.
 // `esFatal`: errores que no son de la lectura sino del servicio (falta el
 // código, el servidor no tiene la IA): se relanzan y la página queda sin leer.
+// `leer` recibe además la lectura anterior (la de Haiku) en la relectura,
+// para que quien llama pueda dar más contexto (p. ej. la actividad del
+// proveedor cuyo RNC leyó Haiku).
 export async function leerEscalonado(
-  leer: (modelo: string) => Promise<ResultadoOCR>,
+  leer: (modelo: string, anterior: ResultadoOCR | null) => Promise<ResultadoOCR>,
   evaluar: (lectura: ResultadoOCR) => string[],
   esFatal: (e: unknown) => boolean,
 ): Promise<ResultadoEscalonado> {
   let primera: ResultadoOCR | null = null
   let motivos: string[]
   try {
-    primera = await leer(MODELO_OCR_POR_DEFECTO)
+    primera = await leer(MODELO_OCR_POR_DEFECTO, null)
     motivos = evaluar(primera)
     if (motivos.length === 0) return { lectura: primera, modelo: MODELO_OCR_POR_DEFECTO, releida: false, manual: false, motivos: [] }
   } catch (e) {
@@ -155,7 +158,7 @@ export async function leerEscalonado(
 
   let segunda: ResultadoOCR
   try {
-    segunda = await leer(MODELO_OCR_RELECTURA)
+    segunda = await leer(MODELO_OCR_RELECTURA, primera)
   } catch (e) {
     if (esFatal(e)) throw e
     return {

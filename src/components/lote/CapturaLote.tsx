@@ -22,6 +22,8 @@ import {
 import { LoteError, MAXIMO_PAGINAS_LOTE, leerPaginas, type PaginaLeida } from '@/lib/lote/leer-paginas'
 import { OCRError, extraerFactura } from '@/lib/ocr-cliente'
 import { MOTIVO_YA_AGOTADA, aplicarResultado, huellaDe, leerEscalonado, motivosRelectura } from '@/lib/lectura-escalonada'
+import { aplicarCategoriaRecordada, categoriaRecordada } from '@/lib/memoria-proveedor'
+import { actividadDelPadron } from '@/lib/padron-rnc'
 import { MODELO_OCR_POR_DEFECTO, MODELO_OCR_RELECTURA, modeloOCR } from '@/lib/ocr-modelos'
 import { VerificacionError, verificarEnDGII } from '@/lib/verificacion-cliente'
 import { esECF } from '@/lib/dgii-formatos'
@@ -245,7 +247,17 @@ export function CapturaLote({ tipo: tipoPorDefecto }: { tipo: TipoDocumento }) {
             : aplicarResultado(
                 base,
                 await leerEscalonado(
-                  modelo => extraerFactura(archivo, base.tipo, { rncCliente: cliente.rncCedula, actividad: cliente.actividad, modelo }),
+                  async (modelo, anterior) => {
+                    // Pista para el tipo de bienes y servicios: la actividad del
+                    // proveedor en el padrón (RNC del QR, o el que leyó Haiku).
+                    const rncAntes = base.conQr ? base.campos.rncCedulaContraparte : anterior?.extraccion.rncCedulaContraparte
+                    const actividadProveedor = base.tipo === 'compra' ? await actividadDelPadron(rncAntes) : undefined
+                    const lectura = await extraerFactura(archivo, base.tipo, { rncCliente: cliente.rncCedula, actividad: cliente.actividad, modelo, actividadProveedor })
+                    // Categoría que una persona ya le dio a este proveedor en
+                    // esta empresa: manda sobre la de la IA.
+                    const rncProveedor = base.conQr ? base.campos.rncCedulaContraparte : lectura.extraccion.rncCedulaContraparte
+                    return aplicarCategoriaRecordada(lectura, categoriaRecordada(documentos, rncProveedor))
+                  },
                   lectura => motivosRelectura(base, lectura, ctxPagina, cliente.rncCedula),
                   e => e instanceof OCRError && (e.esDeCodigo || e.sinServicio),
                 ),

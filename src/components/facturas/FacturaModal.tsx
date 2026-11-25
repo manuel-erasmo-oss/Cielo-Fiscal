@@ -33,6 +33,8 @@ import { interpretarPagina } from '@/lib/lote/borrador'
 import { leerPaginas } from '@/lib/lote/leer-paginas'
 import { OCRError, esArchivoSoportado, extraerFactura } from '@/lib/ocr-cliente'
 import { CAMPOS_QUE_LEE_LA_IA, MOTIVO_YA_AGOTADA, huellaDe, leerEscalonado, motivosRelectura, type ResultadoEscalonado } from '@/lib/lectura-escalonada'
+import { aplicarCategoriaRecordada, categoriaRecordada } from '@/lib/memoria-proveedor'
+import { actividadDelPadron } from '@/lib/padron-rnc'
 import { verificarEnDGII } from '@/lib/verificacion-cliente'
 import { ETIQUETA_ESTADO_DGII, esUrlConsultaDGII, requiereVerificacionHumana } from '@/lib/verificacion-dgii'
 import { MIME_PDF } from '@/lib/ocr-tipos'
@@ -279,7 +281,13 @@ export function FacturaModal({
     const ctx = { cliente: { id: clienteId, rncCedula: delCliente?.rncCedula ?? '' }, tipoPorDefecto: tipoALeer, existentes: [] }
     const base = interpretarPagina(qr ?? null, ctx)
     return leerEscalonado(
-      modelo => extraerFactura(archivoALeer, tipoALeer, { rncCliente: delCliente?.rncCedula, actividad: delCliente?.actividad, modelo }),
+      async (modelo, anterior) => {
+        const rncAntes = base.conQr ? base.campos.rncCedulaContraparte : anterior?.extraccion.rncCedulaContraparte
+        const actividadProveedor = tipoALeer === 'compra' ? await actividadDelPadron(rncAntes) : undefined
+        const lectura = await extraerFactura(archivoALeer, tipoALeer, { rncCliente: delCliente?.rncCedula, actividad: delCliente?.actividad, modelo, actividadProveedor })
+        const rncProveedor = base.conQr ? base.campos.rncCedulaContraparte : lectura.extraccion.rncCedulaContraparte
+        return aplicarCategoriaRecordada(lectura, categoriaRecordada(documentos, rncProveedor))
+      },
       lectura => motivosRelectura(base, lectura, ctx, delCliente?.rncCedula ?? ''),
       e => e instanceof OCRError && (e.esDeCodigo || e.sinServicio),
     )
@@ -521,6 +529,11 @@ export function FacturaModal({
   }
 
   const contraparte = tipo === 'compra' ? 'proveedor' : 'cliente'
+  // Categoría que se le dio a este proveedor en las facturas ya revisadas
+  // (sin contar esta misma).
+  const recordada = tipo === 'compra'
+    ? categoriaRecordada(documentos.filter(d => d.id !== documento?.id), campos.rncCedulaContraparte)
+    : null
   const conVistaPrevia = paso === 'formulario' && !!urlVistaPrevia
 
   // Primer problema de la DGII asociado a un campo (errores antes que avisos).
@@ -826,7 +839,9 @@ export function FacturaModal({
                 {clasificacionContable(campos.tipoBienesServicios) && (
                   <p className="text-xs text-zinc-500 dark:text-zinc-400">
                     Clasificación contable: <strong className="text-zinc-800 dark:text-zinc-200">{clasificacionContable(campos.tipoBienesServicios)}</strong>
-                    {origen === 'ocr' && !documento && ' — elegida por el sistema; cámbiala si no corresponde.'}
+                    {recordada && recordada === campos.tipoBienesServicios
+                      ? ' — la misma que le diste a las facturas revisadas de este proveedor.'
+                      : origen === 'ocr' && !documento && ' — elegida por el sistema; cámbiala si no corresponde.'}
                   </p>
                 )}
 
