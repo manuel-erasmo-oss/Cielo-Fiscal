@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { AgendaFiscal } from '@/components/dashboard/AgendaFiscal'
 import {
-  BarraEstado, BarrasLista, COLOR_ESTADO, ColumnasMes, ColumnasPares, Leyenda, DonaComposicion, LineaMes, VARIABLES_GRAFICOS, periodoLargo,
+  BarraEstado, BarrasLista, COLOR_ESTADO, ColumnasMes, ColumnasPares, Leyenda, DonaComposicion, LineaMes, NumeroAnimado, VARIABLES_GRAFICOS, periodoLargo,
 } from '@/components/dashboard/Graficos'
 import { Pagina } from '@/components/layout/Pagina'
 import { rutaEmpresa, useEmpresaActiva } from '@/lib/datos/empresa-context'
@@ -200,7 +200,7 @@ export default function DashboardEmpresaPage() {
               ]} />
               <div className="mt-4 flex items-baseline justify-between gap-3 border-t border-dashed border-zinc-200 pt-3 text-sm dark:border-[#252840]">
                 <span className="text-zinc-500 dark:text-zinc-400">Ventas menos compras</span>
-                <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{formatRD(dif, 0)}</span>
+                <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100"><NumeroAnimado valor={dif} formato={v => formatRD(v, 0)} /></span>
               </div>
             </div>
             <div className="mt-5">
@@ -258,7 +258,7 @@ export default function DashboardEmpresaPage() {
 
           {/* ── Fila 3 ─────────────────────────────────────────────────── */}
           <Tarjeta etiqueta="Listo para el 606" className="md:order-4 xl:order-none">
-            <p className="mt-3 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">{e.listo ?? 0}%</p>
+            <p className="mt-3 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl"><NumeroAnimado valor={e.listo ?? 0} formato={v => String(Math.round(v))} />%</p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{e.revisadas} de {facturas(e.total)} revisadas en {periodoLargo(periodo).toLowerCase()}</p>
             <div className="mt-5">
               <BarraEstado partes={[
@@ -366,7 +366,7 @@ function Tarjeta({ etiqueta, children, className }: { etiqueta: string; children
 function Cifra({ valor }: { valor: number }) {
   return (
     <p className="mt-3 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl" title={formatRD(valor)}>
-      <span aria-hidden="true">{montoRDCompacto(valor)}</span>
+      <span aria-hidden="true"><NumeroAnimado valor={valor} formato={montoRDCompacto} /></span>
       <span className="sr-only">{formatRD(valor)}</span>
     </p>
   )

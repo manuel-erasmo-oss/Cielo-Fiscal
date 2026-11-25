@@ -53,6 +53,56 @@ function useAncho<T extends HTMLElement>(): [React.RefObject<T>, number] {
   return [ref, ancho]
 }
 
+// ─── Animación de entrada (pedida por el usuario el 2026-11-25) ───────────
+// Al abrir el dashboard, y cada vez que cambian los datos (otro período u
+// otro rango), las columnas crecen desde la base una tras otra, la línea se
+// dibuja, la dona se completa y las cifras suben contando. Dura menos de un
+// segundo y no se repite con el cursor. Con "reducir movimiento" activado en
+// el sistema, todo aparece de una vez.
+
+const DURACION_MS = 900
+
+function prefiereMenosMovimiento(): boolean {
+  return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
+
+// Avance lineal de 0 a 1 de la animación; vuelve a empezar cuando cambia `clave`.
+export function useEntrada(clave: string, duracion = DURACION_MS): number {
+  const [avance, setAvance] = useState(0)
+  useEffect(() => {
+    if (prefiereMenosMovimiento()) {
+      setAvance(1)
+      return
+    }
+    setAvance(0)
+    const inicio = performance.now()
+    let marco = 0
+    const paso = (ahora: number) => {
+      const p = Math.min(1, (ahora - inicio) / duracion)
+      setAvance(p)
+      if (p < 1) marco = requestAnimationFrame(paso)
+    }
+    marco = requestAnimationFrame(paso)
+    return () => cancelAnimationFrame(marco)
+  }, [clave, duracion])
+  return avance
+}
+
+// Frena al final (ease-out cúbico).
+export const suave = (x: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3)
+
+// Escalonado: el elemento i de n empieza un poco después que el anterior.
+export function escalon(avance: number, i: number, n: number, tramo = 0.55): number {
+  if (n <= 1) return suave(avance)
+  return suave((avance - (1 - tramo) * (i / (n - 1))) / tramo)
+}
+
+// Número que sube contando hasta su valor (se muestra con `formato`).
+export function NumeroAnimado({ valor, formato }: { valor: number; formato: (v: number) => string }) {
+  const avance = useEntrada(String(valor))
+  return <>{formato(valor * suave(avance))}</>
+}
+
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 export const mesCorto = (p: string) => MESES_CORTOS[Number(p.slice(5, 7)) - 1]
 export const periodoLargo = (p: string) => {
@@ -143,6 +193,7 @@ export function ColumnasMes({ serie, seleccionado, onSeleccionar, nombre, color 
   const y = (v: number) => M.arriba + plotH - (Math.max(0, v) / tope) * plotH
   const banda = serie.length ? plotW / serie.length : 0
   const barra = Math.min(24, Math.max(4, banda * 0.5))
+  const avance = useEntrada(serie.map(p => `${p.periodo}:${p.valor}`).join('|'))
 
   return (
     <div ref={ref} className="relative" onMouseLeave={() => setActivo(null)}>
@@ -153,11 +204,12 @@ export function ColumnasMes({ serie, seleccionado, onSeleccionar, nombre, color 
             const cx = M.izq + banda * i + banda / 2
             const sel = p.periodo === seleccionado
             const resalta = sel || activo === i
+            const v = p.valor * escalon(avance, i, serie.length)
             return (
               <g key={p.periodo}>
-                <path d={columna(cx - barra / 2, y(p.valor), barra, y(0) - y(p.valor))} fill={color} fillOpacity={resalta ? 1 : 0.32} />
+                <path d={columna(cx - barra / 2, y(v), barra, y(0) - y(v))} fill={color} fillOpacity={resalta ? 1 : 0.32} className="transition-[fill-opacity] duration-200" />
                 {sel && p.valor > 0 && (
-                  <text x={cx} y={y(p.valor) - 6} textAnchor="middle" className="fill-zinc-700 text-[10px] font-semibold tabular-nums dark:fill-zinc-200">{montoCompacto(p.valor)}</text>
+                  <text x={cx} y={y(v) - 6} textAnchor="middle" opacity={suave(avance * 1.2 - 0.2)} className="fill-zinc-700 text-[10px] font-semibold tabular-nums dark:fill-zinc-200">{montoCompacto(p.valor)}</text>
                 )}
                 {rotular(i, serie.length, banda, sel) && (
                   <text x={cx} y={ALTO - 6} textAnchor="middle" className={cn('text-[10px]', sel ? 'fill-zinc-900 font-semibold dark:fill-zinc-50' : 'fill-zinc-400 dark:fill-zinc-500')}>{mesCorto(p.periodo)}</text>
@@ -221,6 +273,7 @@ export function ColumnasPares({ serie, seleccionado, onSeleccionar, series, alto
   const banda = serie.length ? plotW / serie.length : 0
   const gap = 2
   const barra = Math.min(16, Math.max(3, (banda * 0.6 - gap) / 2))
+  const avance = useEntrada(serie.map(p => `${p.periodo}:${p.a}:${p.b}`).join('|'))
 
   return (
     <div ref={ref} className="relative" onMouseLeave={() => setActivo(null)}>
@@ -231,10 +284,11 @@ export function ColumnasPares({ serie, seleccionado, onSeleccionar, series, alto
             const cx = M.izq + banda * i + banda / 2
             const sel = p.periodo === seleccionado
             const op = sel || activo === i ? 1 : 0.32
+            const e = escalon(avance, i, serie.length)
             return (
               <g key={p.periodo}>
-                <path d={columna(cx - barra - gap / 2, y(p.a), barra, y(0) - y(p.a))} fill={series.a.color} fillOpacity={op} />
-                <path d={columna(cx + gap / 2, y(p.b), barra, y(0) - y(p.b))} fill={series.b.color} fillOpacity={op} />
+                <path d={columna(cx - barra - gap / 2, y(p.a * e), barra, y(0) - y(p.a * e))} fill={series.a.color} fillOpacity={op} className="transition-[fill-opacity] duration-200" />
+                <path d={columna(cx + gap / 2, y(p.b * e), barra, y(0) - y(p.b * e))} fill={series.b.color} fillOpacity={op} className="transition-[fill-opacity] duration-200" />
                 {rotular(i, serie.length, banda, sel) && (
                   <text x={cx} y={alto - 6} textAnchor="middle" className={cn('text-[10px]', sel ? 'fill-zinc-900 font-semibold dark:fill-zinc-50' : 'fill-zinc-400 dark:fill-zinc-500')}>{mesCorto(p.periodo)}</text>
                 )}
@@ -286,6 +340,10 @@ export function LineaMes({ serie, seleccionado, onSeleccionar, nombre, color }: 
   const linea = puntos.map(([px, py], i) => `${i ? 'L' : 'M'}${px},${py}`).join('')
   const area = n ? `${linea}L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z` : ''
   const iSel = serie.findIndex(p => p.periodo === seleccionado)
+  // La línea se dibuja de izquierda a derecha; el área y el punto aparecen detrás.
+  const avance = useEntrada(serie.map(p => `${p.periodo}:${p.valor}`).join('|'))
+  const trazo = suave(avance)
+  const final = suave((avance - 0.6) / 0.4)
 
   // La línea vertical sigue al cursor y se pega al mes más cercano.
   const mover = (e: PointerEvent<SVGSVGElement>) => {
@@ -315,8 +373,8 @@ export function LineaMes({ serie, seleccionado, onSeleccionar, nombre, color }: 
           onClick={() => activo !== null && onSeleccionar?.(serie[activo].periodo)}
         >
           <Rejilla marcas={marcas} y={y} ancho={ancho} />
-          <path d={area} fill={color} fillOpacity={0.1} />
-          <path d={linea} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          <path d={area} fill={color} fillOpacity={0.1 * trazo} />
+          <path d={linea} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" pathLength={1} strokeDasharray="1" strokeDashoffset={1 - trazo} />
           {serie.map((p, i) => rotular(i, n, n > 1 ? paso : plotW, i === iSel) && (
             <text key={p.periodo} x={x(i)} y={ALTO - 6} textAnchor={i === 0 && n > 1 ? 'start' : i === n - 1 && n > 1 ? 'end' : 'middle'} className={cn('text-[10px]', i === iSel ? 'fill-zinc-900 font-semibold dark:fill-zinc-50' : 'fill-zinc-400 dark:fill-zinc-500')}>{mesCorto(p.periodo)}</text>
           ))}
@@ -325,12 +383,12 @@ export function LineaMes({ serie, seleccionado, onSeleccionar, nombre, color }: 
           )}
           {/* Punto final (el período elegido) con anillo de 2 px de la superficie. */}
           {iSel >= 0 && (
-            <>
-              <circle cx={puntos[iSel][0]} cy={puntos[iSel][1]} r={4} fill={color} stroke="var(--c-sup)" strokeWidth={2} />
+            <g opacity={final}>
+              <circle cx={puntos[iSel][0]} cy={puntos[iSel][1]} r={4 * (0.4 + 0.6 * final)} fill={color} stroke="var(--c-sup)" strokeWidth={2} />
               {serie[iSel].valor > 0 && activo === null && (
                 <text x={puntos[iSel][0]} y={puntos[iSel][1] - 9} textAnchor={iSel === n - 1 && n > 1 ? 'end' : 'middle'} className="fill-zinc-700 text-[10px] font-semibold tabular-nums dark:fill-zinc-200">{montoCompacto(serie[iSel].valor)}</text>
               )}
-            </>
+            </g>
           )}
           {activo !== null && activo !== iSel && puntos[activo] && (
             <circle cx={puntos[activo][0]} cy={puntos[activo][1]} r={4} fill={color} stroke="var(--c-sup)" strokeWidth={2} />
@@ -369,6 +427,10 @@ export function DonaComposicion({ partes }: { partes: Composicion[] }) {
   const T = 124, c = T / 2, rExt = 60, rInt = 41
   const visibles = partes.map((p, i) => ({ p, i })).filter(({ p }) => p.parte !== 'Sin clasificar' || p.cantidad > 0)
   const enfoque = activa !== null ? partes[activa] : null
+  // La dona se completa girando desde arriba, en el sentido del reloj.
+  const avance = useEntrada(partes.map(p => `${p.parte}:${p.monto}`).join('|'))
+  const giro = suave(avance)
+  const cantidadTotal = partes.reduce((s, p) => s + p.cantidad, 0)
 
   return (
     <div className="flex items-center gap-4 sm:gap-5" onMouseLeave={() => setActiva(null)}>
@@ -376,8 +438,9 @@ export function DonaComposicion({ partes }: { partes: Composicion[] }) {
         <svg width={T} height={T} role="group" aria-label={`Composición de las compras: ${partes.filter(p => p.cantidad > 0).map(p => `${p.parte} ${formatRD(p.monto)}`).join(', ')}`}>
           <circle cx={c} cy={c} r={(rExt + rInt) / 2} fill="none" strokeWidth={rExt - rInt} className="stroke-zinc-100 dark:stroke-[#1a1d2e]" />
           {partes.map((p, i) => {
-            const { inicio, fin } = arcos[i]
-            if (fin - inicio <= 0) return null
+            const inicio = arcos[i].inicio * giro
+            const fin = arcos[i].fin * giro
+            if (fin - inicio <= 0.0005) return null
             const completo = fin - inicio > 0.9999
             const d = completo
               ? `${sector(c, c, rExt, rInt, 0, 0.5)}${sector(c, c, rExt, rInt, 0.5, 1)}`
@@ -404,7 +467,7 @@ export function DonaComposicion({ partes }: { partes: Composicion[] }) {
             </>
           ) : (
             <>
-              <span className="text-lg font-bold leading-none text-zinc-900 dark:text-zinc-50">{partes.reduce((s, p) => s + p.cantidad, 0)}</span>
+              <span className="text-lg font-bold leading-none text-zinc-900 dark:text-zinc-50">{Math.round(cantidadTotal * giro)}</span>
               <span className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">facturas</span>
             </>
           )}
@@ -437,9 +500,10 @@ export function DonaComposicion({ partes }: { partes: Composicion[] }) {
 
 export function BarrasLista({ filas }: { filas: { nombre: string; valor: number; color: string; detalle?: string }[] }) {
   const max = Math.max(0, ...filas.map(f => Math.abs(f.valor)))
+  const avance = useEntrada(filas.map(f => `${f.nombre}:${f.valor}`).join('|'))
   return (
     <ul className="space-y-4">
-      {filas.map(f => (
+      {filas.map((f, i) => (
         <li key={f.nombre} title={`${f.nombre}: ${formatRD(f.valor)}`}>
           <div className="flex items-baseline justify-between gap-3 text-sm">
             <span className="min-w-0 truncate text-zinc-700 dark:text-zinc-300">
@@ -449,7 +513,7 @@ export function BarrasLista({ filas }: { filas: { nombre: string; valor: number;
             <span className="shrink-0 font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{formatRD(f.valor, 0)}</span>
           </div>
           <div className="mt-1.5 h-1.5 rounded-full bg-zinc-100 dark:bg-[#1d2136]">
-            <div className="h-1.5 rounded-full" style={{ width: `${max > 0 ? Math.max(1.5, (Math.abs(f.valor) / max) * 100) : 0}%`, background: f.color }} />
+            <div className="h-1.5 rounded-full" style={{ width: `${max > 0 ? Math.max(1.5, (Math.abs(f.valor) / max) * 100) * escalon(avance, i, filas.length) : 0}%`, background: f.color }} />
           </div>
         </li>
       ))}
@@ -461,9 +525,11 @@ export function BarrasLista({ filas }: { filas: { nombre: string; valor: number;
 
 export function BarraEstado({ partes }: { partes: { nombre: string; valor: number; color: string }[] }) {
   const total = partes.reduce((s, p) => s + p.valor, 0)
+  // Se llena de izquierda a derecha.
+  const avance = useEntrada(partes.map(p => `${p.nombre}:${p.valor}`).join('|'))
   if (total === 0) return <div className="h-2 rounded-full bg-zinc-100 dark:bg-[#1a1d2e]" />
   return (
-    <div className="flex h-2 gap-[2px]" role="img" aria-label={partes.map(p => `${p.nombre}: ${p.valor}`).join(', ')}>
+    <div className="flex h-2 gap-[2px] overflow-hidden" style={{ width: `${suave(avance) * 100}%` }} role="img" aria-label={partes.map(p => `${p.nombre}: ${p.valor}`).join(', ')}>
       {partes.filter(p => p.valor > 0).map(p => (
         <div key={p.nombre} className="h-2 rounded-full" style={{ flexGrow: p.valor, background: p.color }} />
       ))}
