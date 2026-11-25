@@ -18,8 +18,7 @@ import {
   validarCompra606,
   validarVenta607,
   validarVentaIngresos,
-  type CamposDocumento,
-} from './dgii-formatos'
+  type CamposDocumento, AVISAR_SERIE_B_VENCIDA, avisoComprobanteNoElectronico } from './dgii-formatos'
 import { CAMPOS_VACIOS } from './documentos'
 
 // Reglas tomadas de las herramientas de envío de la DGII (ver
@@ -182,12 +181,14 @@ describe('validarCompra606', () => {
     expect(p.map(x => [x.campo, x.nivel])).toEqual([['montoBienes', 'aviso']])
   })
 
-  it('comprobante no electrónico después del último plazo de la Ley 32-23: aviso, no error', () => {
-    expect(validarCompra606(compra({ fechaComprobante: '2026-05-16' }), RNC_CLIENTE)).toEqual([])
-    const tarde = validarCompra606(compra({ fechaComprobante: '2026-06-01' }), RNC_CLIENTE)
-    expect(tarde.map(x => [x.campo, x.nivel])).toEqual([['ncf', 'aviso']])
-    expect(tarde[0].mensaje).toMatch(/electrónico/)
-    expect(validarCompra606(compra({ ncf: 'E310000000001', fechaComprobante: '2026-06-01' }), RNC_CLIENTE)).toEqual([])
+  it('comprobante no electrónico después del último plazo de la Ley 32-23: la regla avisa, pero está apagada (decisión del usuario, 2026-11-25)', () => {
+    expect(AVISAR_SERIE_B_VENCIDA).toBe(false)
+    // Apagada: una B01 de junio de 2026 no trae ningún aviso.
+    expect(validarCompra606(compra({ fechaComprobante: '2026-06-01' }), RNC_CLIENTE)).toEqual([])
+    // La regla sigue lista para cuando se vuelva a encender.
+    expect(avisoComprobanteNoElectronico({ ncf: 'B0100000001', fechaComprobante: '2026-05-16' })).toBeNull()
+    expect(avisoComprobanteNoElectronico({ ncf: 'B0100000001', fechaComprobante: '2026-06-01' })).toMatchObject({ campo: 'ncf', nivel: 'aviso' })
+    expect(avisoComprobanteNoElectronico({ ncf: 'E310000000001', fechaComprobante: '2026-06-01' })).toBeNull()
   })
 
   it('NCF de 19 posiciones (serie A): error siempre, por decisión del usuario (NG 06-2018, art. 10)', () => {

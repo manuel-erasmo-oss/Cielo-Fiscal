@@ -1280,7 +1280,7 @@ cita en cada regla): tipo de un e-NCF = las 2 posiciones después de la E;
 E34 resta como nota de crédito; E43 y E47 exigen el RNC del cliente como
 13 y 17; avisos (no bloquean) de factura de consumo en compras, de pagos al
 exterior con bienes y de NCF no electrónico desde el 17-05-2026
-(`FIN_CALENDARIO_ECF`, día exacto ⚠️ sin verificar); el reporte de ingresos
+(`FIN_CALENDARIO_ECF`, día exacto ⚠️ sin verificar; **apagado el 2026-11-25** por pedido del usuario: "quita las alertas correspondientes a las facturas B1 hasta que se indique que definitivamente no se aceptarán". Se vuelve a encender con `AVISAR_SERIE_B_VENCIDA`); el reporte de ingresos
 admite E44-E46 y rechaza E41/E43/E47; la IA y el QR toman como compra los
 comprobantes que emite el propio comprador (11/41, 13/43, 17/47). En
 `dgii-fiscal.ts`: IT-1 día 20, ISR jurídicas 27% y tasa reducida 16% pasan
