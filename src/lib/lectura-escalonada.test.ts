@@ -151,3 +151,23 @@ describe('huellaDe', () => {
     expect(await huellaDe(new Blob(['factura 2']))).not.toBe(a)
   })
 })
+
+// Regla del usuario (2026-11-25): el QR solo existe en las facturas serie E
+// (electrónicas). A una serie B nunca se le pide QR ni verificación en la DGII.
+describe('serie B: nunca se le pide QR', () => {
+  it('sin QR no hay relectura, observación del NCF ni verificación humana, y se aprueba en bloque', () => {
+    const sinQr = interpretarPagina(null, ctx())
+    const b = aplicarResultado(sinQr, { lectura: buena({ ncf: 'B0100000123' }), modelo: MODELO_OCR_POR_DEFECTO, releida: false, manual: false, motivos: [] }, ctx())
+    expect(motivosRelectura(sinQr, buena({ ncf: 'B0100000123' }), ctx(), CLIENTE.rncCedula)).toEqual([])
+    expect(observaciones(b, CLIENTE.rncCedula)).toEqual([])
+    const doc = documentoDesdePagina('d1', b, CLIENTE, { nombre: 'a.pdf', pagina: 1 }, '2026-11-25T00:00:00Z')
+    expect(doc.qrUrl).toBeUndefined()
+    expect(esAprobable(doc, CLIENTE.rncCedula)).toBe(true)
+  })
+
+  it('en cambio, una serie E sin QR legible sí queda para verificar a mano', () => {
+    const sinQr = interpretarPagina(null, ctx())
+    const e = aplicarResultado(sinQr, { lectura: buena({ ncf: 'E310000000123' }), modelo: MODELO_OCR_POR_DEFECTO, releida: false, manual: false, motivos: [] }, ctx())
+    expect(observaciones(e, CLIENTE.rncCedula)).toContain('ncf')
+  })
+})

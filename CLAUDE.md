@@ -734,7 +734,7 @@ Decidido con las opciones recomendadas:
   no entra en la aprobación en bloque. No es un error: una persona la
   verifica en la DGII y la marca revisada. Si después se verifica y sale
   aceptada, la observación del NCF se quita sola.
-- **Serie B: no tiene QR** (lo señaló el usuario), así que no hay nada que
+- **Serie B: no tiene QR** (lo señaló el usuario y lo reiteró el 2026-11-25: "el QR solo existe para series E"; una prueba en `lectura-escalonada.test.ts` lo fija: una B sin QR no tiene relectura, observación del NCF ni verificación humana, y se aprueba en bloque). El lector de QR pasa por todas las páginas porque antes de leer no se sabe la serie, pero en una B no encontrarlo no produce nada. Así que no hay nada que
   verificar desde el sistema y pasa sin esa alerta. **Lo de la DGII manda** como lo
   del QR: su ITBIS reemplaza el de la IA y su razón social llena el nombre.
   En una factura suelta también mandan los datos del QR (RNC, e-NCF, fecha,
