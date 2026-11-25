@@ -783,10 +783,12 @@ factura(s)" → "Aprobar las N sin observaciones".
   guardar.
 - Si falta el código de acceso o el servidor responde 503, la lectura con
   IA se detiene enseguida (no sigue intentando con cada página) y las
-  páginas quedan con lo del QR. Una página que falla por otro motivo queda
-  marcada y se reintenta con "Leer con IA las N que faltan" (solo esas).
-- En el formulario de una factura con imagen guardada sigue el botón
-  "Leer con IA lo que falta" (llena solo campos vacíos).
+  páginas quedan con lo del QR; para leerlas hay que volver a subir el
+  lote. Desde el 2026-11-25 no hay botones para releer con IA ("Leer con IA
+  las N que faltan" y "Leer con IA lo que falta" se quitaron por decisión
+  del usuario): una página que falla pasa sola a la relectura y, si también
+  falla, a captura manual (ver "Lectura escalonada" y "Relectura solo para
+  partidas importantes").
 - El worker de pdf.js y el `.wasm` del lector de QR se sirven desde el
   propio sitio: `scripts/copiar-estaticos.mjs` los copia a `public/` en
   `postinstall`, `predev` y `prebuild` (no se versionan).
@@ -875,9 +877,10 @@ RNC de la contraparte, fecha y total; el QR lo firmó el emisor, es la
 referencia exacta). Por página, los campos en que difieren, con ✗ en el que
 no coincide con el QR. No guarda nada. La ruta acepta `modelo` (solo de la
 lista; otro → 400) y devuelve `uso` (modelo que respondió y tokens). Haiku
-5.5 va sin `fallbacks` (no tiene respaldo de servidor). La aplicación sigue
-leyendo con `MODELO_OCR_POR_DEFECTO` (Opus 5.5) hasta que el usuario
-decida. Comprobado en navegador con la IA simulada: 15/15 (4 llamadas para
+5.5 va sin `fallbacks` (no tiene respaldo de servidor). (Al construirla, la
+aplicación leía con Opus 5.5; desde el 2026-11-21 lee con Haiku y relee con
+Sonnet, y desde el 2026-11-25 la herramienta muestra solo nombres neutros y
+ya no está enlazada desde Configuración: ver las secciones de abajo.) Comprobado en navegador con la IA simulada: 15/15 (4 llamadas para
 2 páginas, costos US$0.080 vs US$0.0020, QR 4/4 vs 3/4, ✗ en el NCF
 equivocado, coincidencia 85%, nada guardado, móvil sin desbordar, la ruta
 real rechaza un modelo fuera de la lista). Regresión del lote: 15/15.
@@ -1267,10 +1270,11 @@ ventanas) lee 27 de las 58, no 23.
    automática** sobre todo el lote, con aprobación en bloque de las
    facturas sin observaciones (2026-11-17).
 5. ⏭️ **Siguiente**:
-   a. **Medir la IA real** con facturas reales (requiere que el usuario
-      configure `ANTHROPIC_API_KEY` en Vercel): precisión campo por campo,
-      tiempo y costo por página, y comparar modelos (`MODELO_OCR`) antes
-      de fijar precios.
+   a. **Medir la IA real** con facturas reales (la key ya está desde el
+      2026-11-19): cuántas facturas pasan con el modelo principal, cuántas
+      relee el de relectura y cuántas quedan en captura manual; precisión
+      campo por campo, y costo por factura con el `uso` de cada lectura.
+      Con eso se fijan los precios de los planes.
    b. Snapshot al declarar ("marcar como declarado", lección 3).
    c. Resolver las preguntas abiertas al usuario (sección propia, abajo).
 6. Declaración ITBIS mensual (aritmética sobre 606 + ingresos).
@@ -1286,7 +1290,7 @@ respaldo/exportación de los datos del navegador; estado "descartada" en la
 interfaz (el tipo ya lo contempla); recordar la categoría por proveedor a
 partir de lo que corrija el contador.
 
-## Preguntas abiertas al usuario (actualizadas el 2026-11-18)
+## Preguntas abiertas al usuario (actualizadas el 2026-11-25)
 
 Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
 
@@ -1311,6 +1315,20 @@ Hacerlas cuando toque; no resolverlas de memoria (lecciones 2 y 6).
    retenciones del art. 309 cambiaron con la Ley 30-26; la escala de ISR de
    asalariados cambia en 2027. Decirle al usuario que Nómina también hay
    que actualizarla.
+
+7. **La API key de producción vence el 17-12-2026** (key ligada al usuario
+   en la consola de Anthropic). Recomendado: crear una de cuenta de servicio
+   sin vencimiento, ponerla en Vercel y hacer Redeploy antes de esa fecha.
+8. **Cada cuánto actualizar el padrón de RNC** (el usuario descarga el
+   `DGII_RNC.zip` y se regenera con `npm run padron-rnc`). Sin decidir;
+   propuesto: cada mes o dos.
+9. **Volver a encender el aviso de serie B** (`AVISAR_SERIE_B_VENCIDA`)
+   cuando el usuario indique que ya no se aceptan.
+
+Resueltas el 2026-11-25: el padrón de RNC vive en el repositorio ("no hay
+riesgo, de por sí este es un archivo público"); la relectura solo para
+partidas importantes, incluida la fecha; la IA no se nombra ante el usuario;
+no hay relectura a pedido de la persona; la serie B no lleva QR.
 
 Resueltas el 2026-11-18: los avisos de comprobante (serie B, consumo) no
 frenan la aprobación en bloque ("deja pasar al sistema los comprobantes
@@ -1436,10 +1454,11 @@ que envía "lo otro" en otro lote):
   (no la API key); sin él responde 503 y las facturas quedan "sin verificar".
 - **2026-11-18: el usuario configuró `OCR_CODIGO_ACCESO` en Vercel** ("puse
   ocr en vercel"). Más tarde ese día dijo que **ya compró saldo en la API de
-  Anthropic** ("la api que ya compré saldo"); falta que agregue
-  `ANTHROPIC_API_KEY` en Vercel y haga Redeploy. Hasta entonces la IA
-  sigue sin funcionar en producción (503) y las facturas solo se llenan con
-  lo del QR y lo de la DGII.
+  Anthropic** ("la api que ya compré saldo"). **El 2026-11-19 agregó
+  `ANTHROPIC_API_KEY` en Vercel** (una key de la consola ligada a su
+  usuario, `sk-ant-usr-…`, que vence el 17-12-2026: conviene cambiarla por
+  una de cuenta de servicio sin vencimiento antes de esa fecha). Desde
+  entonces `/api/ocr` sin código responde 401 (key y código configurados).
 - **Comprobado en producción el 2026-11-18, tras fusionar el PR #4**: las
   seis pantallas responden 200; `POST /api/verificar-dgii` sin código
   responde **401** (o sea, `OCR_CODIGO_ACCESO` sí está configurado: sin él
@@ -1477,6 +1496,33 @@ que envía "lo otro" en otro lote):
   descarte de una factura del otro tipo, en la factura suelta y en el
   lote) y 37/37 del Dashboard, con datos inventados en el navegador de la
   prueba y la IA y la DGII simuladas.
+- **2026-11-19 a 2026-11-25** (PR #16 a #23), cada uno comprobado con el
+  encabezado `x-cielo-version` de `/api/ocr` (Vercel tarda ~60-80 s) y las
+  pantallas en 200:
+  - **PR #16**: la primera prueba real falló entera ("la IA no pudo leer
+    ninguna de las facturas"). Causa: 18 uniones en el esquema, el límite es
+    16. Arreglado.
+  - **PR #17**: el encabezado de versión. Hizo falta porque el usuario probó
+    en una dirección de Vercel fija a una publicación vieja (cada
+    publicación tiene su propia dirección permanente). **Probar siempre en
+    https://cielo-fiscal.vercel.app**: los datos del navegador son por
+    dirección.
+  - **PR #18 y #19**: "Comparar modelos" (hasta 50 páginas).
+  - **PR #20**: lectura escalonada Haiku → Sonnet → captura manual.
+  - **PR #21**: padrón de RNC. Contra producción, 9/9 y los pedazos
+    servidos como `application/gzip`.
+  - **PR #22**: sin aviso de serie B; memoria por proveedor; pista del
+    padrón.
+  - **PR #23**: relectura solo para partidas importantes, IA anónima y sin
+    relectura manual. Comprobado contra producción que `/`,
+    `/configuracion` y el lote, y sus archivos JS, no contienen
+    "claude-haiku/sonnet/opus" ni "anthropic".
+- **Primeras lecturas reales (2026-11-19)**: con Opus 5.5 el usuario leyó
+  ~120 facturas y gastó US$1.36. Eso llevó a la evaluación de costos con 5
+  agentes y a la lectura escalonada. **La precisión campo por campo y el
+  costo real con Haiku/Sonnet siguen sin medir**: hace falta que el usuario
+  cuente cuántas salen "Lista", en ámbar y en captura manual, y mirar el
+  consumo en la consola.
 - Para activar la IA: en Vercel, Settings → Environment Variables, agregar
   `ANTHROPIC_API_KEY` (key propia del producto, nunca personal) y
   `OCR_CODIGO_ACCESO` (frase larga elegida por el usuario), ambas en
@@ -1517,7 +1563,12 @@ que envía "lo otro" en otro lote):
   paralelo, fusionados y revisados) y PR #13 (su comprobación en
   producción) el 2026-11-19; PR #14 (módulos independientes, cada uno
   solo su tipo, y regla de consumidor final) y PR #15 (su comprobación en
-  producción) el mismo día.
+  producción) el mismo día; PR #16 (esquema dentro del límite de 16
+  uniones), #17 (encabezado de versión), #18 y #19 ("Comparar modelos",
+  hasta 50 páginas) el 2026-11-19; PR #20 (lectura escalonada) el
+  2026-11-22; PR #21 (padrón de RNC), #22 (sin aviso de serie B, memoria
+  por proveedor y pista del padrón) y #23 (relectura solo para partidas
+  importantes, IA anónima, sin relectura manual) el 2026-11-25.
 
 ## Nombre del producto
 
@@ -1532,7 +1583,7 @@ otro (ej. "Cielo Cloud Impuestos", "Cielo Cloud 606").
 - Rama de desarrollo de las sesiones de noviembre 2026:
   `claude/new-session-697xwv`; el trabajo llega a `main` por pull request.
 
-## Estado real del repo (actualizado el 2026-11-18)
+## Estado real del repo (actualizado el 2026-11-25)
 
 Este archivo se escribió en la sesión de Cielo Cloud Nómina describiendo un
 scaffold que vivía solo en aquel sandbox; el código no vino con él. En la
@@ -1551,7 +1602,8 @@ verificación automática en la DGII.
   ERP; cada uno con `/lote`, la captura por lotes, que vive en
   `src/components/lote/CapturaLote.tsx`), `/empresa/[id]/reportes` (TXT
   del 606 y Excel; reporte de ingresos en Excel); `/configuracion` (código
-  de acceso, global).
+  de acceso, global); `/configuracion/comparar` (herramienta interna para
+  comparar modelos, sin enlace desde la interfaz).
 - **Servidor**: `src/app/api/ocr/route.ts` y `src/app/api/verificar-dgii/route.ts`.
 - **Datos** (`src/lib/datos`): `empresa.ts` y `empresa-context.tsx`
   (separación por empresa), `repositorio.ts` (interfaz),
@@ -1572,8 +1624,17 @@ verificación automática en la DGII.
   los módulos Ingresos y Costos y gastos), `modulos.ts` (nombre y ruta de
   cada módulo), `dgii-fiscal.ts` (motor fiscal), `utils.ts` (fechas locales, montos),
   `ocr-tipos.ts` (contrato servidor↔navegador), `ocr-cliente.ts` (prepara
-  el archivo y llama a la ruta), `config-local.ts`.
-- **Scripts**: `scripts/copiar-estaticos.mjs`.
+  el archivo y llama a la ruta), `config-local.ts`. Desde el 2026-11-19:
+  `ocr-esquema.ts` (esquema de la salida de la IA, ≤ 16 uniones),
+  `ocr-modelos.ts` (roles neutros, precios, costo, comparación) y
+  `ocr-modelos-servidor.ts` (modelo real de cada rol; solo lo importa la
+  ruta), `lectura-escalonada.ts` (relectura y captura manual, huella),
+  `memoria-proveedor.ts` (categoría del 606 por proveedor),
+  `padron-rnc.ts` (búsqueda en el padrón de la DGII) y `lote/recorte.ts`
+  (márgenes blancos).
+- **Scripts**: `scripts/copiar-estaticos.mjs` y `scripts/padron-rnc.mjs`
+  (`npm run padron-rnc -- DGII_RNC.zip`, genera `public/padron-rnc/`, que
+  sí se versiona: 805 pedazos, 15.4 MB).
 - **Documentación**: `docs/dgii/formatos-606-607.md` (especificación del
   606 y 607 extraída de las fuentes de la DGII) y `docs/dgii/marco-legal.md`
   (leyes y normas recibidas, qué está vigente y qué se aplicó).
@@ -1655,7 +1716,9 @@ verificación automática en la DGII.
 - `npm test` (vitest, en zona horaria de RD): **140 de 140** pasan (185
   de 185 desde el 2026-11-18, con las reglas de comprobantes, la Ley 30-26
   y la verificación en la DGII; 197 de 197 con el tablero; **219 de 219**
-  el 2026-11-19 con el Dashboard en tarjetas y los módulos nuevos) — fechas
+  el 2026-11-19 con el Dashboard en tarjetas y los módulos nuevos; **276 de
+  276** el 2026-11-25 con el esquema, los modelos, la lectura escalonada,
+  la memoria por proveedor, el padrón, el recorte y la serie B) — fechas
   (incluido que `new Date('2026-03-01')` da día 28, el bug de la lección
   1), motor fiscal, reglas del 606 y 607, líneas y archivos generados
   comparados carácter por carácter, dígito verificador, duplicados.
@@ -1778,10 +1841,14 @@ verificación automática en la DGII.
 
 ### NO verificado
 
-- **El OCR nunca ha leído una factura real.** No había API key válida: se
-  probó todo lo que rodea a la llamada al modelo (que llega a Anthropic y
-  es rechazada por la key falsa) y la pantalla de revisión con una
-  respuesta simulada, pero no la extracción. Su precisión es desconocida.
+- **La precisión de la IA con facturas reales no se ha medido.** Desde el
+  2026-11-19 la IA lee facturas reales en producción (primero con Opus;
+  desde el 2026-11-22 Haiku con relectura de Sonnet), pero nadie ha contado
+  campo por campo cuántos aciertos hay, cuántas facturas relee Sonnet ni
+  cuántas quedan en captura manual. Las pruebas de navegador usan la IA
+  simulada.
+- Que la caché de las instrucciones se use de verdad (`tokensCacheLeidos` >
+  0) no se ha visto en una respuesta real.
 - **Los archivos 606 y 607 no se han pasado por el pre-validador de la
   DGII ni se han enviado.** Solo se verificaron contra la macro.
 - La lectura de la IA en lote solo se probó con respuestas simuladas;
@@ -1793,7 +1860,9 @@ verificación automática en la DGII.
 - Request: encabezado `x-codigo-acceso` + `multipart/form-data` con
   `archivo` (una imagen o un PDF; o hasta 8 imágenes que son tramos de un
   mismo recibo), `tipo` (`compra` | `venta`, el que se asume si no se
-  puede deducir), y opcionales `rncCliente` y `actividad`. Hasta 4 MB en
+  puede deducir), y opcionales `rncCliente`, `actividad`, `modelo` (rol:
+  `principal` | `relectura` | `avanzado`) y `actividadProveedor` (del
+  padrón de RNC). Hasta 4 MB en
   total. Si faltan `ANTHROPIC_API_KEY` u `OCR_CODIGO_ACCESO` responde 503
   en vez de quedar abierta.
 - Modelo por defecto **Haiku 5.5** (`MODELO_OCR_POR_DEFECTO`); el
@@ -1812,8 +1881,11 @@ verificación automática en la DGII.
   el esquema vive en `src/lib/ocr-esquema.ts`. Los textos y los catálogos
   usan la cadena vacía para "no aparece" (`lecturaDesdeModelo` la vuelve
   null) y solo los 8 montos son nulables. Una prueba cuenta las uniones del
-  esquema que envía el SDK. Si la API rechaza una solicitud (400), el mensaje
-  de la pantalla trae el motivo de Anthropic.
+  esquema que envía el SDK. Si la API rechaza una solicitud (400), la
+  pantalla dice "No se pudo procesar el archivo" y el motivo queda en el
+  registro del servidor (desde el 2026-11-25 no se nombra al proveedor).
+- Responde con el encabezado `x-cielo-version` (commit corto publicado,
+  `VERCEL_GIT_COMMIT_SHA`) para comprobar desde fuera qué versión corre.
 - No guarda nada. Devuelve `{ esComprobante, tipo, coincideCliente,
   extraccion, confianzaOCR, camposDudosos }` (ver `ResultadoOCR` en
   `src/lib/ocr-tipos.ts`). Lo que no pasa validación vuelve como `null` y
