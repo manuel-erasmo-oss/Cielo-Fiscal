@@ -570,6 +570,35 @@ que dicen "tablero" se refieren a esa misma pantalla.
   `arcosDona`, `mesesConFacturas`, `montoRDCompacto`, `cuentaRegresiva`,
   `urgenciaDe` y el ITBIS por mes en `serieMensual` (20 pruebas).
 
+### Gráficos animados (pedido por el usuario el 2026-11-25) — construido
+
+> "Me gustaría que los gráficos del dashboard sean interactivos o dinámicos
+> ... que tengan animaciones automáticas."
+
+- En `src/components/dashboard/Graficos.tsx`: `useEntrada(clave)` (avance
+  de 0 a 1 en 900 ms con `requestAnimationFrame`, que se reinicia cuando
+  cambian los datos), `suave` (frena al final), `escalon` (cada elemento
+  empieza un poco después) y `NumeroAnimado` (cifra que sube contando).
+- Qué se anima, al abrir el Dashboard y cada vez que cambian el período o
+  el rango (3M/6M/12M):
+  - las columnas de compras y de ITBIS crecen desde la base, una tras otra;
+  - la línea de ingresos se dibuja de izquierda a derecha, con el área y el
+    punto final detrás;
+  - la dona de composición se completa girando y su centro cuenta las
+    facturas;
+  - las barras de ITBIS y de "Listo para el 606" se llenan;
+  - las cifras grandes, el % listo y "Ventas menos compras" suben contando.
+- El resaltado al pasar el cursor cambia con una transición de 200 ms.
+- Con "reducir movimiento" activado en el sistema, todo aparece de una vez
+  (accesibilidad).
+- Comprobado en navegador:
+  - 4/4 de la animación: a mitad de camino las columnas son más bajas y la
+    cifra menor que al final; al cambiar el rango vuelven a crecer; con
+    reducir movimiento aparecen completas.
+  - 37/37 de la regresión del Dashboard, que ahora corre con reducir
+    movimiento porque compara valores, no el movimiento.
+  - `npm test` 276/276.
+
 ### Calendario fiscal en el Dashboard (2026-11-18) — reemplazado por la Agenda fiscal compacta
 
 > "En el dashboard agrega un calendario fiscal que resalte las obligaciones
