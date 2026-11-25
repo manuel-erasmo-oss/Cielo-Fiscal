@@ -10,7 +10,8 @@
     "test": "vitest run",
     "predev": "node scripts/copiar-estaticos.mjs",
     "prebuild": "node scripts/copiar-estaticos.mjs",
-    "postinstall": "node scripts/copiar-estaticos.mjs"
+    "postinstall": "node scripts/copiar-estaticos.mjs",
+    "padron-rnc": "node scripts/padron-rnc.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

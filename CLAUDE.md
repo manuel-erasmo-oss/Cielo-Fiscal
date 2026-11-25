@@ -642,6 +642,71 @@ Decidido con las opciones recomendadas:
   ninguna otra parte del Dashboard. Con el renombre a "Dashboard":
   15/15, 27/27, 16/16, 9/9, 15/15 y 26/26.
 
+## Padrón de RNC en el sistema (pedido por el usuario el 2026-11-25) — construido
+
+> "Que el usuario escriba el número de RNC y esos campos de razón social y
+> actividad económica se completen automáticamente." "No quiero que cada
+> quien tenga que subir el padrón, quiero que este padrón duerma en la base
+> de datos del sistema, es decir directamente en el repositorio." Sobre que
+> el repo es público: "no hay riesgo, de por sí este es un archivo público".
+
+- **Por qué un archivo y no una consulta en línea**: dgii.gov.do (Azure
+  Front Door) responde **403 "Acceso denegado"** a las conexiones desde
+  servidores. Pasó con todas sus páginas, incluida la de inicio y la
+  descarga del padrón, probado el 2026-11-25. Es un bloqueo de la DGII: no
+  se intenta saltarlo. El usuario descarga el `DGII_RNC.zip` desde su
+  navegador y se procesa con un script.
+- **Formato del archivo de la DGII**:
+  - Revisado con el de noviembre de 2026 (fecha dentro del zip: 21-11-2026).
+  - 799,886 líneas en Latin-1 (la É es un byte), CRLF.
+  - 11 columnas separadas por `|`: RNC o cédula, razón social, nombre
+    comercial, actividad económica, 4 vacías, fecha, estado, régimen.
+  - **La DGII corta la actividad a 30 caracteres.**
+  - Estados: ACTIVO, SUSPENDIDO, DADO DE BAJA, CESE TEMPORAL, ANULADO,
+    RECHAZADO. Régimen: NORMAL o RST.
+  - ~20 registros traen un salto de línea dentro del nombre (se unen) y uno
+    tiene un RNC de 8 dígitos (se descarta).
+- **`scripts/padron-rnc.mjs`** (`npm run padron-rnc -- ruta/DGII_RNC.zip`):
+  - Lee el zip o el TXT y escribe `public/padron-rnc/`.
+  - `indice.json`: fecha del padrón, total, catálogo de 1,922 actividades y
+    prefijos.
+  - 805 pedazos `<prefijo>.tsv.gz`, partidos por prefijo del RNC hasta que
+    ninguno pase de 100 KB: 15.4 MB en total, el mayor de 97 KB.
+  - 799,857 registros.
+  - **Para actualizar el padrón**: correr el script con el archivo nuevo y
+    publicar.
+- **`src/lib/padron-rnc.ts`**: al escribir 9 u 11 dígitos busca el pedazo
+  del prefijo más largo y lo descomprime en el navegador
+  (`DecompressionStream`; si el servidor ya lo entregó descomprimido, lo lee
+  tal cual). Cada búsqueda baja el índice, una sola vez, y un pedazo.
+- **Formulario de empresa (`ClienteModal`)**:
+  - Llena razón social, nombre comercial y actividad, y elige persona
+    jurídica (9 dígitos) o física (11).
+  - Solo llena campos vacíos o los que llenó antes el padrón: lo escrito a
+    mano no se pisa.
+  - Al editar una empresa no toca nada mientras el RNC siga igual.
+  - Muestra el estado: "Activo en la DGII" en verde; suspendido o cese
+    temporal en ámbar ("confírmalo con el cliente"); dado de baja, anulado o
+    rechazado en rojo ("revisa que el número sea el correcto"); "(RST)" si
+    es régimen simplificado; y la fecha del padrón.
+  - Si no está: "Este número no está en el padrón … completa los datos a
+    mano".
+  - Nada bloquea el guardado.
+- **Comprobado**:
+  - `npm test` 267/267. Las 7 nuevas recorren los 805 pedazos reales: cada
+    registro en su pedazo, suman el total, ningún pedazo de más de 100 KB y
+    los prefijos no se pisan.
+  - Navegador 9/9 contra `next start`, con RNC y cédulas tomados del padrón
+    real:
+    - se llenan los tres campos;
+    - fecha del padrón;
+    - solo baja el índice y un pedazo;
+    - lo escrito a mano se conserva;
+    - aviso rojo en un RNC dado de baja;
+    - una cédula elige persona física;
+    - un RNC inexistente avisa;
+    - se guarda con la actividad del padrón.
+
 ## Verificación en la DGII (pedida por el usuario el 2026-11-18) — construida
 
 > "Es necesario que el sistema verifique automáticamente el estatus de las
