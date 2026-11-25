@@ -734,7 +734,7 @@ Decidido con las opciones recomendadas:
   no entra en la aprobación en bloque. No es un error: una persona la
   verifica en la DGII y la marca revisada. Si después se verifica y sale
   aceptada, la observación del NCF se quita sola.
-- **Serie B: no tiene QR** (lo señaló el usuario), así que no hay nada que
+- **Serie B: no tiene QR** (lo señaló el usuario y lo reiteró el 2026-11-25: "el QR solo existe para series E"; una prueba en `lectura-escalonada.test.ts` lo fija: una B sin QR no tiene relectura, observación del NCF ni verificación humana, y se aprueba en bloque). El lector de QR pasa por todas las páginas porque antes de leer no se sabe la serie, pero en una B no encontrarlo no produce nada. Así que no hay nada que
   verificar desde el sistema y pasa sin esa alerta. **Lo de la DGII manda** como lo
   del QR: su ITBIS reemplaza el de la IA y su razón social llena el nombre.
   En una factura suelta también mandan los datos del QR (RNC, e-NCF, fecha,
@@ -994,6 +994,68 @@ pruebas):
   cuántas quedan manuales; con eso, el costo real por factura.
 - Verificar que la caché realmente se use: `tokensCacheLeidos` > 0 en
   lecturas seguidas.
+
+## Relectura solo para partidas importantes, IA anónima y sin relectura manual (decisión del usuario, 2026-11-25) — MANDA
+
+> "Solo vamos a usar Sonnet para partidas que realmente importan ... lectura
+> con Haiku; si el sistema determina que una partida importante como los
+> montos e ITBIS, RNC o NCF o e-CF no se ven, interviene Sonnet y listo; si
+> Sonnet no puede ver bien y no está seguro, intervención humana
+> obligatoria. El usuario no debe saber la IA que estamos usando ... no debe
+> haber una elección humana de relectura ... los humanos tenemos ojos para
+> ver y validar y esto está por encima de la IA porque un error en DGII
+> puede salir caro." Y luego: "incluye la fecha también".
+
+Reemplaza los criterios de relectura de la sección "Lectura escalonada".
+- **Partidas importantes** (`CAMPOS_IMPORTANTES` en
+  `src/lib/lectura-escalonada.ts`):
+  - compra: RNC, NCF, fecha, monto en servicios, monto en bienes, ITBIS y
+    total;
+  - venta: RNC, NCF, fecha, monto facturado, ITBIS y total.
+- **Motivos de relectura** (`motivosRelectura`):
+  - lo leído distinto al QR (NCF, RNC, fecha, total) o la factura al revés;
+  - montos que no suman;
+  - errores del formato **en partidas importantes**;
+  - total sin leer;
+  - una partida importante que la IA marcó como dudosa ("no se ve con
+    claridad");
+  - el dígito verificador del RNC.
+  - Lo exacto del QR o la DGII no cuenta.
+  - **Nombre, tipo de bienes, forma de pago y demás no provocan relectura**:
+    quedan en ámbar para la persona (o los resuelve la memoria del
+    proveedor).
+- **El usuario no ve qué IA se usa**:
+  - el navegador solo conoce roles neutros (`principal`, `relectura`,
+    `avanzado`) en `src/lib/ocr-modelos.ts`;
+  - el modelo real de cada rol está solo en el servidor
+    (`src/lib/ocr-modelos-servidor.ts`: Haiku 5.5, Sonnet 5.5, Opus 5.5);
+  - la ruta responde `uso.modelo` con el rol y `lecturaIA.modelo` guarda el
+    rol;
+  - los mensajes de error ya no nombran al proveedor (el detalle queda en el
+    registro del servidor);
+  - se quitaron "Releída con …" y los nombres del aviso de captura manual;
+  - "Comparar modelos" ya no está en Configuración: solo por su dirección,
+    `/configuracion/comparar`, con nombres neutros.
+  - Comprobado: el build del navegador (`.next/static`) no contiene
+    "claude-haiku/sonnet/opus" ni "anthropic".
+- **Sin relectura manual**: se quitaron "Leer con IA lo que falta" (formulario)
+  y "Leer con IA las N que faltan" (lote). El sistema relee solo, una vez,
+  durante el escaneo. Si el servicio no estaba disponible, se vuelve a subir
+  el lote.
+- Comprobado (IA simulada):
+  - `npm test` 274/274: solo partidas importantes, la fecha incluida, y
+    nada de lo que trae el QR.
+  - Navegador:
+    - 20/20 de la lectura escalonada (incluye que ni el lote ni el
+      formulario mencionan qué IA se usa);
+    - 7/7 memoria;
+    - 16/16 comparar (incluye que Configuración ya no lo muestra);
+    - 12/12 lote (sin el botón de releer);
+    - 75/75 módulos;
+    - 37/37 Dashboard;
+    - 9/9 padrón.
+  - Que un tipo de bienes dudoso no llame a Sonnet y un ITBIS dudoso sí está
+    probado solo en las pruebas unitarias.
 
 ## Tipo de bienes y servicios: memoria por proveedor y pista del padrón (2026-11-25) — construido
 

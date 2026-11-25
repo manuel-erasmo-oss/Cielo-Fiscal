@@ -3,37 +3,38 @@ import type { CampoExtraido } from '@/types'
 import type { ResultadoOCR } from '@/lib/ocr-tipos'
 
 // Modelos con los que se puede leer una factura, y lo que cuesta cada uno.
-// Lógica pura, compartida por la ruta `/api/ocr` y por la herramienta
-// "Comparar modelos" (Configuración).
+// Compartido por el navegador y el servidor.
 //
-// Precios de lista de Anthropic en US$ por millón de tokens, de la referencia
-// de la API consultada el 2026-11-19 (tabla "Current Models", cacheada el
-// 2026-11-03). El de Haiku 5.5 vale para solicitudes de hasta 100K tokens de
-// entrada; una factura usa muchos menos. Son para comparar modelos, no para
-// facturar: el costo exacto está en la consola de Anthropic.
+// El usuario no debe saber qué IA se usa (decisión del usuario, 2026-11-25):
+// el navegador solo conoce estos nombres neutros (rol del modelo). Qué modelo
+// real hay detrás lo sabe solo el servidor (`ocr-modelos-servidor.ts`).
+//
+// Precios de lista en US$ por millón de tokens, consultados el 2026-11-19
+// (referencia de la API, tabla de modelos cacheada el 2026-11-03). Son para
+// comparar, no para facturar: el costo exacto está en la consola del
+// proveedor.
+
+export type IdModeloOCR = 'principal' | 'relectura' | 'avanzado'
 
 export interface ModeloOCR {
-  id: string
+  id: IdModeloOCR
   nombre: string
   usdEntradaPorMillon: number
   usdSalidaPorMillon: number
-  // Si admite el respaldo de servidor (`fallbacks: 'default'`) cuando el
-  // modelo declina por política. Haiku 5.5 no lo tiene.
-  conRespaldo: boolean
 }
 
 export const MODELOS_OCR: readonly ModeloOCR[] = [
-  { id: 'claude-opus-5-5', nombre: 'Opus 5.5', usdEntradaPorMillon: 4, usdSalidaPorMillon: 20, conRespaldo: true },
-  { id: 'claude-sonnet-5-5', nombre: 'Sonnet 5.5', usdEntradaPorMillon: 2, usdSalidaPorMillon: 10, conRespaldo: true },
-  { id: 'claude-haiku-5-5', nombre: 'Haiku 5.5', usdEntradaPorMillon: 0.1, usdSalidaPorMillon: 0.5, conRespaldo: false },
+  { id: 'principal', nombre: 'Modelo principal', usdEntradaPorMillon: 0.1, usdSalidaPorMillon: 0.5 },
+  { id: 'relectura', nombre: 'Modelo de relectura', usdEntradaPorMillon: 2, usdSalidaPorMillon: 10 },
+  { id: 'avanzado', nombre: 'Modelo avanzado', usdEntradaPorMillon: 4, usdSalidaPorMillon: 20 },
 ]
 
-// Lectura escalonada (decisión del usuario, 2026-11-21, tras la evaluación
-// de costos): Haiku lee todas las facturas; si su lectura no pasa las
-// validaciones, Sonnet la relee UNA vez; si tampoco pasa, captura manual.
-// Opus quedó fuera por costo (~US$0.05 por factura calculado).
-export const MODELO_OCR_POR_DEFECTO = 'claude-haiku-5-5'
-export const MODELO_OCR_RELECTURA = 'claude-sonnet-5-5'
+// Lectura escalonada (decisión del usuario, 2026-11-21 y 2026-11-25): el
+// modelo principal lee todas las facturas; si no se ven bien los montos, el
+// ITBIS, el RNC o el NCF, el de relectura la lee UNA vez; si tampoco, captura
+// manual. El avanzado quedó fuera por costo (~US$0.05 por factura calculado).
+export const MODELO_OCR_POR_DEFECTO: IdModeloOCR = 'principal'
+export const MODELO_OCR_RELECTURA: IdModeloOCR = 'relectura'
 
 export function modeloOCR(id: string | null | undefined): ModeloOCR | null {
   return MODELOS_OCR.find(m => m.id === id) ?? null

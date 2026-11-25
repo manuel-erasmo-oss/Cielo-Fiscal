@@ -7,6 +7,7 @@ import { FORMA_PAGO_606, TIPO_BIENES_SERVICIOS_606 } from '@/lib/dgii-formatos'
 import { interpretarLectura } from '@/lib/ocr-interpretar'
 import { LecturaSchema, lecturaDesdeModelo } from '@/lib/ocr-esquema'
 import { MODELO_OCR_POR_DEFECTO, modeloOCR } from '@/lib/ocr-modelos'
+import { MODELOS_REALES } from '@/lib/ocr-modelos-servidor'
 import {
   ENCABEZADO_CODIGO,
   MAXIMO_TRAMOS,
@@ -184,6 +185,7 @@ export async function POST(request: Request) {
   const modeloPedido = form.get('modelo')
   const modelo = modeloOCR(typeof modeloPedido === 'string' && modeloPedido ? modeloPedido : MODELO_OCR_POR_DEFECTO)
   if (!modelo) return error(400, 'Modelo de IA no admitido.')
+  const real = MODELOS_REALES[modelo.id]
 
   // ── 3. Lectura con Claude ─────────────────────────────────────────────────
   const adjuntos: Anthropic.Beta.BetaContentBlockParam[] = []
@@ -197,11 +199,11 @@ export async function POST(request: Request) {
   let respuesta
   try {
     respuesta = await new Anthropic().beta.messages.parse({
-      model: modelo.id,
+      model: real.modelo,
       max_tokens: 16000,
       // Si el modelo declina por política, la API reintenta en el modelo de
       // respaldo dentro de la misma llamada (Haiku 5.5 no tiene respaldo).
-      ...(modelo.conRespaldo ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
+      ...(real.conRespaldo ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
       output_config: {
         effort: 'medium',
         format: betaZodOutputFormat(LecturaSchema),
@@ -219,15 +221,16 @@ export async function POST(request: Request) {
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) {
       console.error('[api/ocr] Credencial de Anthropic rechazada:', e.message)
-      return error(503, 'El OCR no está disponible: la credencial de Anthropic fue rechazada.')
+      return error(503, 'El servicio de lectura no está disponible en este momento.')
     }
     if (e instanceof Anthropic.RateLimitError) {
       return error(429, 'El OCR está saturado en este momento. Intenta de nuevo en un minuto.')
     }
     if (e instanceof Anthropic.BadRequestError) {
       console.error('[api/ocr] Solicitud rechazada por Anthropic:', e.message)
-      // El motivo de Anthropic no trae secretos y ayuda a diagnosticar.
-      return error(422, `No se pudo procesar el archivo (la IA rechazó la solicitud: ${e.message.slice(0, 200)}).`)
+      // El motivo queda en el registro del servidor; al usuario no se le dice
+      // qué servicio hay detrás (decisión del usuario, 2026-11-25).
+      return error(422, 'No se pudo procesar el archivo. Verifica que sea una imagen o PDF legible.')
     }
     if (e instanceof Anthropic.APIError) {
       console.error(`[api/ocr] Error ${e.status} de Anthropic:`, e.message)
@@ -250,7 +253,8 @@ export async function POST(request: Request) {
     {
       ...interpretarLectura(lecturaDesdeModelo(crudo), { tipoPorDefecto: tipoLeido.data, rncCliente }),
       uso: {
-        modelo: respuesta.model,
+        // El rol, no el modelo real (el navegador no debe saber cuál es).
+        modelo: modelo.id,
         tokensEntrada: respuesta.usage.input_tokens,
         tokensSalida: respuesta.usage.output_tokens,
         tokensCacheLeidos: respuesta.usage.cache_read_input_tokens ?? 0,

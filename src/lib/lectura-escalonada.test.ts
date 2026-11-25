@@ -33,9 +33,21 @@ describe('motivosRelectura', () => {
     expect(m).toContain('El dígito verificador del RNC o la cédula no cuadra.')
   })
 
-  it('campo obligatorio vacío (tipo de bienes del 606) → relectura', () => {
-    const m = motivosRelectura(sinQr, buena({ tipoBienesServicios: null }), ctx(), CLIENTE.rncCedula)
-    expect(m.some(x => x.startsWith('Tipo de bienes'))).toBe(true)
+  it('solo las partidas importantes provocan relectura (decisión del usuario, 2026-11-25)', () => {
+    // Tipo de bienes vacío, nombre dudoso: NO (quedan para la persona o la memoria del proveedor).
+    expect(motivosRelectura(sinQr, buena({ tipoBienesServicios: null }), ctx(), CLIENTE.rncCedula)).toEqual([])
+    expect(motivosRelectura(sinQr, buena({}, { camposDudosos: ['nombreContraparte', 'tipoBienesServicios'] }), ctx(), CLIENTE.rncCedula)).toEqual([])
+    // ITBIS o fecha que no se ven bien: SÍ.
+    expect(motivosRelectura(sinQr, buena({}, { camposDudosos: ['itbisFacturado'] }), ctx(), CLIENTE.rncCedula)).toEqual(['ITBIS facturado: no se ve con claridad.'])
+    expect(motivosRelectura(sinQr, buena({ fechaComprobante: null }), ctx(), CLIENTE.rncCedula).some(x => x.startsWith('Fecha'))).toBe(true)
+    // NCF y total sin leer: SÍ.
+    expect(motivosRelectura(sinQr, buena({ ncf: null }), ctx(), CLIENTE.rncCedula).some(x => x.startsWith('NCF'))).toBe(true)
+    expect(motivosRelectura(sinQr, buena({ montoTotal: null }), ctx(), CLIENTE.rncCedula)).toContain('Total de la factura: no se pudo leer.')
+  })
+
+  it('con QR, lo que trae el QR no cuenta aunque la IA dude de ello', () => {
+    const conQr = interpretarPagina(QR, ctx())
+    expect(motivosRelectura(conQr, buena({ ncf: 'E310000007629' }, { camposDudosos: ['ncf', 'montoTotal'] }), ctx(), CLIENTE.rncCedula)).toEqual([])
   })
 
   it('con QR: un NCF o un total distinto al firmado → relectura; igual salvo formato → pasa', () => {
@@ -93,7 +105,7 @@ describe('leerEscalonado', () => {
     const r = await leerEscalonado(async () => { throw new Error('se cayó') }, () => [], fatal)
     expect(r.manual).toBe(true)
     expect(r.lectura).toBeNull()
-    expect(r.motivos).toEqual(['La lectura con Haiku 5.5 falló: se cayó', 'La relectura con Sonnet 5.5 falló: se cayó'])
+    expect(r.motivos).toEqual(['La primera lectura falló: se cayó', 'La relectura falló: se cayó'])
   })
 
   it('un error fatal (código de acceso, IA no configurada) se relanza: la página queda sin leer', async () => {
@@ -137,5 +149,25 @@ describe('huellaDe', () => {
     expect(a).toMatch(/^[0-9a-f]{64}$/)
     expect(await huellaDe(new Blob(['factura 1']))).toBe(a)
     expect(await huellaDe(new Blob(['factura 2']))).not.toBe(a)
+  })
+})
+
+// Regla del usuario (2026-11-25): el QR solo existe en las facturas serie E
+// (electrónicas). A una serie B nunca se le pide QR ni verificación en la DGII.
+describe('serie B: nunca se le pide QR', () => {
+  it('sin QR no hay relectura, observación del NCF ni verificación humana, y se aprueba en bloque', () => {
+    const sinQr = interpretarPagina(null, ctx())
+    const b = aplicarResultado(sinQr, { lectura: buena({ ncf: 'B0100000123' }), modelo: MODELO_OCR_POR_DEFECTO, releida: false, manual: false, motivos: [] }, ctx())
+    expect(motivosRelectura(sinQr, buena({ ncf: 'B0100000123' }), ctx(), CLIENTE.rncCedula)).toEqual([])
+    expect(observaciones(b, CLIENTE.rncCedula)).toEqual([])
+    const doc = documentoDesdePagina('d1', b, CLIENTE, { nombre: 'a.pdf', pagina: 1 }, '2026-11-25T00:00:00Z')
+    expect(doc.qrUrl).toBeUndefined()
+    expect(esAprobable(doc, CLIENTE.rncCedula)).toBe(true)
+  })
+
+  it('en cambio, una serie E sin QR legible sí queda para verificar a mano', () => {
+    const sinQr = interpretarPagina(null, ctx())
+    const e = aplicarResultado(sinQr, { lectura: buena({ ncf: 'E310000000123' }), modelo: MODELO_OCR_POR_DEFECTO, releida: false, manual: false, motivos: [] }, ctx())
+    expect(observaciones(e, CLIENTE.rncCedula)).toContain('ncf')
   })
 })
